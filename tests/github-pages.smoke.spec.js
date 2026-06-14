@@ -101,6 +101,27 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.getByRole('heading', { name: /^Otvori pacijenta$/i })).toBeVisible();
     await expect(page.locator('#firebasePatientSearchInput')).toBeVisible();
     await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/Firebase prijava|prijavi/i);
+    const dialogLayer = await page.evaluate(() => {
+      const backdrop = document.getElementById('firebasePatientDialog');
+      const panel = backdrop?.querySelector('.firebase-patient-dialog');
+      if (!backdrop || !panel) return { mountedOnBody: false, coveredPoints: ['missing-dialog'] };
+      const rect = panel.getBoundingClientRect();
+      const samplePoints = [
+        [rect.left + rect.width / 2, rect.top + 24],
+        [rect.left + rect.width / 2, rect.top + rect.height / 2],
+        [rect.left + rect.width / 2, rect.bottom - 24]
+      ];
+      const coveredPoints = samplePoints.map(([x, y]) => {
+        const element = document.elementFromPoint(x, y);
+        return element?.closest?.('#firebasePatientDialog') ? '' : (element?.tagName || 'none');
+      }).filter(Boolean);
+      return {
+        mountedOnBody: backdrop.parentElement === document.body,
+        coveredPoints
+      };
+    });
+    expect(dialogLayer.mountedOnBody, 'Firebase patient dialog should escape the sidebar stacking context').toBe(true);
+    expect(dialogLayer.coveredPoints, 'Firebase patient dialog should not be covered by the A4 preview').toEqual([]);
 
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
