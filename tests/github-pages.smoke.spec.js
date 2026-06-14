@@ -28,7 +28,7 @@ async function openApp(page) {
     }
   });
 
-  const response = await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const response = await page.goto('./', { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `GitHub Pages response should be OK, got ${response?.status()}`).toBe(true);
   await expect(page).toHaveTitle(/Temperaturna lista.*v\d+/);
   await expect(page.getByRole('heading', { name: /Generator temperaturne liste/i })).toBeVisible();
