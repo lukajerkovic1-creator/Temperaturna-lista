@@ -84,8 +84,14 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebase(page);
 
     const therapyCsvStatus = page.locator('#therapyCsvStatus');
+    await expect(therapyCsvStatus).toContainText(/Baza lijekova OK/i);
     await expect(therapyCsvStatus).toContainText(/Ugrađena baza lijekova|Ugradena baza lijekova/i);
     await expect(therapyCsvStatus).toContainText(/2026_06_15|15\.06\.2026|10257/i);
+    await expect(therapyCsvStatus).toHaveAttribute('data-health-state', 'ok');
+    await expect(therapyCsvStatus).toHaveAttribute('data-alias-count', '10257');
+    await expect(therapyCsvStatus).toHaveAttribute('data-stale', 'false');
+    await expect(therapyCsvStatus).toHaveAttribute('data-stale-after-days', '45');
+    await expect(therapyCsvStatus).toHaveAttribute('data-source', 'embedded');
     await expect(therapyCsvStatus).not.toContainText(/nije automatski učitana|nije automatski ucitana|ograničena|ogranicena/i);
 
     await page.locator('#therapy').fill('Verz');
