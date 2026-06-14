@@ -1,0 +1,13 @@
+{
+  "name": "temperaturna-lista",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test:smoke": "playwright test tests/github-pages.smoke.spec.js",
+    "test:smoke:headed": "playwright test tests/github-pages.smoke.spec.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
