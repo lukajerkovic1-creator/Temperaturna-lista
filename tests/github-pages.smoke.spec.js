@@ -79,6 +79,22 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('loads embedded therapy database and suggests a known medicine', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    const therapyCsvStatus = page.locator('#therapyCsvStatus');
+    await expect(therapyCsvStatus).toContainText(/Ugrađena baza lijekova|Ugradena baza lijekova/i);
+    await expect(therapyCsvStatus).toContainText(/2026_06_15|15\.06\.2026|10257/i);
+    await expect(therapyCsvStatus).not.toContainText(/nije automatski učitana|nije automatski ucitana|ograničena|ogranicena/i);
+
+    await page.locator('#therapy').fill('Verz');
+    await expect(page.locator('#therapyAutocompleteBox')).toBeVisible();
+    await expect(page.locator('#therapyAutocompleteBox')).toContainText(/Verzenios/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test.describe('desktop-only checks', () => {
     test.skip(({ isMobile }) => isMobile, 'Keyboard focus trap is a desktop smoke check.');
 
