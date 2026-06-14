@@ -49,6 +49,14 @@ async function continueWithoutFirebase(page) {
   await expect(gate).toBeHidden();
 }
 
+async function continueWithoutFirebaseIfVisible(page) {
+  const gate = page.locator('#firebaseLoginGate');
+  if (await gate.isVisible()) {
+    await page.getByRole('button', { name: /Nastavi bez Firebasea/i }).click();
+    await expect(gate).toBeHidden();
+  }
+}
+
 test.describe('GitHub Pages smoke test', () => {
   test('loads the app without browser errors', async ({ page }) => {
     const browserSignals = await openApp(page);
@@ -75,6 +83,37 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
     await expect(page.locator('#quickIdentityStatus')).toHaveText(/Spremno/i);
     await expect(page.locator('#page1Title')).toContainText(/prijem u srijedu/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('auto-saves patient data and restores it after reload', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#fullName').fill('Auto Save Testic');
+    await page.locator('#birthYear').fill('1977');
+    await page.locator('#admissionDate').fill('13.05.2026.');
+
+    await expect.poll(async () => page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_pacijent_autosave_v1');
+      if (!raw) return '';
+      try {
+        return JSON.parse(raw)?.data?.fullName || '';
+      } catch (error) {
+        return '';
+      }
+    })).toBe('Auto Save Testic');
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save spremljen/i);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#page1Title')).toBeVisible();
+    await continueWithoutFirebaseIfVisible(page);
+
+    await expect(page.locator('#fullName')).toHaveValue('Auto Save Testic');
+    await expect(page.locator('#birthYear')).toHaveValue('1977');
+    await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save (vraćen|spremljen)/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
