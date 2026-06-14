@@ -87,6 +87,28 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('opens the searchable Firebase patient dialog from the top action', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    const openButton = page.getByRole('button', { name: /^Otvori pacijenta$/i });
+    await expect(openButton).toBeVisible();
+    await expect(openButton).toBeEnabled();
+    await openButton.click();
+
+    const dialog = page.locator('#firebasePatientDialog');
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Otvori pacijenta$/i })).toBeVisible();
+    await expect(page.locator('#firebasePatientSearchInput')).toBeVisible();
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/Firebase prijava|prijavi/i);
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(openButton).toBeFocused();
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('auto-saves patient data and restores it after reload', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
