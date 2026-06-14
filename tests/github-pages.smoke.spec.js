@@ -9,6 +9,8 @@ const SAMPLE_OHBP_TEXT = [
   'T 38.2, RR 135/80, puls 92.'
 ].join('\n');
 
+const PARSER_TEST_STORAGE_KEY = 'temperaturna_lista_parser_test_cases_v1';
+
 async function openApp(page) {
   const consoleProblems = [];
   const failedRequests = [];
@@ -157,6 +159,51 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#birthYear')).toHaveValue('1977');
     await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
     await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save (vraćen|spremljen)/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('captures a parser test case with Ctrl Alt P', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+    await page.evaluate((key) => localStorage.removeItem(key), PARSER_TEST_STORAGE_KEY);
+
+    await page.locator('#ohbpPasteBox').fill(SAMPLE_OHBP_TEXT);
+    await page.locator('#fullName').fill('Test Testic');
+    await page.locator('#birthYear').fill('1954');
+    await page.locator('#admissionDate').fill('13.05.2026.');
+
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+      dialogs.push({ type: dialog.type(), message: dialog.message() });
+      if (dialog.type() === 'confirm') {
+        await dialog.accept();
+        return;
+      }
+      if (dialog.type() === 'prompt') {
+        await dialog.accept('Krivo parsira terapiju iz OHBP nalaza.');
+        return;
+      }
+      await dialog.dismiss();
+    });
+
+    await page.keyboard.press('Control+Alt+P');
+
+    await expect.poll(async () => page.evaluate(() => {
+      const cases = window.TemperaturnaListaParserTests?.exportLocal?.() || [];
+      return cases[0]?.note || '';
+    })).toContain('Krivo parsira terapiju');
+
+    const capture = await page.evaluate(() => window.TemperaturnaListaParserTests.exportLocal()[0]);
+    expect(dialogs.map(item => item.type)).toEqual(['confirm', 'prompt']);
+    expect(capture.source).toBe('ctrl-alt-p');
+    expect(capture.raw).toContain('Pacijent: TEST TESTIC');
+    expect(capture.expected.fullName).toBe('Test Testic');
+    expect(capture.expected.birthYear).toBe('1954');
+    expect(capture.expected.admissionDate).toBe('2026-05-13');
+    expect(capture.currentData.fullName).toBe('Test Testic');
+    expect(capture.parserWarningsAtCapture).toEqual(expect.any(Array));
+    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen lokalno/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
