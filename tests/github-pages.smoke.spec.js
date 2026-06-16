@@ -11,7 +11,81 @@ const SAMPLE_OHBP_TEXT = [
 
 const PARSER_TEST_STORAGE_KEY = 'temperaturna_lista_parser_test_cases_v1';
 
-async function openApp(page) {
+function installFirebaseSmokeClient(page) {
+  return page.addInitScript(() => {
+    const writes = [];
+    const docs = new Map();
+    let idCounter = 0;
+    const smokeUser = {
+      uid: 'smoke-user-uid',
+      email: 'smoke.firebase@example.test',
+      displayName: 'Smoke Firebase User'
+    };
+    const cloneJson = (value) => JSON.parse(JSON.stringify(value));
+    const collectionNameOf = (ref) => ref?.collectionName || ref?.name || '';
+
+    window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__ = {
+      __smokeWrites: writes,
+      __smokeUser: smokeUser,
+      auth: { currentUser: smokeUser },
+      db: { __smokeDb: true },
+      provider: {},
+      onAuthStateChanged(_auth, callback) {
+        window.setTimeout(() => callback(smokeUser), 0);
+        return () => {};
+      },
+      signInWithPopup: async () => ({ user: smokeUser }),
+      signOut: async () => {},
+      collection(_db, name) {
+        return { name };
+      },
+      doc(_db, collectionName, id) {
+        return { collectionName, id };
+      },
+      addDoc: async (collectionRef, payload) => {
+        const id = `smoke-${String(++idCounter).padStart(3, '0')}`;
+        const collection = collectionNameOf(collectionRef);
+        const storedPayload = cloneJson(payload);
+        docs.set(`${collection}/${id}`, storedPayload);
+        writes.push({ op: 'addDoc', collection, id, payload: storedPayload });
+        return { id };
+      },
+      setDoc: async (docRef, payload, options = {}) => {
+        const collection = collectionNameOf(docRef);
+        const key = `${collection}/${docRef.id}`;
+        const previous = options.merge ? (docs.get(key) || {}) : {};
+        const storedPayload = { ...previous, ...cloneJson(payload) };
+        docs.set(key, storedPayload);
+        writes.push({ op: 'setDoc', collection, id: docRef.id, options: cloneJson(options), payload: storedPayload });
+      },
+      getDocs: async () => ({ docs: [] }),
+      getDoc: async (docRef) => {
+        const collection = collectionNameOf(docRef);
+        const key = `${collection}/${docRef.id}`;
+        return {
+          id: docRef.id,
+          exists: () => docs.has(key),
+          data: () => cloneJson(docs.get(key) || {})
+        };
+      },
+      deleteDoc: async (docRef) => {
+        const collection = collectionNameOf(docRef);
+        docs.delete(`${collection}/${docRef.id}`);
+        writes.push({ op: 'deleteDoc', collection, id: docRef.id });
+      },
+      query: (...parts) => ({ parts }),
+      where: (...args) => ({ type: 'where', args }),
+      limit: (value) => ({ type: 'limit', value }),
+      serverTimestamp: () => ({
+        seconds: Math.floor(Date.now() / 1000),
+        nanoseconds: 0,
+        __smokeServerTimestamp: true
+      })
+    };
+  });
+}
+
+async function openApp(page, path = './') {
   const consoleProblems = [];
   const failedRequests = [];
 
@@ -30,7 +104,7 @@ async function openApp(page) {
     }
   });
 
-  const response = await page.goto('./', { waitUntil: 'domcontentloaded' });
+  const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `GitHub Pages response should be OK, got ${response?.status()}`).toBe(true);
   await expect(page).toHaveTitle(/Temperaturna lista.*v\d+/);
   await expect(page.getByRole('heading', { name: /Generator temperaturne liste/i })).toBeVisible();
@@ -159,6 +233,53 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#birthYear')).toHaveValue('1977');
     await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
     await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save (vraćen|spremljen)/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('saves patient data to Firebase through the smoke client', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    await page.locator('#fullName').fill('Firebase Smoke Testic');
+    await page.locator('#birthYear').fill('1968');
+    await page.locator('#admissionDate').fill('14.06.2026.');
+    await page.locator('#diagnosis').fill('Pneumonija smoke test.');
+    await page.locator('#therapy').fill('amoksicilin 1 g p.o.');
+
+    const advancedSection = page.locator('#dataAdminAdvancedSection');
+    const advancedSummary = advancedSection.locator('summary');
+    await advancedSummary.click();
+    await expect(advancedSection).toHaveAttribute('open', '');
+
+    const saveButton = page.locator('#savePatientToFirebaseBtn');
+    await expect(saveButton).toBeVisible();
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase kolekciju "patients"/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Spremljeno|Firebase auto-save spremljen/i);
+
+    const write = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites.find(item => item.op === 'addDoc' && item.collection === 'patients') || null;
+    });
+
+    expect(write).toBeTruthy();
+    expect(write.payload.schema).toBe('temperaturna-lista-patient-v1');
+    expect(write.payload.ownerUid).toBe('smoke-user-uid');
+    expect(write.payload.ownerEmail).toBe('smoke.firebase@example.test');
+    expect(write.payload.label).toContain('Firebase Smoke Testic');
+    expect(write.payload.data.fullName).toBe('Firebase Smoke Testic');
+    expect(write.payload.data.birthYear).toBe('1968');
+    expect(write.payload.data.admissionDate).toBe('2026-06-14');
+    expect(write.payload.data.diagnosis).toContain('Pneumonija smoke test');
+    expect(write.payload.data.therapy).toContain('amoksicilin');
+    expect(write.payload.expiresAt).toMatch(/^2026-09-/);
+    expect(write.payload.serverCreatedAt.__smokeServerTimestamp).toBe(true);
 
     browserSignals.assertCleanBrowserSignals();
   });
