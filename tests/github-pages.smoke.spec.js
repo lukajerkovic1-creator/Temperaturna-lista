@@ -358,6 +358,69 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('updates an existing Firebase patient instead of creating a duplicate', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    const saveButton = page.locator('#savePatientToFirebaseBtn');
+    const advancedSection = page.locator('#dataAdminAdvancedSection');
+    const advancedSummary = advancedSection.locator('summary');
+    await advancedSummary.click();
+    await expect(advancedSection).toHaveAttribute('open', '');
+
+    await page.locator('#fullName').fill('Duplikat Testic');
+    await page.locator('#birthYear').fill('1978');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Prva dijagnoza bez duplikata.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+    await saveButton.click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
+
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+      dialogs.push({ type: dialog.type(), message: dialog.message() });
+      await dialog.accept();
+    });
+    await page.locator('#newPatientEntryBtn').click();
+    await expect(page.locator('#fullName')).toHaveValue('');
+
+    await page.locator('#fullName').fill('Duplikat Testic');
+    await page.locator('#birthYear').fill('1978');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Ažurirana dijagnoza bez novog dokumenta.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv. + pantoprazol.');
+    await saveButton.click();
+    await expect(page.locator('#statusBar')).toContainText(/ažuriran postojeći zapis/i);
+
+    const result = await page.evaluate(() => {
+      const writes = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__.__smokeWrites
+        .filter(item => ['addDoc', 'setDoc'].includes(item.op) && item.collection === 'patients');
+      const adds = writes.filter(item => item.op === 'addDoc');
+      const sets = writes.filter(item => item.op === 'setDoc');
+      return {
+        writes,
+        addCount: adds.length,
+        setCount: sets.length,
+        firstAddId: adds[0]?.id || '',
+        lastSetId: sets[sets.length - 1]?.id || '',
+        lastPayload: writes[writes.length - 1]?.payload || null
+      };
+    });
+
+    expect(dialogs[0].message).toContain('Spremiti trenutnog pacijenta u Firebase');
+    expect(result.addCount).toBe(1);
+    expect(result.setCount).toBeGreaterThanOrEqual(2);
+    expect(result.lastSetId).toBe(result.firstAddId);
+    expect(result.lastPayload.patientKey).toBe('patient-v1|duplikat testic|1978|2026-06-16');
+    expect(result.lastPayload.data.diagnosis).toContain('Ažurirana dijagnoza');
+    expect(result.lastPayload.data.therapy).toContain('pantoprazol');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('keeps patient data and explains Firebase save failure before new entry', async ({ page }) => {
     await installFirebaseSmokeClient(page, { failWritesWithPermissionDenied: true });
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
