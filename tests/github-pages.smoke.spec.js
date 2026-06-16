@@ -511,6 +511,45 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('blocks print after Firebase save failure until the user confirms', async ({ page }) => {
+    await installFirebaseSmokeClient(page, { failWritesWithPermissionDenied: true });
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    await page.locator('#fullName').fill('Print Failure Testic');
+    await page.locator('#birthYear').fill('1982');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Print failure smoke dijagnoza.');
+    await page.locator('#therapy').fill('paracetamol 1 g p.o.');
+
+    const printButton = page.locator('#printBtn');
+    await printButton.click();
+
+    const confirmDialog = page.locator('#printConfirmDialog');
+    await expect(confirmDialog).toBeVisible();
+    await expect(confirmDialog.locator('#printConfirmDialogTitle')).toContainText(/Pacijent nije spremljen u Firebase/i);
+    await expect(confirmDialog.locator('#printConfirmDialogDescription')).toContainText(/Firebase pravila.*ne dopu/i);
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    await confirmDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect(confirmDialog).toBeHidden();
+    await expect(page.locator('#statusBar')).toContainText(/Ispis je otkazan.*nije spremljen u Firebase/i);
+    await expect(page.locator('#fullName')).toHaveValue('Print Failure Testic');
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    await printButton.click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.locator('[data-print-confirm-action="proceed"]').click();
+    await expect(confirmDialog).toBeHidden();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
+    await expect(page.locator('#statusBar')).toContainText(/Ispis je otvoren bez Firebase spremanja/i);
+    await expect(page.locator('#fullName')).toHaveValue('Print Failure Testic');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('captures a parser test case with Ctrl Alt P', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
