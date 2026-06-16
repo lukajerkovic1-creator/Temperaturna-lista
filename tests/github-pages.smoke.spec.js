@@ -322,13 +322,14 @@ test.describe('GitHub Pages smoke test', () => {
         .slice(0, printIndex)
         .reverse()
         .find(item => ['addDoc', 'setDoc'].includes(item.op) && item.collection === 'patients') || null;
-      return { printIndex, writeBeforePrint };
+      const pageVersion = document.title.match(/offline\s+(.+)$/)?.[1] || '';
+      return { printIndex, writeBeforePrint, pageVersion };
     });
 
     expect(result.printIndex).toBeGreaterThan(0);
     expect(result.writeBeforePrint).toBeTruthy();
     expect(result.writeBeforePrint.payload.schema).toBe('temperaturna-lista-patient-v1');
-    expect(result.writeBeforePrint.payload.appVersion).toBe('v291_print_triggers_firebase_save_2026_06_16');
+    expect(result.writeBeforePrint.payload.appVersion).toBe(result.pageVersion);
     expect(result.writeBeforePrint.payload.lastSaveTrigger).toBe('print');
     expect(result.writeBeforePrint.payload.ownerUid).toBe('smoke-user-uid');
     expect(result.writeBeforePrint.payload.label).toContain('Print Save Testic');
