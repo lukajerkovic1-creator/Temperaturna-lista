@@ -293,6 +293,63 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('starts a new top entry after offering Firebase save', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    await page.locator('#fullName').fill('Novi Unos Testic');
+    await page.locator('#birthYear').fill('1974');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Dijagnoza prije novog unosa.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+      dialogs.push({ type: dialog.type(), message: dialog.message() });
+      await dialog.accept();
+    });
+
+    const newEntryButton = page.locator('#newPatientEntryBtn');
+    await expect(newEntryButton).toBeVisible();
+    await expect(newEntryButton).toBeEnabled();
+    await newEntryButton.click();
+
+    await expect(page.locator('#statusBar')).toContainText(/Novi unos je spreman.*spremljen u Firebase/i);
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#birthYear')).toHaveValue('');
+    await expect(page.locator('#admissionDate')).toHaveValue('');
+    await expect(page.locator('#diagnosis')).toHaveValue('');
+    await expect(page.locator('#therapy')).toHaveValue('');
+    await expect(page.locator('#fullName')).toBeFocused();
+
+    const write = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites
+        .filter(item => ['addDoc', 'setDoc'].includes(item.op) && item.collection === 'patients')
+        .reverse()
+        .find(item => item.payload?.lastSaveTrigger === 'new-entry') || null;
+    });
+
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0].type).toBe('confirm');
+    expect(dialogs[0].message).toContain('Spremiti trenutnog pacijenta u Firebase');
+    expect(write).toBeTruthy();
+    expect(write.payload.schema).toBe('temperaturna-lista-patient-v1');
+    expect(write.payload.ownerUid).toBe('smoke-user-uid');
+    expect(write.payload.lastSaveTrigger).toBe('new-entry');
+    expect(write.payload.label).toContain('Novi Unos Testic');
+    expect(write.payload.data.fullName).toBe('Novi Unos Testic');
+    expect(write.payload.data.birthYear).toBe('1974');
+    expect(write.payload.data.admissionDate).toBe('2026-06-16');
+    expect(write.payload.data.diagnosis).toContain('Dijagnoza prije novog unosa');
+    expect(write.payload.data.therapy).toContain('ceftriakson');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('saves patient to Firebase before opening print dialog through the smoke client', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
