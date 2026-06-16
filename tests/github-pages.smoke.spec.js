@@ -11,12 +11,13 @@ const SAMPLE_OHBP_TEXT = [
 
 const PARSER_TEST_STORAGE_KEY = 'temperaturna_lista_parser_test_cases_v1';
 
-function installFirebaseSmokeClient(page) {
-  return page.addInitScript(() => {
+function installFirebaseSmokeClient(page, options = {}) {
+  return page.addInitScript((smokeOptions = {}) => {
     const writes = [];
     const events = [];
     const docs = new Map();
     let idCounter = 0;
+    const failWritesWithPermissionDenied = Boolean(smokeOptions.failWritesWithPermissionDenied);
     const smokeUser = {
       uid: 'smoke-user-uid',
       email: 'smoke.firebase@example.test',
@@ -24,6 +25,11 @@ function installFirebaseSmokeClient(page) {
     };
     const cloneJson = (value) => JSON.parse(JSON.stringify(value));
     const collectionNameOf = (ref) => ref?.collectionName || ref?.name || '';
+    const throwPermissionDenied = () => {
+      const error = new Error('Missing or insufficient permissions.');
+      error.code = 'permission-denied';
+      throw error;
+    };
     window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ = events;
     window.__TEMPERATURNA_LISTA_SKIP_PRINT_DIALOG__ = true;
     window.__TEMPERATURNA_LISTA_PRINT_CALLS__ = 0;
@@ -48,6 +54,7 @@ function installFirebaseSmokeClient(page) {
         return { collectionName, id };
       },
       addDoc: async (collectionRef, payload) => {
+        if (failWritesWithPermissionDenied) throwPermissionDenied();
         const id = `smoke-${String(++idCounter).padStart(3, '0')}`;
         const collection = collectionNameOf(collectionRef);
         const storedPayload = cloneJson(payload);
@@ -57,6 +64,7 @@ function installFirebaseSmokeClient(page) {
         return { id };
       },
       setDoc: async (docRef, payload, options = {}) => {
+        if (failWritesWithPermissionDenied) throwPermissionDenied();
         const collection = collectionNameOf(docRef);
         const key = `${collection}/${docRef.id}`;
         const previous = options.merge ? (docs.get(key) || {}) : {};
@@ -90,7 +98,7 @@ function installFirebaseSmokeClient(page) {
         __smokeServerTimestamp: true
       })
     };
-  });
+  }, options);
 }
 
 async function openApp(page, path = './') {
@@ -346,6 +354,46 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.data.admissionDate).toBe('2026-06-16');
     expect(write.payload.data.diagnosis).toContain('Dijagnoza prije novog unosa');
     expect(write.payload.data.therapy).toContain('ceftriakson');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('keeps patient data and explains Firebase save failure before new entry', async ({ page }) => {
+    await installFirebaseSmokeClient(page, { failWritesWithPermissionDenied: true });
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    await page.locator('#fullName').fill('Firebase Rules Testic');
+    await page.locator('#birthYear').fill('1975');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Test pravila spremanja.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+      const message = dialog.message();
+      dialogs.push({ type: dialog.type(), message });
+      if (/Svejedno otvoriti novi unos/i.test(message)) {
+        await dialog.dismiss();
+      } else {
+        await dialog.accept();
+      }
+    });
+
+    await page.locator('#newPatientEntryBtn').click();
+
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Firebase pravila.*ne dopu/i);
+    await expect(page.locator('#statusBar')).toContainText(/Novi unos je odgođen|Novi unos je odgo/i);
+    await expect(page.locator('#fullName')).toHaveValue('Firebase Rules Testic');
+    await expect(page.locator('#birthYear')).toHaveValue('1975');
+    await expect(page.locator('#diagnosis')).toHaveValue('Test pravila spremanja.');
+
+    expect(dialogs).toHaveLength(2);
+    expect(dialogs[0].message).toContain('Spremiti trenutnog pacijenta u Firebase');
+    expect(dialogs[1].message).toMatch(/Firebase pravila.*ne dopu/i);
+    expect(dialogs[1].message).toContain('Svejedno otvoriti novi unos');
 
     browserSignals.assertCleanBrowserSignals();
   });

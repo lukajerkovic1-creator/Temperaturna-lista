@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsExistingDoc() {
+      return signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    function writesOwnDoc() {
+      return signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    match /patients/{patientId} {
+      allow create: if writesOwnDoc();
+      allow read, delete: if ownsExistingDoc();
+      allow update: if ownsExistingDoc() && writesOwnDoc();
+    }
+
+    match /parserTestCases/{caseId} {
+      allow create: if writesOwnDoc();
+      allow read, delete: if ownsExistingDoc();
+      allow update: if ownsExistingDoc() && writesOwnDoc();
+    }
+  }
+}
