@@ -14,6 +14,7 @@ const PARSER_TEST_STORAGE_KEY = 'temperaturna_lista_parser_test_cases_v1';
 function installFirebaseSmokeClient(page) {
   return page.addInitScript(() => {
     const writes = [];
+    const events = [];
     const docs = new Map();
     let idCounter = 0;
     const smokeUser = {
@@ -23,9 +24,13 @@ function installFirebaseSmokeClient(page) {
     };
     const cloneJson = (value) => JSON.parse(JSON.stringify(value));
     const collectionNameOf = (ref) => ref?.collectionName || ref?.name || '';
+    window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ = events;
+    window.__TEMPERATURNA_LISTA_SKIP_PRINT_DIALOG__ = true;
+    window.__TEMPERATURNA_LISTA_PRINT_CALLS__ = 0;
 
     window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__ = {
       __smokeWrites: writes,
+      __smokeEvents: events,
       __smokeUser: smokeUser,
       auth: { currentUser: smokeUser },
       db: { __smokeDb: true },
@@ -48,6 +53,7 @@ function installFirebaseSmokeClient(page) {
         const storedPayload = cloneJson(payload);
         docs.set(`${collection}/${id}`, storedPayload);
         writes.push({ op: 'addDoc', collection, id, payload: storedPayload });
+        events.push({ op: 'addDoc', collection, id, payload: storedPayload });
         return { id };
       },
       setDoc: async (docRef, payload, options = {}) => {
@@ -57,6 +63,7 @@ function installFirebaseSmokeClient(page) {
         const storedPayload = { ...previous, ...cloneJson(payload) };
         docs.set(key, storedPayload);
         writes.push({ op: 'setDoc', collection, id: docRef.id, options: cloneJson(options), payload: storedPayload });
+        events.push({ op: 'setDoc', collection, id: docRef.id, options: cloneJson(options), payload: storedPayload });
       },
       getDocs: async () => ({ docs: [] }),
       getDoc: async (docRef) => {
@@ -72,6 +79,7 @@ function installFirebaseSmokeClient(page) {
         const collection = collectionNameOf(docRef);
         docs.delete(`${collection}/${docRef.id}`);
         writes.push({ op: 'deleteDoc', collection, id: docRef.id });
+        events.push({ op: 'deleteDoc', collection, id: docRef.id });
       },
       query: (...parts) => ({ parts }),
       where: (...args) => ({ type: 'where', args }),
@@ -272,6 +280,7 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.schema).toBe('temperaturna-lista-patient-v1');
     expect(write.payload.ownerUid).toBe('smoke-user-uid');
     expect(write.payload.ownerEmail).toBe('smoke.firebase@example.test');
+    expect(write.payload.lastSaveTrigger).toBe('manual');
     expect(write.payload.label).toContain('Firebase Smoke Testic');
     expect(write.payload.data.fullName).toBe('Firebase Smoke Testic');
     expect(write.payload.data.birthYear).toBe('1968');
@@ -280,6 +289,55 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.data.therapy).toContain('amoksicilin');
     expect(write.payload.expiresAt).toMatch(/^2026-09-/);
     expect(write.payload.serverCreatedAt.__smokeServerTimestamp).toBe(true);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('saves patient to Firebase before opening print dialog through the smoke client', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    await page.locator('#fullName').fill('Print Save Testic');
+    await page.locator('#birthYear').fill('1981');
+    await page.locator('#admissionDate').fill('15.06.2026.');
+    await page.locator('#diagnosis').fill('Print smoke dijagnoza.');
+    await page.locator('#therapy').fill('paracetamol 1 g p.o.');
+
+    const printButton = page.locator('#printBtn');
+    await expect(printButton).toBeVisible();
+    await expect(printButton).toBeEnabled();
+    await printButton.click();
+
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Firebase spremanje prije ispisa spremljen/i);
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase i otvoren je dijalog za ispis/i);
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
+
+    const result = await page.evaluate(() => {
+      const events = window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ || [];
+      const printIndex = events.findIndex(item => item.op === 'print');
+      const writeBeforePrint = events
+        .slice(0, printIndex)
+        .reverse()
+        .find(item => ['addDoc', 'setDoc'].includes(item.op) && item.collection === 'patients') || null;
+      return { printIndex, writeBeforePrint };
+    });
+
+    expect(result.printIndex).toBeGreaterThan(0);
+    expect(result.writeBeforePrint).toBeTruthy();
+    expect(result.writeBeforePrint.payload.schema).toBe('temperaturna-lista-patient-v1');
+    expect(result.writeBeforePrint.payload.appVersion).toBe('v291_print_triggers_firebase_save_2026_06_16');
+    expect(result.writeBeforePrint.payload.lastSaveTrigger).toBe('print');
+    expect(result.writeBeforePrint.payload.ownerUid).toBe('smoke-user-uid');
+    expect(result.writeBeforePrint.payload.label).toContain('Print Save Testic');
+    expect(result.writeBeforePrint.payload.data.fullName).toBe('Print Save Testic');
+    expect(result.writeBeforePrint.payload.data.birthYear).toBe('1981');
+    expect(result.writeBeforePrint.payload.data.admissionDate).toBe('2026-06-15');
+    expect(result.writeBeforePrint.payload.data.diagnosis).toContain('Print smoke dijagnoza');
+    expect(result.writeBeforePrint.payload.data.therapy).toContain('paracetamol');
+    expect(result.writeBeforePrint.payload.expiresAt).toMatch(/^2026-09-/);
 
     browserSignals.assertCleanBrowserSignals();
   });
