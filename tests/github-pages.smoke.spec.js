@@ -799,6 +799,19 @@ test.describe('GitHub Pages smoke test', () => {
       expect(autocompleteGeometry.menu.left).toBeGreaterThanOrEqual(autocompleteGeometry.field.right + 4);
     }
 
+    await page.locator('#therapy').fill('Amlod');
+    const activeTherapyOption = page.locator('#therapyAutocompleteBox .therapy-autocomplete-option.is-active');
+    await expect(activeTherapyOption).toContainText(/Amlodipin/i);
+    await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
+    await page.keyboard.press('ArrowRight');
+    await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
+    await page.keyboard.press('ArrowRight');
+    await expect(activeTherapyOption).toContainText(/0,0,1 tbl/i);
+    await page.keyboard.press('ArrowLeft');
+    await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*0,1,0 tbl/i);
+
     browserSignals.assertCleanBrowserSignals();
   });
 
