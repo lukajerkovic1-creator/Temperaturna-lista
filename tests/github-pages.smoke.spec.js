@@ -769,11 +769,16 @@ test.describe('GitHub Pages smoke test', () => {
       const sampleX = menu ? Math.round(menu.left + Math.min(32, Math.max(8, menu.width / 2))) : 0;
       const sampleY = menu ? Math.round(menu.top + Math.min(32, Math.max(8, menu.height / 2))) : 0;
       const topElement = menu ? document.elementFromPoint(sampleX, sampleY) : null;
+      const rightEdgeElement = menu
+        ? document.elementFromPoint(Math.round(menu.right - 12), sampleY)
+        : null;
       return {
         field: field ? { left: field.left, right: field.right, top: field.top, bottom: field.bottom } : null,
         menu: menu ? { left: menu.left, right: menu.right, top: menu.top, bottom: menu.bottom } : null,
         overlaps,
         visuallyOnTop: Boolean(box && topElement && (topElement === box || box.contains(topElement))),
+        rightEdgeVisible: Boolean(box && rightEdgeElement && (rightEdgeElement === box || box.contains(rightEdgeElement))),
+        renderedAtBodyLevel: box?.parentElement === document.body,
         sideFlyout: Boolean(box?.classList.contains('side-flyout')),
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight
@@ -787,6 +792,8 @@ test.describe('GitHub Pages smoke test', () => {
     expect(autocompleteGeometry.menu.bottom).toBeLessThanOrEqual(autocompleteGeometry.viewportHeight + 1);
     expect(autocompleteGeometry.overlaps, 'Therapy autocomplete must not cover the therapy textarea').toBe(false);
     expect(autocompleteGeometry.visuallyOnTop, 'Therapy autocomplete must not be hidden behind the live preview').toBe(true);
+    expect(autocompleteGeometry.rightEdgeVisible, 'Therapy autocomplete must not be clipped by the live preview').toBe(true);
+    expect(autocompleteGeometry.renderedAtBodyLevel, 'Therapy autocomplete must render outside the clipped sidebar').toBe(true);
     if (!isMobile) {
       expect(autocompleteGeometry.sideFlyout).toBe(true);
       expect(autocompleteGeometry.menu.left).toBeGreaterThanOrEqual(autocompleteGeometry.field.right + 4);
