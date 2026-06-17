@@ -25,6 +25,17 @@ function installFirebaseSmokeClient(page, options = {}) {
     };
     const cloneJson = (value) => JSON.parse(JSON.stringify(value));
     const collectionNameOf = (ref) => ref?.collectionName || ref?.name || '';
+    const queryCollectionNameOf = (queryRef) => {
+      if (!queryRef?.parts) return collectionNameOf(queryRef);
+      return queryRef.parts.map(collectionNameOf).find(Boolean) || '';
+    };
+    const queryFiltersOf = (queryRef) => (queryRef?.parts || [])
+      .filter(part => part?.type === 'where')
+      .map(part => part.args || []);
+    const queryLimitOf = (queryRef) => {
+      const limitPart = (queryRef?.parts || []).find(part => part?.type === 'limit');
+      return Number.isFinite(limitPart?.value) ? limitPart.value : null;
+    };
     const throwPermissionDenied = () => {
       const error = new Error('Missing or insufficient permissions.');
       error.code = 'permission-denied';
@@ -37,6 +48,7 @@ function installFirebaseSmokeClient(page, options = {}) {
     window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__ = {
       __smokeWrites: writes,
       __smokeEvents: events,
+      __smokeDocs: docs,
       __smokeUser: smokeUser,
       auth: { currentUser: smokeUser },
       db: { __smokeDb: true },
@@ -73,7 +85,28 @@ function installFirebaseSmokeClient(page, options = {}) {
         writes.push({ op: 'setDoc', collection, id: docRef.id, options: cloneJson(options), payload: storedPayload });
         events.push({ op: 'setDoc', collection, id: docRef.id, options: cloneJson(options), payload: storedPayload });
       },
-      getDocs: async () => ({ docs: [] }),
+      getDocs: async (queryRef = {}) => {
+        const collection = queryCollectionNameOf(queryRef);
+        const filters = queryFiltersOf(queryRef);
+        const maxRows = queryLimitOf(queryRef);
+        let rows = Array.from(docs.entries())
+          .map(([key, payload]) => {
+            const [collectionName, id] = key.split('/');
+            return { collectionName, id, payload };
+          })
+          .filter(item => !collection || item.collectionName === collection);
+        filters.forEach(([field, operator, expectedValue]) => {
+          if (operator !== '==') return;
+          rows = rows.filter(item => item.payload?.[field] === expectedValue);
+        });
+        if (maxRows !== null) rows = rows.slice(0, maxRows);
+        return {
+          docs: rows.map(item => ({
+            id: item.id,
+            data: () => cloneJson(item.payload)
+          }))
+        };
+      },
       getDoc: async (docRef) => {
         const collection = collectionNameOf(docRef);
         const key = `${collection}/${docRef.id}`;
@@ -417,6 +450,78 @@ test.describe('GitHub Pages smoke test', () => {
     expect(result.lastPayload.patientKey).toBe('patient-v1|duplikat testic|1978|2026-06-16');
     expect(result.lastPayload.data.diagnosis).toContain('Ažurirana dijagnoza');
     expect(result.lastPayload.data.therapy).toContain('pantoprazol');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('renames and deletes Firebase patients from the open patient dialog', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    const advancedSection = page.locator('#dataAdminAdvancedSection');
+    await advancedSection.locator('summary').click();
+    await expect(advancedSection).toHaveAttribute('open', '');
+
+    await page.locator('#fullName').fill('Baza Akcija Testic');
+    await page.locator('#birthYear').fill('1982');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Test upravljanja Firebase pacijentima.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+    await page.locator('#savePatientToFirebaseBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
+
+    await page.locator('#openFirebasePatientDialogBtn').click();
+    const dialog = page.locator('#firebasePatientDialog');
+    const list = page.locator('#firebasePatientDialogList');
+    await expect(dialog).toBeVisible();
+    const savedRow = list.locator('.firebase-patient-row').filter({ hasText: 'Baza Akcija Testic' }).first();
+    await expect(savedRow).toBeVisible();
+    await expect(savedRow.locator('[data-firebase-patient-action="rename"]')).toBeVisible();
+    await expect(savedRow.locator('[data-firebase-patient-action="delete"]')).toBeVisible();
+
+    page.once('dialog', async (prompt) => {
+      expect(prompt.type()).toBe('prompt');
+      expect(prompt.message()).toContain('Novi naziv pacijenta');
+      await prompt.accept('Baza Uredena Testic');
+    });
+    await savedRow.locator('[data-firebase-patient-action="rename"]').click();
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/Preimenovano/i);
+    await expect(list).toContainText('Baza Uredena Testic');
+    await expect(list).not.toContainText('Baza Akcija Testic');
+
+    const renamedRow = list.locator('.firebase-patient-row').filter({ hasText: 'Baza Uredena Testic' }).first();
+    page.once('dialog', async (confirmDialog) => {
+      expect(confirmDialog.type()).toBe('confirm');
+      expect(confirmDialog.message()).toContain('Baza Uredena Testic');
+      await confirmDialog.accept();
+    });
+    await renamedRow.locator('[data-firebase-patient-action="delete"]').click();
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/obrisan/i);
+    await expect(list.locator('.firebase-patient-row')).toHaveCount(0);
+
+    const result = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const writes = client.__smokeWrites.filter(item => item.collection === 'patients');
+      const renameWrite = writes
+        .slice()
+        .reverse()
+        .find(item => item.op === 'setDoc' && item.payload?.lastSaveTrigger === 'rename') || null;
+      return {
+        renameWrite,
+        deleteCount: writes.filter(item => item.op === 'deleteDoc').length,
+        remainingDocs: Array.from(client.__smokeDocs.keys()).filter(key => key.startsWith('patients/')).length
+      };
+    });
+
+    expect(result.renameWrite).toBeTruthy();
+    expect(result.renameWrite.payload.label).toContain('Baza Uredena Testic');
+    expect(result.renameWrite.payload.data.fullName).toBe('Baza Uredena Testic');
+    expect(result.renameWrite.payload.patientKey).toBe('patient-v1|baza uredena testic|1982|2026-06-16');
+    expect(result.deleteCount).toBe(1);
+    expect(result.remainingDocs).toBe(0);
 
     browserSignals.assertCleanBrowserSignals();
   });
