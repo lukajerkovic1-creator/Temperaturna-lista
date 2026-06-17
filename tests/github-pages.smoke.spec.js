@@ -738,7 +738,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('loads embedded therapy database and suggests a known medicine', async ({ page }) => {
+  test('loads embedded therapy database and suggests a known medicine', async ({ page, isMobile }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
 
@@ -756,6 +756,41 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#therapy').fill('Verz');
     await expect(page.locator('#therapyAutocompleteBox')).toBeVisible();
     await expect(page.locator('#therapyAutocompleteBox')).toContainText(/Verzenios/i);
+    const autocompleteGeometry = await page.evaluate(() => {
+      const textarea = document.getElementById('therapy');
+      const box = document.getElementById('therapyAutocompleteBox');
+      const field = textarea?.getBoundingClientRect();
+      const menu = box?.getBoundingClientRect();
+      const overlaps = Boolean(field && menu &&
+        menu.left < field.right &&
+        menu.right > field.left &&
+        menu.top < field.bottom &&
+        menu.bottom > field.top);
+      const sampleX = menu ? Math.round(menu.left + Math.min(32, Math.max(8, menu.width / 2))) : 0;
+      const sampleY = menu ? Math.round(menu.top + Math.min(32, Math.max(8, menu.height / 2))) : 0;
+      const topElement = menu ? document.elementFromPoint(sampleX, sampleY) : null;
+      return {
+        field: field ? { left: field.left, right: field.right, top: field.top, bottom: field.bottom } : null,
+        menu: menu ? { left: menu.left, right: menu.right, top: menu.top, bottom: menu.bottom } : null,
+        overlaps,
+        visuallyOnTop: Boolean(box && topElement && (topElement === box || box.contains(topElement))),
+        sideFlyout: Boolean(box?.classList.contains('side-flyout')),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      };
+    });
+    expect(autocompleteGeometry.field).toBeTruthy();
+    expect(autocompleteGeometry.menu).toBeTruthy();
+    expect(autocompleteGeometry.menu.left).toBeGreaterThanOrEqual(0);
+    expect(autocompleteGeometry.menu.right).toBeLessThanOrEqual(autocompleteGeometry.viewportWidth + 1);
+    expect(autocompleteGeometry.menu.top).toBeGreaterThanOrEqual(0);
+    expect(autocompleteGeometry.menu.bottom).toBeLessThanOrEqual(autocompleteGeometry.viewportHeight + 1);
+    expect(autocompleteGeometry.overlaps, 'Therapy autocomplete must not cover the therapy textarea').toBe(false);
+    expect(autocompleteGeometry.visuallyOnTop, 'Therapy autocomplete must not be hidden behind the live preview').toBe(true);
+    if (!isMobile) {
+      expect(autocompleteGeometry.sideFlyout).toBe(true);
+      expect(autocompleteGeometry.menu.left).toBeGreaterThanOrEqual(autocompleteGeometry.field.right + 4);
+    }
 
     browserSignals.assertCleanBrowserSignals();
   });
