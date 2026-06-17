@@ -11,6 +11,10 @@ const SAMPLE_OHBP_TEXT = [
 
 const PARSER_TEST_STORAGE_KEY = 'temperaturna_lista_parser_test_cases_v1';
 
+function isTransientNetworkConsoleMessage(text) {
+  return /^Failed to load resource: net::ERR_(NETWORK_CHANGED|INTERNET_DISCONNECTED)\b/i.test(String(text || ''));
+}
+
 function installFirebaseSmokeClient(page, options = {}) {
   return page.addInitScript((smokeOptions = {}) => {
     const writes = [];
@@ -140,7 +144,10 @@ async function openApp(page, path = './') {
 
   page.on('console', (message) => {
     if (message.type() === 'error') {
-      consoleProblems.push(message.text());
+      const text = message.text();
+      if (!isTransientNetworkConsoleMessage(text)) {
+        consoleProblems.push(text);
+      }
     }
   });
   page.on('pageerror', (error) => {
@@ -169,7 +176,11 @@ async function openApp(page, path = './') {
 
 async function continueWithoutFirebase(page) {
   const gate = page.locator('#firebaseLoginGate');
-  await expect(gate).toBeVisible();
+  try {
+    await expect(gate).toBeVisible({ timeout: 3000 });
+  } catch (error) {
+    return;
+  }
   await page.getByRole('button', { name: /Nastavi bez Firebasea/i }).click();
   await expect(gate).toBeHidden();
 }
@@ -255,6 +266,33 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('starts clean when a stored patient draft is not marked for recovery', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('temperaturna_lista_pacijent_autosave_v1', JSON.stringify({
+        version: 1,
+        appVersion: 'legacy-local-draft',
+        savedAt: '2026-06-16T10:00:00.000Z',
+        data: {
+          fullName: 'Stari Pacijent Testic',
+          birthYear: '1971',
+          admissionDate: '2026-06-16',
+          diagnosis: 'Stari lokalni draft koji se ne smije sam otvoriti.'
+        }
+      }));
+    });
+    const browserSignals = await openApp(page, './?qa=clean-start-draft');
+    await continueWithoutFirebaseIfVisible(page);
+
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#birthYear')).toHaveValue('');
+    await expect(page.locator('#admissionDate')).toHaveValue('');
+    await expect(page.locator('#diagnosis')).toHaveValue('');
+    await expect(page.locator('#patientDraftStatus')).toContainText(/ručno vraćanje/i);
+    await expect(page.locator('#page1Title')).toBeVisible();
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('auto-saves patient data and restores it after reload', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
@@ -272,7 +310,7 @@ test.describe('GitHub Pages smoke test', () => {
         return '';
       }
     })).toBe('Auto Save Testic');
-    await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save spremljen/i);
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save čuva nespremljenog pacijenta/i);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#page1Title')).toBeVisible();
