@@ -856,6 +856,41 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('saves a custom chronic therapy suggestion without touching the embedded medicine database', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
+    });
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    const therapyBox = page.locator('#therapyAutocompleteBox');
+    await page.locator('#therapy').fill('Zipantola 40 mg 1,0,0 tbl');
+    const saveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
+    await expect(saveOption).toBeVisible();
+    await expect(saveOption).toContainText(/Spremi moj unos/i);
+    await expect(saveOption).toContainText(/Zipantola 40 mg 1,0,0 tbl/i);
+    await saveOption.click();
+
+    const stored = await page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const records = parsed?.records || {};
+      const first = Object.values(records)[0] || null;
+      return { recordCount: Object.keys(records).length, first };
+    });
+    expect(stored.recordCount).toBe(1);
+    expect(stored.first.line).toBe('Zipantola 40 mg 1,0,0 tbl');
+    expect(stored.first.source).toBe('custom');
+
+    await page.locator('#therapy').fill('Zip');
+    await expect(therapyBox).toBeVisible();
+    await expect(therapyBox).toContainText(/Zipantola 40 mg 1,0,0 tbl/i);
+    await expect(therapyBox).toContainText(/moj spremljeni prijedlog/i);
+    await expect(page.locator('#therapyCsvStatus')).toContainText(/Baza lijekova OK/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test.describe('desktop-only checks', () => {
     test.skip(({ isMobile }) => isMobile, 'Keyboard focus trap is a desktop smoke check.');
 
