@@ -231,10 +231,18 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#followUpControl')).toBeVisible();
     await page.locator('#followUpControl').fill('Kontrola');
 
+    const labGroups = await page.evaluate(() => Array.from(document.querySelectorAll('.followup-lab-chip-group'))
+      .map(group => Array.from(group.querySelectorAll('[data-followup-lab-option]')).map(input => input.value)));
+    expect(labGroups).toEqual([
+      ['CRP', 'KKS'],
+      ['GUK', 'ureja', 'kreatinin', 'Na', 'K', 'Cl'],
+      ['bil', 'AST', 'ALT', 'AP', 'GGT', 'CK', 'LDH', 'Troponin', 'D-dimeri', 'urin']
+    ]);
+
     await page.locator('[data-followup-lab-option][value="CRP"]').check();
     await page.locator('[data-followup-lab-option][value="KKS"]').check();
     await page.locator('[data-followup-lab-option][value="kreatinin"]').check();
-    await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP\nKKS\nkreatinin');
+    await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP E Hb Trc L\nkreatinin');
 
     await page.locator('[data-followup-lab-option][value="KKS"]').uncheck();
     await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP\nkreatinin');
