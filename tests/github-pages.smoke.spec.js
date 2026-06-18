@@ -891,6 +891,68 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('saves a custom diagnosis suggestion from the side flyout', async ({ page, isMobile }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
+    });
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    const diagnosisBox = page.locator('#diagnosisAutocompleteBox');
+    await page.locator('#diagnosis').fill('Uro');
+    const saveOption = diagnosisBox.locator('.therapy-autocomplete-option.is-save-custom');
+    await expect(saveOption).toBeVisible();
+    await expect(saveOption).toContainText(/Spremi moj unos/i);
+    await expect(saveOption).toContainText(/Uro/i);
+
+    const autocompleteGeometry = await page.evaluate(() => {
+      const textarea = document.getElementById('diagnosis');
+      const box = document.getElementById('diagnosisAutocompleteBox');
+      const field = textarea?.getBoundingClientRect();
+      const menu = box?.getBoundingClientRect();
+      const overlaps = Boolean(field && menu &&
+        menu.left < field.right &&
+        menu.right > field.left &&
+        menu.top < field.bottom &&
+        menu.bottom > field.top);
+      return {
+        field: field ? { right: field.right } : null,
+        menu: menu ? { left: menu.left, right: menu.right } : null,
+        overlaps,
+        sideFlyout: Boolean(box?.classList.contains('side-flyout')),
+        viewportWidth: window.innerWidth
+      };
+    });
+    expect(autocompleteGeometry.field).toBeTruthy();
+    expect(autocompleteGeometry.menu).toBeTruthy();
+    expect(autocompleteGeometry.menu.left).toBeGreaterThanOrEqual(0);
+    expect(autocompleteGeometry.menu.right).toBeLessThanOrEqual(autocompleteGeometry.viewportWidth + 1);
+    if (!isMobile) {
+      expect(autocompleteGeometry.overlaps, 'Diagnosis autocomplete must not cover the diagnosis textarea').toBe(false);
+      expect(autocompleteGeometry.sideFlyout).toBe(true);
+      expect(autocompleteGeometry.menu.left).toBeGreaterThanOrEqual(autocompleteGeometry.field.right + 4);
+    }
+
+    await saveOption.click();
+    const stored = await page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const records = parsed?.records || {};
+      const first = Object.values(records)[0] || null;
+      return { recordCount: Object.keys(records).length, first };
+    });
+    expect(stored.recordCount).toBe(1);
+    expect(stored.first.line).toBe('Uro');
+    expect(stored.first.source).toBe('custom');
+
+    await page.locator('#diagnosis').fill('Ur');
+    await expect(diagnosisBox).toBeVisible();
+    await expect(diagnosisBox).toContainText(/Uro/i);
+    await expect(diagnosisBox).toContainText(/moj spremljeni prijedlog/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test.describe('desktop-only checks', () => {
     test.skip(({ isMobile }) => isMobile, 'Keyboard focus trap is a desktop smoke check.');
 
