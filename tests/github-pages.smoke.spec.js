@@ -223,6 +223,27 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('builds follow-up control labs from checkbox picker', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('[data-collapsible-edit-target="followUpControl"]').click();
+    await expect(page.locator('#followUpControl')).toBeVisible();
+    await page.locator('#followUpControl').fill('Kontrola');
+
+    await page.locator('[data-followup-lab-option][value="CRP"]').check();
+    await page.locator('[data-followup-lab-option][value="KKS"]').check();
+    await page.locator('[data-followup-lab-option][value="kreatinin"]').check();
+    await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP\nKKS\nkreatinin');
+
+    await page.locator('[data-followup-lab-option][value="KKS"]').uncheck();
+    await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP\nkreatinin');
+    await expect(page.locator('[data-followup-lab-option][value="CRP"]')).toBeChecked();
+    await expect(page.locator('[data-followup-lab-option][value="KKS"]')).not.toBeChecked();
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('opens the searchable Firebase patient dialog from the top action', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
