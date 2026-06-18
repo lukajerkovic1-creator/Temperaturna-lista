@@ -953,6 +953,50 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('opens List 2 as a printable therapy continuation', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    await page.addInitScript(() => {
+      window.__TL_CANVAS_TEXT__ = [];
+      const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...args) {
+        window.__TL_CANVAS_TEXT__.push(String(text || ''));
+        return originalFillText.call(this, text, ...args);
+      };
+    });
+    const browserSignals = await openApp(page, './?qa=list2-print-smoke&firebaseSmoke=1');
+
+    await page.locator('#fullName').fill('Nastavak Testic');
+    await page.locator('#birthYear').fill('1960');
+    await page.locator('#admissionDate').fill('15.06.2026.');
+    await page.locator('#diagnosis').fill('Kontrola nastavka terapijske liste.');
+    await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
+    await page.evaluate(() => { window.__TL_CANVAS_TEXT__ = []; });
+
+    await page.getByRole('button', { name: /^List 2$/ }).click();
+
+    await expect(page.getByRole('button', { name: /^List 2$/ })).toHaveClass(/is-active/);
+    await expect(page.locator('#page2Title')).toContainText(/List 2 - nastavak terapijske liste/i);
+    await expect(page.locator('#page2Title')).toContainText(/22\.06\.-28\.06\./);
+    await expect(page.locator('#shell2').locator('xpath=..')).toHaveClass(/is-preview-selected/);
+    await expect(page.locator('body')).toHaveClass(/preview-continuation-print-mode/);
+
+    await expect.poll(async () => page.evaluate(() => {
+      const text = (window.__TL_CANVAS_TEXT__ || []).join('\n');
+      return text.includes('Amlodipin 5 mg 1,0,0 tbl');
+    })).toBe(true);
+
+    await page.locator('#printBtn').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
+    const printEvent = await page.evaluate(() => {
+      const events = window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ || [];
+      return events.filter(item => item.op === 'print').at(-1) || null;
+    });
+    expect(printEvent).toBeTruthy();
+    expect(printEvent.pageCount).toBe(1);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test.describe('desktop-only checks', () => {
     test.skip(({ isMobile }) => isMobile, 'Keyboard focus trap is a desktop smoke check.');
 
