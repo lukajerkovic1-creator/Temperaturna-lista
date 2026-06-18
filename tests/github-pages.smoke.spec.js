@@ -244,6 +244,29 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('keeps chronic therapy in the Tab order even when collapsed', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    const therapyToggle = page.locator('[data-collapsible-target="therapy"]');
+    await expect(therapyToggle).toHaveAttribute('aria-expanded', 'true');
+    await therapyToggle.click();
+    await expect(therapyToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#therapy')).not.toBeVisible();
+
+    await page.locator('#patientOrigin').click();
+    await page.keyboard.press('Tab');
+
+    await expect(therapyToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#therapy')).toBeVisible();
+    await expect(page.locator('#therapy')).toBeFocused();
+
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#showTherapyMonday2')).toBeFocused();
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('opens the searchable Firebase patient dialog from the top action', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
