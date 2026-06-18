@@ -249,6 +249,8 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebase(page);
 
     const openButton = page.getByRole('button', { name: /^Otvori pacijenta$/i });
+    await expect(page.locator('#savePatientTopBtn')).toBeVisible();
+    await expect(page.locator('#newPatientEntryBtn')).toBeVisible();
     await expect(openButton).toBeVisible();
     await expect(openButton).toBeEnabled();
     await openButton.click();
@@ -358,12 +360,7 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#diagnosis').fill('Pneumonija smoke test.');
     await page.locator('#therapy').fill('amoksicilin 1 g p.o.');
 
-    const advancedSection = page.locator('#dataAdminAdvancedSection');
-    const advancedSummary = advancedSection.locator('summary');
-    await advancedSummary.click();
-    await expect(advancedSection).toHaveAttribute('open', '');
-
-    const saveButton = page.locator('#savePatientToFirebaseBtn');
+    const saveButton = page.locator('#savePatientTopBtn');
     await expect(saveButton).toBeVisible();
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
