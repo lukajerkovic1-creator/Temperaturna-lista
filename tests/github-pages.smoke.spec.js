@@ -224,11 +224,24 @@ test.describe('GitHub Pages smoke test', () => {
   });
 
   test('builds follow-up control labs from checkbox picker', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (window.__TL_CANVAS_TEXT_PATCHED__) return;
+      window.__TL_CANVAS_TEXT_PATCHED__ = true;
+      window.__TL_CANVAS_TEXT__ = [];
+      const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...args) {
+        window.__TL_CANVAS_TEXT__.push(String(text || ''));
+        return originalFillText.call(this, text, ...args);
+      };
+    });
+
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
 
+    await page.locator('#admissionDate').fill('15.06.2026.');
     await page.locator('[data-collapsible-edit-target="followUpControl"]').click();
     await expect(page.locator('#followUpControl')).toBeVisible();
+    await page.locator('#followUpControlDate').fill('15.06.2026.');
     await page.locator('#followUpControl').fill('Kontrola');
 
     const labGroups = await page.evaluate(() => Array.from(document.querySelectorAll('.followup-lab-chip-group'))
@@ -243,6 +256,15 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('[data-followup-lab-option][value="KKS"]').check();
     await page.locator('[data-followup-lab-option][value="kreatinin"]').check();
     await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP E Hb Trc L\nkreatinin');
+
+    await page.evaluate(() => {
+      window.__TL_CANVAS_TEXT__ = [];
+      document.querySelector('#followUpControl')?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect.poll(async () => page.evaluate(() => window.__TL_CANVAS_TEXT__ || []))
+      .toEqual(expect.arrayContaining(['CRP', 'E', 'Hb', 'Trc', 'L', 'kreatinin']));
+    const renderedControlLabs = await page.evaluate(() => window.__TL_CANVAS_TEXT__ || []);
+    expect(renderedControlLabs).not.toContain('CRP E Hb Trc L');
 
     await page.locator('[data-followup-lab-option][value="KKS"]').uncheck();
     await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP\nkreatinin');
