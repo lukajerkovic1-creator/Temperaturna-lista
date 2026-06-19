@@ -228,9 +228,16 @@ test.describe('GitHub Pages smoke test', () => {
       if (window.__TL_CANVAS_TEXT_PATCHED__) return;
       window.__TL_CANVAS_TEXT_PATCHED__ = true;
       window.__TL_CANVAS_TEXT__ = [];
+      window.__TL_CANVAS_TEXT_POSITIONS__ = [];
       const originalFillText = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...args) {
-        window.__TL_CANVAS_TEXT__.push(String(text || ''));
+        const renderedText = String(text || '');
+        window.__TL_CANVAS_TEXT__.push(renderedText);
+        window.__TL_CANVAS_TEXT_POSITIONS__.push({
+          text: renderedText,
+          x: Number(args[0]),
+          y: Number(args[1])
+        });
         return originalFillText.call(this, text, ...args);
       };
     });
@@ -239,9 +246,28 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebase(page);
 
     await page.locator('#admissionDate').fill('15.06.2026.');
+    await page.evaluate(() => {
+      const setValue = (selector, value) => {
+        const element = document.querySelector(selector);
+        if (!element) return;
+        element.value = value;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      setValue('#therapy', Array.from({ length: 18 }, (_, index) => `Terapija ${index + 1}`).join('\n'));
+      setValue('#labRaw', [
+        'CRP 42',
+        'E 4.5',
+        'Hb 130',
+        'Trc 220',
+        'L 7',
+        'GUK 6',
+        'ureja 5',
+        'kreatinin 80'
+      ].join('\n'));
+    });
     await page.locator('[data-collapsible-edit-target="followUpControl"]').click();
     await expect(page.locator('#followUpControl')).toBeVisible();
-    await page.locator('#followUpControlDate').fill('15.06.2026.');
+    await page.locator('#followUpControlDate').fill('19.06.2026.');
     await page.locator('#followUpControl').fill('Kontrola');
 
     const labGroups = await page.evaluate(() => Array.from(document.querySelectorAll('.followup-lab-chip-group'))
@@ -259,12 +285,19 @@ test.describe('GitHub Pages smoke test', () => {
 
     await page.evaluate(() => {
       window.__TL_CANVAS_TEXT__ = [];
+      window.__TL_CANVAS_TEXT_POSITIONS__ = [];
       document.querySelector('#followUpControl')?.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect.poll(async () => page.evaluate(() => window.__TL_CANVAS_TEXT__ || []))
       .toEqual(expect.arrayContaining(['CRP', 'E', 'Hb', 'Trc', 'L', 'kreatinin']));
     const renderedControlLabs = await page.evaluate(() => window.__TL_CANVAS_TEXT__ || []);
     expect(renderedControlLabs).not.toContain('CRP E Hb Trc L');
+    const renderedTextPositions = await page.evaluate(() => window.__TL_CANVAS_TEXT_POSITIONS__ || []);
+    const admissionCrp = renderedTextPositions.find((entry) => /^CRP\b/.test(entry.text) && entry.text !== 'CRP');
+    const followUpCrp = renderedTextPositions.find((entry) => entry.text === 'CRP');
+    expect(admissionCrp).toBeTruthy();
+    expect(followUpCrp).toBeTruthy();
+    expect(Math.abs(admissionCrp.y - followUpCrp.y)).toBeLessThan(1);
 
     await page.locator('[data-followup-lab-option][value="KKS"]').uncheck();
     await expect(page.locator('#followUpControl')).toHaveValue('Kontrola\nCRP\nkreatinin');
