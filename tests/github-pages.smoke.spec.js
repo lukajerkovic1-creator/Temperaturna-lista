@@ -15,6 +15,20 @@ function isTransientNetworkConsoleMessage(text) {
   return /^Failed to load resource: net::ERR_(NETWORK_CHANGED|INTERNET_DISCONNECTED)\b/i.test(String(text || ''));
 }
 
+function isIgnorableFailedRequest(url, errorText) {
+  const href = String(url || '');
+  const failure = String(errorText || '');
+  if (href.includes('/favicon')) return true;
+  return /identitytoolkit\/v3\/relyingparty\/getProjectConfig/i.test(href)
+    && /net::ERR_ABORTED/i.test(failure);
+}
+
+async function markFirebaseLoginGateDismissed(page) {
+  await page.evaluate(() => {
+    sessionStorage.setItem('temperaturna_lista_firebase_login_gate_dismissed_v1', 'true');
+  }).catch(() => {});
+}
+
 function installFirebaseSmokeClient(page, options = {}) {
   return page.addInitScript((smokeOptions = {}) => {
     const writes = [];
@@ -155,8 +169,9 @@ async function openApp(page, path = './') {
   });
   page.on('requestfailed', (request) => {
     const url = request.url();
-    if (!url.includes('/favicon')) {
-      failedRequests.push(`${url} :: ${request.failure()?.errorText || 'request failed'}`);
+    const errorText = request.failure()?.errorText || 'request failed';
+    if (!isIgnorableFailedRequest(url, errorText)) {
+      failedRequests.push(`${url} :: ${errorText}`);
     }
   });
 
@@ -174,6 +189,27 @@ async function openApp(page, path = './') {
   };
 }
 
+async function closeFirebaseGateIfVisible(page, timeout = 1000) {
+  await markFirebaseLoginGateDismissed(page);
+  const gate = page.locator('#firebaseLoginGate');
+  const deadline = Date.now() + timeout;
+  let closed = false;
+  while (Date.now() <= deadline) {
+    const visible = await gate.isVisible().catch(() => false);
+    if (!visible) {
+      if (!closed) return false;
+      await page.waitForTimeout(150);
+      if (!(await gate.isVisible().catch(() => false))) return true;
+    } else {
+      await page.getByRole('button', { name: /Nastavi bez Firebasea/i }).click();
+      await expect(gate).toBeHidden({ timeout: 3000 });
+      closed = true;
+    }
+  }
+  await expect(gate).toBeHidden();
+  return closed;
+}
+
 async function continueWithoutFirebase(page) {
   const gate = page.locator('#firebaseLoginGate');
   try {
@@ -181,16 +217,11 @@ async function continueWithoutFirebase(page) {
   } catch (error) {
     return;
   }
-  await page.getByRole('button', { name: /Nastavi bez Firebasea/i }).click();
-  await expect(gate).toBeHidden();
+  await closeFirebaseGateIfVisible(page, 4000);
 }
 
 async function continueWithoutFirebaseIfVisible(page) {
-  const gate = page.locator('#firebaseLoginGate');
-  if (await gate.isVisible()) {
-    await page.getByRole('button', { name: /Nastavi bez Firebasea/i }).click();
-    await expect(gate).toBeHidden();
-  }
+  await closeFirebaseGateIfVisible(page, 1000);
 }
 
 test.describe('GitHub Pages smoke test', () => {
@@ -919,7 +950,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('saves a custom chronic therapy suggestion without touching the embedded medicine database', async ({ page }) => {
+  test('saves and deletes a custom chronic therapy suggestion without touching the embedded medicine database', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.removeItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
     });
@@ -927,11 +958,12 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebase(page);
 
     const therapyBox = page.locator('#therapyAutocompleteBox');
-    await page.locator('#therapy').fill('Zipantola 40 mg 1,0,0 tbl');
+    await page.locator('#therapy').fill('Zzzcustomol 7 mg 1,0,0 tbl');
     const saveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
     await expect(saveOption).toBeVisible();
     await expect(saveOption).toContainText(/Spremi moj unos/i);
-    await expect(saveOption).toContainText(/Zipantola 40 mg 1,0,0 tbl/i);
+    await expect(saveOption).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
+    await continueWithoutFirebaseIfVisible(page);
     await saveOption.click();
 
     const stored = await page.evaluate(() => {
@@ -942,13 +974,27 @@ test.describe('GitHub Pages smoke test', () => {
       return { recordCount: Object.keys(records).length, first };
     });
     expect(stored.recordCount).toBe(1);
-    expect(stored.first.line).toBe('Zipantola 40 mg 1,0,0 tbl');
+    expect(stored.first.line).toBe('Zzzcustomol 7 mg 1,0,0 tbl');
     expect(stored.first.source).toBe('custom');
 
-    await page.locator('#therapy').fill('Zip');
+    await page.locator('#therapy').fill('Zzz');
     await expect(therapyBox).toBeVisible();
-    await expect(therapyBox).toContainText(/Zipantola 40 mg 1,0,0 tbl/i);
+    await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
     await expect(therapyBox).toContainText(/moj spremljeni prijedlog/i);
+    const deleteButton = therapyBox.locator('[data-therapy-autocomplete-delete]');
+    await expect(deleteButton).toBeVisible();
+    await expect(deleteButton).toHaveText(/Obri/i);
+    await continueWithoutFirebaseIfVisible(page);
+    await deleteButton.click();
+    await expect(page.locator('#statusBar')).toContainText(/Obrisan je lokalni prijedlog/i);
+    await expect(therapyBox).toBeHidden();
+    const afterDelete = await page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const records = parsed?.records || {};
+      return { recordCount: Object.keys(records).length, records };
+    });
+    expect(afterDelete.recordCount).toBe(0);
     await expect(page.locator('#therapyCsvStatus')).toContainText(/Baza lijekova OK/i);
 
     browserSignals.assertCleanBrowserSignals();
