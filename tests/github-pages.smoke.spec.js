@@ -1060,7 +1060,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('saves a custom diagnosis suggestion from the side flyout', async ({ page, isMobile }) => {
+  test('saves and deletes a custom diagnosis suggestion from the side flyout', async ({ page, isMobile }) => {
     await page.addInitScript(() => {
       localStorage.removeItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
     });
@@ -1118,6 +1118,44 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(diagnosisBox).toBeVisible();
     await expect(diagnosisBox).toContainText(/Uro/i);
     await expect(diagnosisBox).toContainText(/moj spremljeni prijedlog/i);
+    const deleteButton = diagnosisBox.locator('[data-diagnosis-autocomplete-delete]');
+    await expect(deleteButton).toBeVisible();
+    await expect(deleteButton).toHaveText(/Obri/i);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message().toLowerCase()).toContain('obrisati spremljenu dijagnozu');
+      expect(dialog.message()).toContain('Uro');
+      await dialog.dismiss();
+    });
+    await deleteButton.click();
+    await expect(diagnosisBox).toBeVisible();
+    const afterCancel = await page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const records = parsed?.records || {};
+      return { recordCount: Object.keys(records).length };
+    });
+    expect(afterCancel.recordCount).toBe(1);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message().toLowerCase()).toContain('obrisati spremljenu dijagnozu');
+      expect(dialog.message()).toContain('Uro');
+      await dialog.accept();
+    });
+    await deleteButton.click();
+    await expect(page.locator('#statusBar')).toContainText(/Obrisan je lokalni prijedlog dijagnoze/i);
+    const afterDelete = await page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const records = parsed?.records || {};
+      return { recordCount: Object.keys(records).length, records };
+    });
+    expect(afterDelete.recordCount).toBe(0);
+
+    await page.locator('#diagnosis').fill('Ur');
+    await expect(diagnosisBox).not.toContainText(/moj spremljeni prijedlog/i);
     await scrollFieldOutOfAutocompleteView(page, '#diagnosis');
     await expect(diagnosisBox).toBeHidden();
 
