@@ -1124,7 +1124,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('opens continuation lists and adds List 3 and List 4 from plus', async ({ page }) => {
+  test('navigates preview page pairs and prints only the active pair', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     await page.addInitScript(() => {
       window.__TL_CANVAS_TEXT__ = [];
@@ -1134,7 +1134,7 @@ test.describe('GitHub Pages smoke test', () => {
         return originalFillText.call(this, text, ...args);
       };
     });
-    const browserSignals = await openApp(page, './?qa=list2-print-smoke&firebaseSmoke=1');
+    const browserSignals = await openApp(page, './?qa=page-pair-print-smoke&firebaseSmoke=1');
 
     await page.locator('#fullName').fill('Nastavak Testic');
     await page.locator('#birthYear').fill('1960');
@@ -1143,21 +1143,44 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
     await page.evaluate(() => { window.__TL_CANVAS_TEXT__ = []; });
 
-    const mainListTabs = page.locator('#previewListTabs');
-    await expect(page.locator('[data-preview-list-tabs]')).toHaveCount(2);
-    await expect(page.locator('.preview-title-row > [data-preview-list-tabs]')).toHaveCount(0);
-    await mainListTabs.locator('[data-preview-list="2"]').click();
+    const controls = page.locator('#previewPageControls');
+    const previousPair = controls.locator('#previewPrevPagePairBtn');
+    const nextPair = controls.locator('#previewNextPagePairBtn');
+    const firstSlot = controls.locator('#previewPageSlot1Btn');
+    const secondSlot = controls.locator('#previewPageSlot2Btn');
 
-    await expect(mainListTabs.locator('[data-preview-list="2"]')).toHaveClass(/is-active/);
-    await expect(page.locator('#page2Title')).toContainText(/List 2 - nastavak terapijske liste/i);
-    await expect(page.locator('#page2Title')).toContainText(/22\.06\.-28\.06\./);
+    await expect(page.locator('[data-preview-list-tabs]')).toHaveCount(0);
+    await expect(previousPair).toBeDisabled();
+    await expect(firstSlot).toHaveText('Stranica 1');
+    await expect(secondSlot).toHaveText('Stranica 2');
+    await expect(firstSlot).toHaveClass(/is-active/);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message().toLowerCase()).toContain('terapij');
+      await dialog.accept();
+    });
+    await nextPair.click();
+
+    await expect(previousPair).toBeEnabled();
+    await expect(firstSlot).toHaveText('Stranica 3');
+    await expect(secondSlot).toHaveText('Stranica 4');
+    await expect(firstSlot).toHaveClass(/is-active/);
+    await expect(page.locator('#page1Title')).toContainText(/Stranica 3/);
+    await expect(page.locator('#page1Title')).toContainText(/29\.06\.-05\.07\./);
+    await expect(page.locator('#page2Title')).toContainText(/Stranica 4/);
+    await expect(page.locator('#page2Title')).toContainText(/06\.07\.-12\.07\./);
+    await expect(page.locator('#shell1').locator('xpath=..')).toHaveClass(/is-preview-selected/);
     await expect(page.locator('#shell2').locator('xpath=..')).toHaveClass(/is-preview-selected/);
-    await expect(page.locator('body')).toHaveClass(/preview-continuation-print-mode/);
+    await expect(page.locator('body')).not.toHaveClass(/preview-continuation-print-mode/);
 
     await expect.poll(async () => page.evaluate(() => {
       const text = (window.__TL_CANVAS_TEXT__ || []).join('\n');
-      return text.includes('Amlodipin 5 mg 1,0,0 tbl');
+      return text.includes('29.06.') && text.includes('06.07.') && text.includes('Amlodipin 5 mg 1,0,0 tbl');
     })).toBe(true);
+
+    await secondSlot.click();
+    await expect(secondSlot).toHaveClass(/is-active/);
 
     await page.locator('#printBtn').click();
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
@@ -1166,27 +1189,16 @@ test.describe('GitHub Pages smoke test', () => {
       return events.filter(item => item.op === 'print').at(-1) || null;
     });
     expect(printEvent).toBeTruthy();
-    expect(printEvent.pageCount).toBe(1);
+    expect(printEvent.pageCount).toBe(2);
 
-    await mainListTabs.locator('[data-preview-list-add]').click();
-    await expect(mainListTabs.locator('[data-preview-list="3"]')).toBeVisible();
-    await expect(mainListTabs.locator('[data-preview-list="4"]')).toBeVisible();
-    await expect(mainListTabs.locator('[data-preview-list-add]')).toHaveCount(0);
-    await expect(mainListTabs.locator('[data-preview-list="3"]')).toHaveClass(/is-active/);
-    await expect(page.locator('#page2Title')).toContainText(/List 3 - nastavak terapijske liste/i);
-    await expect(page.locator('#page2Title')).toContainText(/29\.06\.-05\.07\./);
-    await expect(page.locator('#shell2').locator('xpath=..')).toHaveClass(/is-preview-selected/);
-    await expect(page.locator('body')).toHaveClass(/preview-continuation-print-mode/);
-
-    const tabState = await page.evaluate(() => Array.from(document.querySelectorAll('[data-preview-list-tabs]')).map((container) => ({
-      labels: Array.from(container.querySelectorAll('[data-preview-list]')).map((button) => button.textContent.trim()),
-      active: container.querySelector('.is-active')?.textContent?.trim() || '',
-      hasPlus: Boolean(container.querySelector('[data-preview-list-add]'))
-    })));
-    expect(tabState).toEqual([
-      { labels: ['List 1', 'List 2', 'List 3', 'List 4'], active: 'List 3', hasPlus: false },
-      { labels: ['List 1', 'List 2', 'List 3', 'List 4'], active: 'List 3', hasPlus: false }
-    ]);
+    page.once('dialog', async (dialog) => {
+      await dialog.dismiss();
+    });
+    await nextPair.click();
+    await expect(firstSlot).toHaveText('Stranica 5');
+    await expect(secondSlot).toHaveText('Stranica 6');
+    await expect(page.locator('#page1Title')).toContainText(/Stranica 5/);
+    await expect(page.locator('#page2Title')).toContainText(/Stranica 6/);
 
     browserSignals.assertCleanBrowserSignals();
   });
