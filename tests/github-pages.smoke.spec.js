@@ -1023,6 +1023,28 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(deleteButton).toBeVisible();
     await expect(deleteButton).toHaveText(/Obri/i);
     await continueWithoutFirebaseIfVisible(page);
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message()).toContain('Jeste li sigurni da želite obrisati spremljenu terapiju');
+      expect(dialog.message()).toContain('Zzzcustomol 7 mg 1,0,0 tbl');
+      await dialog.dismiss();
+    });
+    await deleteButton.click();
+    await expect(therapyBox).toBeVisible();
+    const afterCancel = await page.evaluate(() => {
+      const raw = localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const records = parsed?.records || {};
+      return { recordCount: Object.keys(records).length };
+    });
+    expect(afterCancel.recordCount).toBe(1);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message()).toContain('Jeste li sigurni da želite obrisati spremljenu terapiju');
+      expect(dialog.message()).toContain('Zzzcustomol 7 mg 1,0,0 tbl');
+      await dialog.accept();
+    });
     await deleteButton.click();
     await expect(page.locator('#statusBar')).toContainText(/Obrisan je lokalni prijedlog/i);
     await expect(therapyBox).toBeHidden();
