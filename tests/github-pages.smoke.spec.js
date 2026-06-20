@@ -1144,7 +1144,8 @@ test.describe('GitHub Pages smoke test', () => {
     await page.evaluate(() => { window.__TL_CANVAS_TEXT__ = []; });
 
     const mainListTabs = page.locator('#previewListTabs');
-    await expect(page.locator('[data-preview-list-tabs]')).toHaveCount(3);
+    await expect(page.locator('[data-preview-list-tabs]')).toHaveCount(2);
+    await expect(page.locator('.preview-title-row > [data-preview-list-tabs]')).toHaveCount(0);
     await mainListTabs.locator('[data-preview-list="2"]').click();
 
     await expect(mainListTabs.locator('[data-preview-list="2"]')).toHaveClass(/is-active/);
@@ -1183,7 +1184,6 @@ test.describe('GitHub Pages smoke test', () => {
       hasPlus: Boolean(container.querySelector('[data-preview-list-add]'))
     })));
     expect(tabState).toEqual([
-      { labels: ['List 1', 'List 2', 'List 3', 'List 4'], active: 'List 3', hasPlus: false },
       { labels: ['List 1', 'List 2', 'List 3', 'List 4'], active: 'List 3', hasPlus: false },
       { labels: ['List 1', 'List 2', 'List 3', 'List 4'], active: 'List 3', hasPlus: false }
     ]);
