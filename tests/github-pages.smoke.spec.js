@@ -38,9 +38,24 @@ function installFirebaseSmokeClient(page, options = {}) {
     const failWritesWithPermissionDenied = Boolean(smokeOptions.failWritesWithPermissionDenied);
     const smokeUser = {
       uid: 'smoke-user-uid',
-      email: 'smoke.firebase@example.test',
+      email: smokeOptions.userEmail || 'smoke.firebase@example.test',
       displayName: 'Smoke Firebase User'
     };
+    if (!smokeOptions.noUserProfile) {
+      docs.set(`userProfiles/${smokeUser.uid}`, {
+        schema: 'temperaturna-lista-user-profile-v1',
+        appVersion: 'smoke-test',
+        uid: smokeUser.uid,
+        firstName: 'Smoke',
+        lastName: 'Firebase User',
+        department: 'Infektologija',
+        email: smokeUser.email,
+        displayName: 'Smoke Firebase User',
+        role: 'clinician',
+        createdAt: '2026-06-20T00:00:00.000Z',
+        updatedAt: '2026-06-20T00:00:00.000Z'
+      });
+    }
     const cloneJson = (value) => JSON.parse(JSON.stringify(value));
     const collectionNameOf = (ref) => ref?.collectionName || ref?.name || '';
     const queryCollectionNameOf = (queryRef) => {
@@ -201,7 +216,9 @@ async function closeFirebaseGateIfVisible(page, timeout = 1000) {
       await page.waitForTimeout(150);
       if (!(await gate.isVisible().catch(() => false))) return true;
     } else {
-      await page.getByRole('button', { name: /Nastavi bez Firebasea/i }).click();
+      await page.evaluate(() => {
+        window.__TEMPERATURNA_LISTA_TEST_DISMISS_FIREBASE_LOGIN_GATE__?.();
+      });
       await expect(gate).toBeHidden({ timeout: 3000 });
       closed = true;
     }
@@ -260,8 +277,10 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page);
 
     await expect(page.locator('#firebaseLoginGate')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Prijava Google/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Nastavi bez Firebasea/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Dobro došli natrag/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Nastavi s Googleom/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Novi korisnik/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Nastavi bez Firebasea/i })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(/Vite|Next\.js|Webpack|Unhandled Runtime Error/i);
 
     browserSignals.assertCleanBrowserSignals();
@@ -281,6 +300,44 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
     await expect(page.locator('#quickIdentityStatus')).toHaveText(/Spremno/i);
     await expect(page.locator('#page1Title')).toContainText(/prijem u srijedu/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('registers a new Firebase user profile from the startup gate', async ({ page }) => {
+    await installFirebaseSmokeClient(page, {
+      noUserProfile: true,
+      userEmail: 'novi.korisnik@gmail.com'
+    });
+    const browserSignals = await openApp(page, './?qa=firebase-user-profile-smoke&firebaseSmoke=1');
+
+    const gate = page.locator('#firebaseLoginGate');
+    await expect(gate).toBeVisible();
+    await expect(page.getByRole('button', { name: /Novi korisnik/i })).toBeVisible();
+    await page.getByRole('button', { name: /Novi korisnik/i }).click();
+    await expect(page.locator('#firebaseRegistrationForm')).toBeVisible();
+    await page.locator('#firebaseRegisterFirstName').fill('Luka');
+    await page.locator('#firebaseRegisterLastName').fill('Jerkovic');
+    await page.locator('#firebaseRegisterDepartment').fill('Infektologija');
+    await page.locator('#firebaseRegisterEmail').fill('novi.korisnik@gmail.com');
+    await page.getByRole('button', { name: /Spremi profil/i }).click();
+
+    await expect(gate).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Luka Jerkovic.*Infektologija/i);
+    await expect(page.locator('#savePatientTopBtn')).toBeEnabled();
+    await expect(page.locator('#openFirebasePatientDialogBtn')).toBeEnabled();
+
+    const profileWrite = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites
+        .find(item => item.op === 'setDoc' && item.collection === 'userProfiles' && item.id === 'smoke-user-uid') || null;
+    });
+    expect(profileWrite).toBeTruthy();
+    expect(profileWrite.payload.schema).toBe('temperaturna-lista-user-profile-v1');
+    expect(profileWrite.payload.firstName).toBe('Luka');
+    expect(profileWrite.payload.lastName).toBe('Jerkovic');
+    expect(profileWrite.payload.department).toBe('Infektologija');
+    expect(profileWrite.payload.email).toBe('novi.korisnik@gmail.com');
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -393,8 +450,10 @@ test.describe('GitHub Pages smoke test', () => {
   });
 
   test('opens the searchable Firebase patient dialog from the top action', async ({ page }) => {
-    const browserSignals = await openApp(page);
-    await continueWithoutFirebase(page);
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-dialog-smoke&firebaseSmoke=1');
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     const openButton = page.getByRole('button', { name: /^Otvori pacijenta$/i });
     await expect(page.locator('#savePatientTopBtn')).toBeVisible();
@@ -407,7 +466,7 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(dialog).toBeVisible();
     await expect(page.getByRole('heading', { name: /^Otvori pacijenta$/i })).toBeVisible();
     await expect(page.locator('#firebasePatientSearchInput')).toBeVisible();
-    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/Firebase prijava|prijavi/i);
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/Nema/i);
     const dialogLayer = await page.evaluate(() => {
       const backdrop = document.getElementById('firebasePatientDialog');
       const panel = backdrop?.querySelector('.firebase-patient-dialog');
@@ -500,7 +559,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await page.locator('#fullName').fill('Firebase Smoke Testic');
     await page.locator('#birthYear').fill('1968');
@@ -525,6 +584,8 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.schema).toBe('temperaturna-lista-patient-v1');
     expect(write.payload.ownerUid).toBe('smoke-user-uid');
     expect(write.payload.ownerEmail).toBe('smoke.firebase@example.test');
+    expect(write.payload.ownerDepartment).toBe('Infektologija');
+    expect(write.payload.ownerDisplayName).toBe('Smoke Firebase User');
     expect(write.payload.lastSaveTrigger).toBe('manual');
     expect(write.payload.label).toContain('Firebase Smoke Testic');
     expect(write.payload.patientMode).toBe('ward');
@@ -546,7 +607,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=patient-mode-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await expect(page.locator('#patientModeWardBtn')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[data-collapsible-field="therapy"]')).toBeVisible();
@@ -633,7 +694,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await page.locator('#fullName').fill('Novi Unos Testic');
     await page.locator('#birthYear').fill('1974');
@@ -692,7 +753,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     const saveButton = page.locator('#savePatientToFirebaseBtn');
     const advancedSection = page.locator('#dataAdminAdvancedSection');
@@ -757,7 +818,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     const advancedSection = page.locator('#dataAdminAdvancedSection');
     await advancedSection.locator('summary').click();
@@ -830,7 +891,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await page.locator('#fullName').fill('Firebase Rules Testic');
     await page.locator('#birthYear').fill('1975');
@@ -870,7 +931,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await page.locator('#fullName').fill('Print Save Testic');
     await page.locator('#birthYear').fill('1981');
@@ -920,7 +981,7 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await page.locator('#fullName').fill('Print Failure Testic');
     await page.locator('#birthYear').fill('1982');
