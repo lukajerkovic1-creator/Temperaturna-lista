@@ -527,6 +527,9 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.ownerEmail).toBe('smoke.firebase@example.test');
     expect(write.payload.lastSaveTrigger).toBe('manual');
     expect(write.payload.label).toContain('Firebase Smoke Testic');
+    expect(write.payload.patientMode).toBe('ward');
+    expect(write.payload.patientKey).toBe('patient-v1|ward|firebase smoke testic|1968|2026-06-14');
+    expect(write.payload.data.patientMode).toBe('ward');
     expect(write.payload.data.fullName).toBe('Firebase Smoke Testic');
     expect(write.payload.data.birthYear).toBe('1968');
     expect(write.payload.data.admissionDate).toBe('2026-06-14');
@@ -534,6 +537,93 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.data.therapy).toContain('amoksicilin');
     expect(write.payload.expiresAt).toMatch(/^2026-09-/);
     expect(write.payload.serverCreatedAt.__smokeServerTimestamp).toBe(true);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('separates ambulatory and ward patient modes in the form and Firebase dialog', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=patient-mode-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/smoke\.firebase@example\.test/i);
+
+    await expect(page.locator('#patientModeWardBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-collapsible-field="therapy"]')).toBeVisible();
+
+    await page.locator('#patientModeOutpatientBtn').click();
+    await expect(page.locator('#patientModeOutpatientBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-collapsible-field="diagnosis"]')).toBeHidden();
+    await expect(page.locator('[data-collapsible-field="therapy"]')).toBeHidden();
+    await expect(page.locator('[data-collapsible-field="labRaw"]')).toBeHidden();
+    await expect(page.locator('[data-collapsible-field="radiologyRaw"]')).toBeHidden();
+    await expect(page.locator('[data-collapsible-field="patientOrigin"]')).toBeVisible();
+    await expect(page.locator('[data-collapsible-field="followUpControl"]')).toBeVisible();
+    await expect(page.locator('[data-collapsible-field="microbiologySamples"]')).toBeVisible();
+
+    await page.locator('#fullName').fill('Ambulanta Mode Testic');
+    await page.locator('#birthYear').fill('1988');
+    await page.locator('#admissionDate').fill('20.06.2026.');
+    await page.locator('#allergies').fill('nema');
+    await page.locator('#patientOrigin').fill('Ambulanta');
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
+
+    const outpatientWrite = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites
+        .filter(item => item.op === 'addDoc' && item.collection === 'patients')
+        .find(item => item.payload?.data?.fullName === 'Ambulanta Mode Testic') || null;
+    });
+    expect(outpatientWrite).toBeTruthy();
+    expect(outpatientWrite.payload.patientMode).toBe('outpatient');
+    expect(outpatientWrite.payload.patientKey).toBe('patient-v1|outpatient|ambulanta mode testic|1988|2026-06-20');
+    expect(outpatientWrite.payload.data.patientMode).toBe('outpatient');
+
+    await page.locator('#openFirebasePatientDialogBtn').click();
+    const dialog = page.locator('#firebasePatientDialog');
+    await expect(dialog).toBeVisible();
+    await expect(page.locator('#firebasePatientDialogOutpatientModeBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#firebasePatientDialogList')).toContainText('Ambulanta Mode Testic');
+    await page.locator('#firebasePatientDialogWardModeBtn').click();
+    await expect(page.locator('#firebasePatientDialogWardModeBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#firebasePatientDialogList')).not.toContainText('Ambulanta Mode Testic');
+    await page.locator('#firebasePatientDialogOutpatientModeBtn').click();
+    await expect(page.locator('#firebasePatientDialogList')).toContainText('Ambulanta Mode Testic');
+    await page.locator('#firebasePatientDialogCloseBtn').click();
+
+    page.once('dialog', async (confirmDialog) => {
+      expect(confirmDialog.type()).toBe('confirm');
+      expect(confirmDialog.message()).toContain('pretvoriti');
+      await confirmDialog.accept();
+    });
+    await page.locator('#patientModeWardBtn').click();
+    await expect(page.locator('#patientModeWardBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-collapsible-field="therapy"]')).toBeVisible();
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
+
+    const modeCounts = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const patientWrites = client.__smokeWrites
+        .filter(item => item.op === 'addDoc' && item.collection === 'patients')
+        .filter(item => item.payload?.data?.fullName === 'Ambulanta Mode Testic');
+      return {
+        addCount: patientWrites.length,
+        modes: patientWrites.map(item => item.payload?.patientMode),
+        keys: patientWrites.map(item => item.payload?.patientKey),
+        docModes: Array.from(client.__smokeDocs.values())
+          .filter(payload => payload?.data?.fullName === 'Ambulanta Mode Testic')
+          .map(payload => payload.patientMode)
+      };
+    });
+    expect(modeCounts.addCount).toBe(2);
+    expect(modeCounts.modes).toEqual(expect.arrayContaining(['outpatient', 'ward']));
+    expect(modeCounts.keys).toEqual(expect.arrayContaining([
+      'patient-v1|outpatient|ambulanta mode testic|1988|2026-06-20',
+      'patient-v1|ward|ambulanta mode testic|1988|2026-06-20'
+    ]));
+    expect(modeCounts.docModes.sort()).toEqual(['outpatient', 'ward']);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -586,6 +676,8 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.ownerUid).toBe('smoke-user-uid');
     expect(write.payload.lastSaveTrigger).toBe('new-entry');
     expect(write.payload.label).toContain('Novi Unos Testic');
+    expect(write.payload.patientMode).toBe('ward');
+    expect(write.payload.data.patientMode).toBe('ward');
     expect(write.payload.data.fullName).toBe('Novi Unos Testic');
     expect(write.payload.data.birthYear).toBe('1974');
     expect(write.payload.data.admissionDate).toBe('2026-06-16');
@@ -651,7 +743,9 @@ test.describe('GitHub Pages smoke test', () => {
     expect(result.addCount).toBe(1);
     expect(result.setCount).toBeGreaterThanOrEqual(2);
     expect(result.lastSetId).toBe(result.firstAddId);
-    expect(result.lastPayload.patientKey).toBe('patient-v1|duplikat testic|1978|2026-06-16');
+    expect(result.lastPayload.patientKey).toBe('patient-v1|ward|duplikat testic|1978|2026-06-16');
+    expect(result.lastPayload.patientMode).toBe('ward');
+    expect(result.lastPayload.data.patientMode).toBe('ward');
     expect(result.lastPayload.data.diagnosis).toContain('Ažurirana dijagnoza');
     expect(result.lastPayload.data.therapy).toContain('pantoprazol');
 
@@ -723,7 +817,8 @@ test.describe('GitHub Pages smoke test', () => {
     expect(result.renameWrite).toBeTruthy();
     expect(result.renameWrite.payload.label).toContain('Baza Uredena Testic');
     expect(result.renameWrite.payload.data.fullName).toBe('Baza Uredena Testic');
-    expect(result.renameWrite.payload.patientKey).toBe('patient-v1|baza uredena testic|1982|2026-06-16');
+    expect(result.renameWrite.payload.patientKey).toBe('patient-v1|ward|baza uredena testic|1982|2026-06-16');
+    expect(result.renameWrite.payload.patientMode).toBe('ward');
     expect(result.deleteCount).toBe(1);
     expect(result.remainingDocs).toBe(0);
 
