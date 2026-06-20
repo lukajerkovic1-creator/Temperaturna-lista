@@ -1193,6 +1193,38 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(secondSlot).toHaveText('Stranica 2');
     await expect(firstSlot).toHaveClass(/is-active/);
 
+    await secondSlot.click();
+    await expect(secondSlot).toHaveClass(/is-active/);
+    const slot2ViewState = await page.evaluate(() => {
+      const controls = document.querySelector('#previewPageControls');
+      const controlsRow = controls?.closest('.preview-title-row');
+      const page2Card = document.querySelector('#shell2')?.closest('.page-card');
+      const controlsRect = controlsRow?.getBoundingClientRect();
+      const page2Rect = page2Card?.getBoundingClientRect();
+      return {
+        controlsVisible: Boolean(
+          controlsRect &&
+          controlsRect.top >= 0 &&
+          controlsRect.bottom <= window.innerHeight &&
+          controlsRect.width > 0 &&
+          controlsRect.height > 0
+        ),
+        page2VisibleNearTop: Boolean(
+          page2Rect &&
+          page2Rect.top >= 0 &&
+          page2Rect.top < window.innerHeight * 0.65
+        ),
+        controlsStayAbovePage2: Boolean(
+          controlsRect &&
+          page2Rect &&
+          controlsRect.bottom <= page2Rect.top + 8
+        )
+      };
+    });
+    expect(slot2ViewState.controlsVisible).toBe(true);
+    expect(slot2ViewState.page2VisibleNearTop).toBe(true);
+    expect(slot2ViewState.controlsStayAbovePage2).toBe(true);
+
     page.once('dialog', async (dialog) => {
       expect(dialog.type()).toBe('confirm');
       expect(dialog.message().toLowerCase()).toContain('terapij');
