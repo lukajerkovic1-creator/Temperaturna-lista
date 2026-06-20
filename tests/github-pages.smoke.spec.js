@@ -224,6 +224,37 @@ async function continueWithoutFirebaseIfVisible(page) {
   await closeFirebaseGateIfVisible(page, 1000);
 }
 
+async function scrollFieldOutOfAutocompleteView(page, selector) {
+  await page.evaluate((fieldSelector) => {
+    const field = document.querySelector(fieldSelector);
+    if (!field) return;
+    let scroller = field.parentElement;
+    while (scroller && scroller !== document.body) {
+      const style = window.getComputedStyle(scroller);
+      if (/(auto|scroll|overlay)/i.test(style.overflowY) && scroller.scrollHeight > scroller.clientHeight + 24) break;
+      scroller = scroller.parentElement;
+    }
+    const scrollBy = () => {
+      const fieldRect = field.getBoundingClientRect();
+      const distance = Math.max(420, Math.round(fieldRect.height + 160));
+      if (!scroller || scroller === document.body) {
+        window.scrollBy(0, distance);
+      } else {
+        scroller.scrollTop += distance;
+        scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+      window.dispatchEvent(new Event('scroll'));
+    };
+    for (let i = 0; i < 8; i += 1) {
+      const rect = field.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      if (rect.bottom <= 0 || rect.top >= viewportHeight) break;
+      scrollBy();
+    }
+  }, selector);
+  await page.waitForTimeout(150);
+}
+
 test.describe('GitHub Pages smoke test', () => {
   test('loads the app without browser errors', async ({ page }) => {
     const browserSignals = await openApp(page);
@@ -981,6 +1012,13 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(therapyBox).toBeVisible();
     await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
     await expect(therapyBox).toContainText(/moj spremljeni prijedlog/i);
+    await scrollFieldOutOfAutocompleteView(page, '#therapy');
+    await expect(therapyBox).toBeHidden();
+
+    await page.locator('#therapy').scrollIntoViewIfNeeded();
+    await page.locator('#therapy').fill('Zzz');
+    await expect(therapyBox).toBeVisible();
+    await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
     const deleteButton = therapyBox.locator('[data-therapy-autocomplete-delete]');
     await expect(deleteButton).toBeVisible();
     await expect(deleteButton).toHaveText(/Obri/i);
@@ -1058,6 +1096,8 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(diagnosisBox).toBeVisible();
     await expect(diagnosisBox).toContainText(/Uro/i);
     await expect(diagnosisBox).toContainText(/moj spremljeni prijedlog/i);
+    await scrollFieldOutOfAutocompleteView(page, '#diagnosis');
+    await expect(diagnosisBox).toBeHidden();
 
     browserSignals.assertCleanBrowserSignals();
   });
