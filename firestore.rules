@@ -15,6 +15,20 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid;
     }
 
+    function ownsUserProfile(userId) {
+      return signedIn() && userId == request.auth.uid;
+    }
+
+    function writesOwnUserProfile(userId) {
+      return ownsUserProfile(userId)
+        && request.resource.data.schema == 'temperaturna-lista-user-profile-v1'
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.department is string;
+    }
+
     match /patients/{patientId} {
       allow create: if writesOwnDoc();
       allow read, delete: if ownsExistingDoc();
@@ -25,6 +39,11 @@ service cloud.firestore {
       allow create: if writesOwnDoc();
       allow read, delete: if ownsExistingDoc();
       allow update: if ownsExistingDoc() && writesOwnDoc();
+    }
+
+    match /userProfiles/{userId} {
+      allow read: if ownsUserProfile(userId);
+      allow create, update: if writesOwnUserProfile(userId);
     }
   }
 }
