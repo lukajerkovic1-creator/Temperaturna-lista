@@ -386,6 +386,7 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
     await expect(page.locator('#quickIdentityStatus')).toHaveText(/Spremno/i);
     await expect(page.locator('#page1Title')).toContainText(/prijem u srijedu/i);
+    await expect(page.locator('#patientSyncStatus')).toContainText(/nespremljene promjene/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -781,6 +782,7 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#admissionDate').fill('14.06.2026.');
     await page.locator('#diagnosis').fill('Pneumonija smoke test.');
     await page.locator('#therapy').fill('amoksicilin 1 g p.o.');
+    await expect(page.locator('#patientSyncStatus')).toContainText(/nespremljene promjene/i);
 
     const saveButton = page.locator('#savePatientTopBtn');
     await expect(saveButton).toBeVisible();
@@ -789,6 +791,8 @@ test.describe('GitHub Pages smoke test', () => {
 
     await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase kolekciju "patients"/i);
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Spremljeno|Firebase auto-save spremljen/i);
+    await expect(page.locator('#patientSyncStatus')).toContainText(/spremljeno u Firebase/i);
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'synced');
 
     const write = await page.evaluate(() => {
       const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
@@ -1289,8 +1293,11 @@ test.describe('GitHub Pages smoke test', () => {
 
     const confirmDialog = page.locator('#printConfirmDialog');
     await expect(confirmDialog).toBeVisible();
-    await expect(confirmDialog.locator('#printConfirmDialogTitle')).toContainText(/Pacijent nije spremljen u Firebase/i);
+    await expect(confirmDialog.locator('#printConfirmDialogTitle')).toContainText(/Lista nije sinkronizirana/i);
     await expect(confirmDialog.locator('#printConfirmDialogDescription')).toContainText(/Firebase pravila.*ne dopu/i);
+    await expect(confirmDialog.locator('#printConfirmDialogDescription')).toContainText(/lokalna kopija/i);
+    await expect(confirmDialog.locator('[data-print-confirm-action="proceed"]')).toContainText(/Ispiši lokalnu kopiju/i);
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'failed');
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
 
     await confirmDialog.locator('[data-print-confirm-action="cancel"]').click();
@@ -1304,7 +1311,7 @@ test.describe('GitHub Pages smoke test', () => {
     await confirmDialog.locator('[data-print-confirm-action="proceed"]').click();
     await expect(confirmDialog).toBeHidden();
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
-    await expect(page.locator('#statusBar')).toContainText(/Ispis je otvoren bez Firebase spremanja/i);
+    await expect(page.locator('#statusBar')).toContainText(/Ispis je otvoren nakon izričite potvrde lokalne kopije/i);
     await expect(page.locator('#fullName')).toHaveValue('Print Failure Testic');
 
     const auditTypes = await page.evaluate(() => {
