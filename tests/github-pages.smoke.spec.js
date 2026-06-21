@@ -892,6 +892,16 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.data.admissionDate).toBe('2026-06-14');
     expect(write.payload.data.diagnosis).toContain('Pneumonija smoke test');
     expect(write.payload.data.therapy).toContain('amoksicilin');
+    expect(write.payload.version).toBe(1);
+    expect(write.payload.dataHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(write.payload.updatedByUid).toBe('smoke-user-uid');
+    expect(write.payload.updatedByEmail).toBe('smoke.firebase@example.test');
+    expect(write.payload.clinicalRecord.schema).toBe('temperaturna-lista-clinical-record-v1');
+    expect(write.payload.clinicalRecord.patient.fullName).toBe('Firebase Smoke Testic');
+    expect(write.payload.clinicalRecord.conditions[0].text).toContain('Pneumonija');
+    expect(write.payload.clinicalRecord.medications[0].name).toContain('amoksicilin');
+    expect(write.payload.clinicalValidation.ok).toBe(true);
+    expect(write.payload.medicationSafety.issues).toEqual(expect.any(Array));
     expect(write.payload.expiresAt).toMatch(/^2026-09-/);
     expect(write.payload.serverCreatedAt.__smokeServerTimestamp).toBe(true);
 
@@ -1129,6 +1139,89 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('detects a remote Firebase update before saving over another user version', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-conflict-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await page.locator('#fullName').fill('Konflikt Testic');
+    await page.locator('#birthYear').fill('1970');
+    await page.locator('#admissionDate').fill('18.06.2026.');
+    await page.locator('#diagnosis').fill('Lokalna bazna dijagnoza.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
+
+    const savedId = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites.find(item => item.op === 'addDoc' && item.collection === 'patients')?.id || '';
+    });
+    expect(savedId).toBeTruthy();
+
+    await page.evaluate((id) => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const key = `patients/${id}`;
+      const current = client.__smokeDocs.get(key);
+      client.__smokeDocs.set(key, {
+        ...current,
+        version: Number(current.version || 1) + 1,
+        updatedAt: '2026-06-18T12:00:00.000Z',
+        updatedByUid: 'remote-user-uid',
+        updatedByEmail: 'remote@example.test',
+        data: {
+          ...current.data,
+          diagnosis: 'Udaljena izmjena koju lokalni korisnik ne smije pregaziti.'
+        }
+      });
+      window.__TEMPERATURNA_LISTA_CONFLICT_RESOLUTION__ = 'cancel';
+    }, savedId);
+
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.\npantoprazol 40 mg iv.');
+    const writesBeforeConflictSave = await page.evaluate(() => window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__.__smokeWrites.length);
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/novija verzija pacijenta/i);
+
+    const conflictResult = await page.evaluate((id) => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const patientWritesAfterFirstSave = client.__smokeWrites
+        .filter(item => item.collection === 'patients' && item.id === id);
+      const auditTypes = client.__smokeWrites
+        .filter(item => item.collection === 'patientAuditEvents')
+        .map(item => item.payload?.eventType);
+      return {
+        patientWritesAfterFirstSave,
+        auditTypes,
+        remoteDiagnosis: client.__smokeDocs.get(`patients/${id}`)?.data?.diagnosis || ''
+      };
+    }, savedId);
+
+    expect(conflictResult.patientWritesAfterFirstSave.filter(item => item.op === 'setDoc')).toHaveLength(0);
+    expect(conflictResult.auditTypes).toContain('patient.conflictDetected');
+    expect(conflictResult.remoteDiagnosis).toContain('Udaljena izmjena');
+
+    await page.evaluate(() => {
+      window.__TEMPERATURNA_LISTA_CONFLICT_RESOLUTION__ = 'save-copy';
+    });
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/spremljen u Firebase/i);
+
+    const copyResult = await page.evaluate((writesBefore) => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const laterWrites = client.__smokeWrites.slice(writesBefore);
+      return {
+        copyAdd: laterWrites.find(item => item.op === 'addDoc' && item.collection === 'patients') || null,
+        auditTypes: laterWrites
+          .filter(item => item.collection === 'patientAuditEvents')
+          .map(item => item.payload?.eventType)
+      };
+    }, writesBeforeConflictSave);
+    expect(copyResult.copyAdd).toBeTruthy();
+    expect(copyResult.copyAdd.payload.version).toBe(1);
+    expect(copyResult.auditTypes).toContain('patient.conflictSavedAsCopy');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('renames, archives and restores Firebase patients from the open patient dialog', async ({ page }) => {
     await installFirebaseSmokeClient(page, { roles: ['clinician', 'admin'] });
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
@@ -1309,8 +1402,8 @@ test.describe('GitHub Pages smoke test', () => {
     await printButton.click();
 
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Firebase spremanje prije ispisa spremljen/i);
-    await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase i otvoren je dijalog za ispis/i);
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'synced');
 
     const result = await page.evaluate(() => {
       const events = window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ || [];
@@ -1433,15 +1526,86 @@ test.describe('GitHub Pages smoke test', () => {
 
     const capture = await page.evaluate(() => window.TemperaturnaListaParserTests.exportLocal()[0]);
     expect(dialogs.map(item => item.type)).toEqual(['confirm', 'prompt']);
+    expect(dialogs[0].message).toContain('Parser testovi smiju sadržavati samo sintetske ili anonimizirane podatke');
     expect(capture.source).toBe('ctrl-alt-p');
-    expect(capture.raw).toContain('Pacijent: TEST TESTIC');
-    expect(capture.expected.fullName).toBe('Test Testic');
-    expect(capture.expected.birthYear).toBe('1954');
-    expect(capture.expected.admissionDate).toBe('2026-05-13');
-    expect(capture.currentData.fullName).toBe('Test Testic');
+    expect(capture.raw).toContain('TEST PACIJENT');
+    expect(capture.expected.fullName).toBe('TEST PACIJENT');
+    expect(capture.expected.birthYear).toBe('1970');
+    expect(capture.expected.admissionDate).toBe('2026-01-01');
+    expect(capture.currentData.fullName).toBe('TEST PACIJENT');
+    expect(capture.currentData.birthYear).toBe('1970');
+    expect(capture.privacyStatus).toMatch(/anonymized|synthetic/);
+    expect(capture.sanitizerVersion).toBe('parser-test-sanitizer-v1');
     expect(capture.parserWarningsAtCapture).toEqual(expect.any(Array));
     await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen privremeno u ovoj sesiji/i);
     await expect.poll(async () => page.evaluate((key) => localStorage.getItem(key), PARSER_TEST_STORAGE_KEY)).toBeNull();
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('anonymizes risky parser test capture data before local or Firebase storage', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=parser-privacy-smoke&firebaseSmoke=1');
+
+    await page.locator('#ohbpPasteBox').fill([
+      'Pacijent: Ivan Horvat, roden 12.03.1975.',
+      'OIB: 12345678901, MBO: 123456789',
+      'Kontakt: ivan.horvat@example.com, 091 234 5678',
+      'Adresa: Ulica Testna 12',
+      'Dg: Pneumonija.',
+      'Th: ceftriakson 2 g iv.'
+    ].join('\n'));
+    await page.locator('#fullName').fill('Ivan Horvat');
+    await page.locator('#birthYear').fill('1975');
+    await page.locator('#admissionDate').fill('12.03.2026.');
+    await page.locator('#diagnosis').fill('Pneumonija.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+
+    page.on('dialog', async (dialog) => {
+      if (dialog.type() === 'confirm') {
+        await dialog.accept();
+      } else if (dialog.type() === 'prompt') {
+        await dialog.accept('Test anonimizacije parser capturea.');
+      } else {
+        await dialog.dismiss();
+      }
+    });
+
+    await page.keyboard.press('Control+Alt+P');
+    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen/i);
+
+    const saved = await page.evaluate(() => {
+      const localCase = window.TemperaturnaListaParserTests.exportLocal()[0];
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const firebaseWrite = client.__smokeWrites
+        .filter(item => item.op === 'addDoc' && item.collection === 'parserTestCases')
+        .at(-1) || null;
+      return {
+        localCase,
+        firebasePayload: firebaseWrite?.payload || null,
+        serializedLocal: JSON.stringify(localCase),
+        serializedFirebase: JSON.stringify(firebaseWrite?.payload || {})
+      };
+    });
+
+    expect(saved.localCase.privacyStatus).toBe('anonymized');
+    expect(saved.localCase.removedSensitiveFieldsCount).toBeGreaterThan(0);
+    expect(saved.firebasePayload.privacyStatus).toBe('anonymized');
+    expect(saved.firebasePayload.sanitizerVersion).toBe('parser-test-sanitizer-v1');
+    for (const serialized of [saved.serializedLocal, saved.serializedFirebase]) {
+      expect(serialized).not.toContain('Ivan Horvat');
+      expect(serialized).not.toContain('12345678901');
+      expect(serialized).not.toContain('ivan.horvat@example.com');
+      expect(serialized).not.toContain('091 234 5678');
+      expect(serialized).not.toContain('Ulica Testna');
+    }
+    await expectBrowserStorageNotToContain(page, [
+      'Ivan Horvat',
+      '12345678901',
+      'ivan.horvat@example.com',
+      '091 234 5678',
+      'Ulica Testna'
+    ]);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -1519,6 +1683,75 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
     await page.keyboard.press('Enter');
     await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*0,1,0 tbl/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('builds ClinicalRecordV1, medication safety warnings and a basic FHIR Bundle', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#fullName').fill('Clinical Model Testic');
+    await page.locator('#birthYear').fill('1960');
+    await page.locator('#admissionDate').fill('19.06.2026.');
+    await page.locator('#diagnosis').fill('Pneumonija.');
+    await page.locator('#allergies').fill('levofloksacin');
+    await page.locator('#therapy').fill([
+      'ceftriakson 2 g iv.',
+      'ceftriakson 2 g iv.',
+      'levofloksacin 500 mg p.o.'
+    ].join('\n'));
+    await page.evaluate(() => {
+      const setValue = (id, value) => {
+        const element = document.getElementById(id);
+        element.value = value;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      setValue('vitalSigns', 'T 38.4, RR 135/85, puls 96, SpO2 93%');
+      setValue('labRaw', 'eGFR 45, CRP 120, L 13.2');
+    });
+
+    const result = await page.evaluate(() => {
+      const record = window.TemperaturnaListaClinical.fromCurrentForm();
+      const validation = window.TemperaturnaListaClinical.validateClinicalRecord(record);
+      const safety = window.TemperaturnaListaClinical.runMedicationSafetyChecks(record);
+      const bundle = window.TemperaturnaListaClinical.clinicalRecordToFhirBundle(record);
+      const bundleValidation = window.TemperaturnaListaClinical.validateBasicFhirBundle(bundle);
+      const suggestions = window.TemperaturnaListaClinical.getMedicationAutocompleteSuggestions('Amlod');
+      return { record, validation, safety, bundle, bundleValidation, suggestions };
+    });
+
+    expect(result.record.schema).toBe('temperaturna-lista-clinical-record-v1');
+    expect(result.record.patient.fullName).toBe('Clinical Model Testic');
+    expect(result.record.conditions[0].text).toContain('Pneumonija');
+    expect(result.record.allergies[0].substance).toContain('levofloksacin');
+    expect(result.record.medications).toHaveLength(3);
+    expect(result.record.vitalSigns[0].temperatureC).toBeCloseTo(38.4);
+    expect(result.record.labs.map(item => item.analyte)).toEqual(expect.arrayContaining(['eGFR', 'CRP']));
+    expect(result.validation.ok).toBe(true);
+    expect(result.safety.issues.map(issue => issue.metadata?.type)).toEqual(expect.arrayContaining([
+      'duplicate',
+      'allergy-match',
+      'ams-review',
+      'renal'
+    ]));
+    expect(result.bundle.resourceType).toBe('Bundle');
+    expect(result.bundleValidation.ok).toBe(true);
+    expect(result.bundle.entry.map(entry => entry.resource.resourceType)).toEqual(expect.arrayContaining([
+      'Patient',
+      'Encounter',
+      'Condition',
+      'MedicationStatement',
+      'Observation'
+    ]));
+    expect(JSON.stringify(result.suggestions)).toContain('Amlodipin');
+
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.\nceftriakson 2 g iv.');
+    await page.evaluate(() => window.TemperaturnaListaClinical.validateCurrentTherapy());
+    await expect(page.locator('#medicationAutocompleteDisclaimer')).toContainText(/Ne provjerava dozu, interakcije, alergije/i);
+    await expect(page.locator('#medicationSafetyPanel')).toContainText(/Osnovna provjera terapije/i);
+    await expect(page.locator('#medicationSafetySummary')).toContainText(/upozorenja/i);
+    await expect(page.locator('#medicationSafetyPanel')).not.toContainText(/sigurna/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -1755,6 +1988,10 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(secondSlot).toHaveClass(/is-active/);
 
     await page.locator('#printBtn').click();
+    const printConfirmDialog = page.locator('#printConfirmDialog');
+    if (await printConfirmDialog.isVisible().catch(() => false)) {
+      await printConfirmDialog.locator('[data-print-confirm-action="proceed"]').click();
+    }
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
     const printEvent = await page.evaluate(() => {
       const events = window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ || [];

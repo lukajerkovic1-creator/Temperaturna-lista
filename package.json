@@ -4,10 +4,23 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "build": "npm run check:bootstrap && node tools/validate-static-app.js",
+    "build:bootstrap": "node tools/build-bootstrap.js",
+    "check:bootstrap": "node tools/build-bootstrap.js --check",
+    "security:check": "node tools/security-smoke-check.js",
+    "typecheck": "tsc --noEmit",
+    "test:accessibility": "playwright test tests/accessibility.spec.js",
+    "test:clinical": "playwright test tests/clinical-fixtures.spec.js",
+    "test:performance": "playwright test tests/performance.spec.js",
+    "test:privacy": "playwright test tests/privacy.spec.js",
+    "test:quality": "playwright test tests/security.spec.js tests/accessibility.spec.js tests/performance.spec.js tests/privacy.spec.js",
+    "test:security": "playwright test tests/security.spec.js",
     "test:smoke": "playwright test tests/github-pages.smoke.spec.js",
     "test:smoke:headed": "playwright test tests/github-pages.smoke.spec.js --headed"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0"
+    "@axe-core/playwright": "^4.11.3",
+    "@playwright/test": "^1.60.0",
+    "typescript": "^6.0.3"
   }
 }
