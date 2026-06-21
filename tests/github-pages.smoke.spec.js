@@ -10,6 +10,69 @@ const SAMPLE_OHBP_TEXT = [
 ].join('\n');
 
 const PARSER_TEST_STORAGE_KEY = 'temperaturna_lista_parser_test_cases_v1';
+const LEGACY_PATIENT_DRAFT_STORAGE_KEY = 'temperaturna_lista_pacijent_autosave_v1';
+const ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY = 'temperaturna_lista_pacijent_sifrirani_draft_v2';
+const PATIENT_DRAFT_TEST_PASSPHRASE = 'sigurna-lozinka-test-123';
+
+async function getReadableBrowserStorageText(page) {
+  return page.evaluate(async () => {
+    const storagePairs = (storage) => {
+      const pairs = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        pairs.push([key, storage.getItem(key)]);
+      }
+      return pairs;
+    };
+    const indexedDbRecords = [];
+    const openDatabase = (name) => new Promise((resolve) => {
+      const request = indexedDB.open(name);
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => resolve(request.result);
+    });
+    const getAllFromStore = (db, storeName) => new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const request = store.getAll();
+        request.onerror = () => resolve([]);
+        request.onsuccess = () => resolve(request.result || []);
+      } catch (error) {
+        resolve([]);
+      }
+    });
+
+    if (indexedDB.databases) {
+      const databases = await indexedDB.databases().catch(() => []);
+      for (const dbInfo of databases || []) {
+        if (!dbInfo?.name) continue;
+        const db = await openDatabase(dbInfo.name);
+        if (!db) continue;
+        try {
+          for (const storeName of Array.from(db.objectStoreNames || [])) {
+            const rows = await getAllFromStore(db, storeName);
+            indexedDbRecords.push({ db: dbInfo.name, store: storeName, rows });
+          }
+        } finally {
+          db.close();
+        }
+      }
+    }
+
+    return JSON.stringify({
+      localStorage: storagePairs(localStorage),
+      sessionStorage: storagePairs(sessionStorage),
+      indexedDB: indexedDbRecords
+    });
+  });
+}
+
+async function expectBrowserStorageNotToContain(page, forbiddenTerms) {
+  const storageText = await getReadableBrowserStorageText(page);
+  for (const term of forbiddenTerms) {
+    expect(storageText, `Browser storage must not contain cleartext term: ${term}`).not.toContain(term);
+  }
+}
 
 function isTransientNetworkConsoleMessage(text) {
   return /^Failed to load resource: net::ERR_(NETWORK_CHANGED|INTERNET_DISCONNECTED)\b/i.test(String(text || ''));
@@ -19,6 +82,7 @@ function isIgnorableFailedRequest(url, errorText) {
   const href = String(url || '');
   const failure = String(errorText || '');
   if (href.includes('/favicon')) return true;
+  if (/https:\/\/www\.google\.com\/images\/cleardot\.gif/i.test(href) && /net::ERR_ABORTED/i.test(failure)) return true;
   return /identitytoolkit\/v3\/relyingparty\/getProjectConfig/i.test(href)
     && /net::ERR_ABORTED/i.test(failure);
 }
@@ -239,6 +303,15 @@ async function continueWithoutFirebase(page) {
 
 async function continueWithoutFirebaseIfVisible(page) {
   await closeFirebaseGateIfVisible(page, 1000);
+}
+
+async function openDataAdminAdvanced(page) {
+  const details = page.locator('#dataAdminAdvancedSection');
+  const isOpen = await details.evaluate((element) => Boolean(element.open)).catch(() => false);
+  if (!isOpen) {
+    await details.locator('summary').click();
+  }
+  await expect(details).toHaveJSProperty('open', true);
 }
 
 async function scrollFieldOutOfAutocompleteView(page, selector) {
@@ -496,7 +569,37 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('starts clean when a stored patient draft is not marked for recovery', async ({ page }) => {
+  test('does not write patient cleartext to local browser storage by default', async ({ page }) => {
+    const browserSignals = await openApp(page, './?qa=local-draft-disabled');
+    await continueWithoutFirebase(page);
+
+    await page.locator('#fullName').fill('Auto Save Testic');
+    await page.locator('#birthYear').fill('1977');
+    await page.locator('#admissionDate').fill('13.05.2026.');
+    await page.locator('#diagnosis').fill('Pneumonija sigurnosni test.');
+    await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
+    await page.locator('#allergies').fill('Penicilin');
+    await page.waitForTimeout(1200);
+
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Lokalni auto-save pacijentnih podataka je isključen/i);
+    const patientDraftKeys = await page.evaluate(([legacyKey, encryptedKey]) => ({
+      legacy: localStorage.getItem(legacyKey),
+      encrypted: localStorage.getItem(encryptedKey)
+    }), [LEGACY_PATIENT_DRAFT_STORAGE_KEY, ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY]);
+    expect(patientDraftKeys.legacy).toBeNull();
+    expect(patientDraftKeys.encrypted).toBeNull();
+    await expectBrowserStorageNotToContain(page, [
+      'Auto Save Testic',
+      '13.05.2026.',
+      'Pneumonija sigurnosni test',
+      'Amlodipin 5 mg',
+      'Penicilin'
+    ]);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('does not automatically restore the legacy cleartext patient draft', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('temperaturna_lista_pacijent_autosave_v1', JSON.stringify({
         version: 1,
@@ -517,39 +620,116 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#birthYear')).toHaveValue('');
     await expect(page.locator('#admissionDate')).toHaveValue('');
     await expect(page.locator('#diagnosis')).toHaveValue('');
-    await expect(page.locator('#patientDraftStatus')).toContainText(/ručno vraćanje/i);
+    await expect(page.locator('#patientDraftStatus')).toContainText(/stari nešifrirani lokalni draft/i);
+    await openDataAdminAdvanced(page);
+    await expect(page.locator('#restorePatientDraftBtn')).toHaveText(/Migriraj stari draft/i);
+    await expect(page.locator('#clearPatientDraftBtn')).toHaveText(/Trajno obriši lokalni draft/i);
     await expect(page.locator('#page1Title')).toBeVisible();
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('auto-saves patient data and restores it after reload', async ({ page }) => {
-    const browserSignals = await openApp(page);
+  test('encrypted local draft requires passphrase after reload and restores with the correct passphrase', async ({ page }) => {
+    const browserSignals = await openApp(page, './?qa=encrypted-local-draft');
     await continueWithoutFirebase(page);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      expect(dialog.message()).toContain('Passphrase se ne sprema');
+      await dialog.accept(PATIENT_DRAFT_TEST_PASSPHRASE);
+    });
+    await openDataAdminAdvanced(page);
+    await page.locator('#enableEncryptedPatientDraftBtn').click();
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Šifrirani lokalni oporavak je uključen/i);
 
     await page.locator('#fullName').fill('Auto Save Testic');
     await page.locator('#birthYear').fill('1977');
     await page.locator('#admissionDate').fill('13.05.2026.');
+    await page.locator('#diagnosis').fill('Pneumonija za šifrirani draft.');
+    await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
 
     await expect.poll(async () => page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_pacijent_autosave_v1');
+      const raw = localStorage.getItem('temperaturna_lista_pacijent_sifrirani_draft_v2');
       if (!raw) return '';
       try {
-        return JSON.parse(raw)?.data?.fullName || '';
+        return JSON.parse(raw)?.schema || '';
       } catch (error) {
         return '';
       }
-    })).toBe('Auto Save Testic');
-    await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save čuva nespremljenog pacijenta/i);
+    })).toBe('temperaturna-lista-encrypted-patient-draft-v1');
+    await expectBrowserStorageNotToContain(page, [
+      'Auto Save Testic',
+      '13.05.2026.',
+      'Pneumonija za šifrirani draft',
+      'Amlodipin 5 mg'
+    ]);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#page1Title')).toBeVisible();
     await continueWithoutFirebaseIfVisible(page);
 
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Za vraćanje unesite passphrase/i);
+    await openDataAdminAdvanced(page);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      await dialog.accept('pogresna-lozinka-123');
+    });
+    await page.locator('#restorePatientDraftBtn').click();
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Passphrase nije ispravan/i);
+    await expect(page.locator('#fullName')).toHaveValue('');
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      await dialog.accept(PATIENT_DRAFT_TEST_PASSPHRASE);
+    });
+    await page.locator('#restorePatientDraftBtn').click();
     await expect(page.locator('#fullName')).toHaveValue('Auto Save Testic');
     await expect(page.locator('#birthYear')).toHaveValue('1977');
     await expect(page.locator('#admissionDate')).toHaveValue('13.05.2026.');
-    await expect(page.locator('#patientDraftStatus')).toContainText(/Auto-save (vraćen|spremljen)/i);
+    await expect(page.locator('#diagnosis')).toHaveValue('Pneumonija za šifrirani draft.');
+    await expect(page.locator('#therapy')).toHaveValue('Amlodipin 5 mg 1,0,0 tbl');
+    await expect(page.locator('#patientDraftStatus')).toContainText(/Lokalni draft vraćen/i);
+    await expectBrowserStorageNotToContain(page, [
+      'Auto Save Testic',
+      'Pneumonija za šifrirani draft',
+      'Amlodipin 5 mg'
+    ]);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('expired encrypted local draft is removed instead of restored', async ({ page }) => {
+    const browserSignals = await openApp(page, './?qa=encrypted-local-draft-expired');
+    await continueWithoutFirebase(page);
+
+    page.once('dialog', async (dialog) => {
+      await dialog.accept(PATIENT_DRAFT_TEST_PASSPHRASE);
+    });
+    await openDataAdminAdvanced(page);
+    await page.locator('#enableEncryptedPatientDraftBtn').click();
+    await page.locator('#fullName').fill('Istek Draft Testic');
+    await page.locator('#diagnosis').fill('Istekli lokalni draft.');
+    await expect.poll(async () => page.evaluate((key) => Boolean(localStorage.getItem(key)), ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY)).toBe(true);
+
+    await page.evaluate((key) => {
+      const raw = localStorage.getItem(key);
+      const envelope = raw ? JSON.parse(raw) : null;
+      envelope.expiresAt = '2020-01-01T00:00:00.000Z';
+      localStorage.setItem(key, JSON.stringify(envelope));
+    }, ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#page1Title')).toBeVisible();
+    await continueWithoutFirebaseIfVisible(page);
+
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#patientDraftStatus')).toContainText(/istekao i obrisan|isključen/i);
+    await openDataAdminAdvanced(page);
+    await expect(page.locator('#restorePatientDraftBtn')).toBeDisabled();
+    await expect.poll(async () => page.evaluate((key) => localStorage.getItem(key), ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY)).toBeNull();
+    await expectBrowserStorageNotToContain(page, ['Istek Draft Testic', 'Istekli lokalni draft']);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -1055,7 +1235,8 @@ test.describe('GitHub Pages smoke test', () => {
     expect(capture.expected.admissionDate).toBe('2026-05-13');
     expect(capture.currentData.fullName).toBe('Test Testic');
     expect(capture.parserWarningsAtCapture).toEqual(expect.any(Array));
-    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen lokalno/i);
+    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen privremeno u ovoj sesiji/i);
+    await expect.poll(async () => page.evaluate((key) => localStorage.getItem(key), PARSER_TEST_STORAGE_KEY)).toBeNull();
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -1153,16 +1334,7 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebaseIfVisible(page);
     await saveOption.click();
 
-    const stored = await page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const records = parsed?.records || {};
-      const first = Object.values(records)[0] || null;
-      return { recordCount: Object.keys(records).length, first };
-    });
-    expect(stored.recordCount).toBe(1);
-    expect(stored.first.line).toBe('Zzzcustomol 7 mg 1,0,0 tbl');
-    expect(stored.first.source).toBe('custom');
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
 
     await page.locator('#therapy').fill('Zzz');
     await expect(therapyBox).toBeVisible();
@@ -1187,13 +1359,8 @@ test.describe('GitHub Pages smoke test', () => {
     });
     await deleteButton.click();
     await expect(therapyBox).toBeVisible();
-    const afterCancel = await page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const records = parsed?.records || {};
-      return { recordCount: Object.keys(records).length };
-    });
-    expect(afterCancel.recordCount).toBe(1);
+    await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
 
     page.once('dialog', async (dialog) => {
       expect(dialog.type()).toBe('confirm');
@@ -1204,13 +1371,7 @@ test.describe('GitHub Pages smoke test', () => {
     await deleteButton.click();
     await expect(page.locator('#statusBar')).toContainText(/Obrisan je lokalni prijedlog/i);
     await expect(therapyBox).toBeHidden();
-    const afterDelete = await page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const records = parsed?.records || {};
-      return { recordCount: Object.keys(records).length, records };
-    });
-    expect(afterDelete.recordCount).toBe(0);
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
     await expect(page.locator('#therapyCsvStatus')).toContainText(/Baza lijekova OK/i);
 
     browserSignals.assertCleanBrowserSignals();
@@ -1259,16 +1420,7 @@ test.describe('GitHub Pages smoke test', () => {
     }
 
     await saveOption.click();
-    const stored = await page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const records = parsed?.records || {};
-      const first = Object.values(records)[0] || null;
-      return { recordCount: Object.keys(records).length, first };
-    });
-    expect(stored.recordCount).toBe(1);
-    expect(stored.first.line).toBe('Uro');
-    expect(stored.first.source).toBe('custom');
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1'))).toBeNull();
 
     await page.locator('#diagnosis').fill('Ur');
     await expect(diagnosisBox).toBeVisible();
@@ -1286,13 +1438,8 @@ test.describe('GitHub Pages smoke test', () => {
     });
     await deleteButton.click();
     await expect(diagnosisBox).toBeVisible();
-    const afterCancel = await page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const records = parsed?.records || {};
-      return { recordCount: Object.keys(records).length };
-    });
-    expect(afterCancel.recordCount).toBe(1);
+    await expect(diagnosisBox).toContainText(/Uro/i);
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1'))).toBeNull();
 
     page.once('dialog', async (dialog) => {
       expect(dialog.type()).toBe('confirm');
@@ -1302,13 +1449,7 @@ test.describe('GitHub Pages smoke test', () => {
     });
     await deleteButton.click();
     await expect(page.locator('#statusBar')).toContainText(/Obrisan je lokalni prijedlog dijagnoze/i);
-    const afterDelete = await page.evaluate(() => {
-      const raw = localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const records = parsed?.records || {};
-      return { recordCount: Object.keys(records).length, records };
-    });
-    expect(afterDelete.recordCount).toBe(0);
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1'))).toBeNull();
 
     await page.locator('#diagnosis').fill('Ur');
     await expect(diagnosisBox).not.toContainText(/moj spremljeni prijedlog/i);
