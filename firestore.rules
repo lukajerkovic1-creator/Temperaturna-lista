@@ -6,44 +6,99 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function ownsExistingDoc() {
-      return signedIn() && resource.data.ownerUid == request.auth.uid;
+    function profilePath() {
+      return /databases/$(database)/documents/userProfiles/$(request.auth.uid);
     }
 
-    function writesOwnDoc() {
+    function hasUserProfile() {
+      return signedIn() && exists(profilePath());
+    }
+
+    function userProfile() {
+      return get(profilePath()).data;
+    }
+
+    function allowedClinicalRoles() {
+      return ['clinician', 'physician', 'nurse', 'admin'];
+    }
+
+    function hasClinicalRole() {
+      return hasUserProfile()
+        && userProfile().roles is list
+        && userProfile().roles.hasAny(allowedClinicalRoles());
+    }
+
+    function validClinicalProfileData(data, userId) {
+      return data.schema == 'temperaturna-lista-user-profile-v1'
+        && data.uid == userId
+        && data.email == request.auth.token.email
+        && data.firstName is string
+        && data.lastName is string
+        && data.department is string
+        && data.organizationId is string
+        && data.activeWardId is string
+        && data.wardIds is list
+        && data.roles is list
+        && data.organizationId.size() > 0
+        && data.activeWardId.size() > 0
+        && data.activeWardId in data.wardIds
+        && data.roles.hasAny(allowedClinicalRoles());
+    }
+
+    function hasClinicalAccess(organizationId, wardId) {
+      return hasUserProfile()
+        && hasClinicalRole()
+        && organizationId is string
+        && wardId is string
+        && userProfile().organizationId == organizationId
+        && wardId in userProfile().wardIds;
+    }
+
+    function partitionKey(organizationId, wardId) {
+      return 'clinical-v1|' + organizationId + '|' + wardId;
+    }
+
+    function writesClinicalDocument(data) {
       return signedIn()
-        && request.resource.data.ownerUid == request.auth.uid;
+        && data.ownerUid == request.auth.uid
+        && data.accessModel == 'organization-ward-role-v1'
+        && data.organizationId is string
+        && data.wardId is string
+        && data.clinicalPartitionKey == partitionKey(data.organizationId, data.wardId)
+        && hasClinicalAccess(data.organizationId, data.wardId);
     }
 
-    function ownsUserProfile(userId) {
-      return signedIn() && userId == request.auth.uid;
-    }
-
-    function writesOwnUserProfile(userId) {
-      return ownsUserProfile(userId)
-        && request.resource.data.schema == 'temperaturna-lista-user-profile-v1'
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.firstName is string
-        && request.resource.data.lastName is string
-        && request.resource.data.department is string;
+    function readsClinicalDocument(data) {
+      return data.accessModel == 'organization-ward-role-v1'
+        && data.organizationId is string
+        && data.wardId is string
+        && data.clinicalPartitionKey == partitionKey(data.organizationId, data.wardId)
+        && hasClinicalAccess(data.organizationId, data.wardId);
     }
 
     match /patients/{patientId} {
-      allow create: if writesOwnDoc();
-      allow read, delete: if ownsExistingDoc();
-      allow update: if ownsExistingDoc() && writesOwnDoc();
+      allow create: if request.resource.data.schema == 'temperaturna-lista-patient-v1'
+        && writesClinicalDocument(request.resource.data);
+      allow read, delete: if readsClinicalDocument(resource.data);
+      allow update: if readsClinicalDocument(resource.data)
+        && request.resource.data.schema == 'temperaturna-lista-patient-v1'
+        && writesClinicalDocument(request.resource.data);
     }
 
     match /parserTestCases/{caseId} {
-      allow create: if writesOwnDoc();
-      allow read, delete: if ownsExistingDoc();
-      allow update: if ownsExistingDoc() && writesOwnDoc();
+      allow create: if request.resource.data.schema == 'temperaturna-lista-parser-test-case-v1'
+        && writesClinicalDocument(request.resource.data);
+      allow read, delete: if readsClinicalDocument(resource.data);
+      allow update: if readsClinicalDocument(resource.data)
+        && request.resource.data.schema == 'temperaturna-lista-parser-test-case-v1'
+        && writesClinicalDocument(request.resource.data);
     }
 
     match /userProfiles/{userId} {
-      allow read: if ownsUserProfile(userId);
-      allow create, update: if writesOwnUserProfile(userId);
+      allow read: if signedIn() && userId == request.auth.uid;
+      allow create, update: if signedIn()
+        && userId == request.auth.uid
+        && validClinicalProfileData(request.resource.data, userId);
     }
   }
 }

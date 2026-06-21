@@ -106,19 +106,31 @@ function installFirebaseSmokeClient(page, options = {}) {
       displayName: 'Smoke Firebase User'
     };
     if (!smokeOptions.noUserProfile) {
-      docs.set(`userProfiles/${smokeUser.uid}`, {
+      const profile = {
         schema: 'temperaturna-lista-user-profile-v1',
         appVersion: 'smoke-test',
         uid: smokeUser.uid,
         firstName: 'Smoke',
         lastName: 'Firebase User',
         department: 'Infektologija',
+        organizationId: 'temperaturna-lista-dev',
+        wardIds: ['infektologija'],
+        activeWardId: 'infektologija',
+        roles: ['clinician'],
         email: smokeUser.email,
         displayName: 'Smoke Firebase User',
         role: 'clinician',
         createdAt: '2026-06-20T00:00:00.000Z',
         updatedAt: '2026-06-20T00:00:00.000Z'
-      });
+      };
+      if (smokeOptions.invalidClinicalContext) {
+        delete profile.organizationId;
+        profile.wardIds = [];
+        profile.activeWardId = '';
+        profile.roles = [];
+        profile.role = '';
+      }
+      docs.set(`userProfiles/${smokeUser.uid}`, profile);
     }
     const cloneJson = (value) => JSON.parse(JSON.stringify(value));
     const collectionNameOf = (ref) => ref?.collectionName || ref?.name || '';
@@ -410,7 +422,29 @@ test.describe('GitHub Pages smoke test', () => {
     expect(profileWrite.payload.firstName).toBe('Luka');
     expect(profileWrite.payload.lastName).toBe('Jerkovic');
     expect(profileWrite.payload.department).toBe('Infektologija');
+    expect(profileWrite.payload.organizationId).toBe('temperaturna-lista-dev');
+    expect(profileWrite.payload.wardIds).toEqual(['infektologija']);
+    expect(profileWrite.payload.activeWardId).toBe('infektologija');
+    expect(profileWrite.payload.roles).toEqual(['clinician']);
     expect(profileWrite.payload.email).toBe('novi.korisnik@gmail.com');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('fails closed when Firebase profile has no valid clinical context', async ({ page }) => {
+    await installFirebaseSmokeClient(page, { invalidClinicalContext: true });
+    const browserSignals = await openApp(page, './?qa=firebase-clinical-context-fail-closed&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeVisible();
+    await expect(page.locator('#firebaseLoginGateStatus')).toContainText(/klinički kontekst|profil/i);
+    await expect(page.locator('#savePatientTopBtn')).toBeDisabled();
+    await expect(page.locator('#openFirebasePatientDialogBtn')).toBeDisabled();
+
+    const patientWrites = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites.filter(item => item.collection === 'patients').length;
+    });
+    expect(patientWrites).toBe(0);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -766,6 +800,11 @@ test.describe('GitHub Pages smoke test', () => {
     expect(write.payload.ownerEmail).toBe('smoke.firebase@example.test');
     expect(write.payload.ownerDepartment).toBe('Infektologija');
     expect(write.payload.ownerDisplayName).toBe('Smoke Firebase User');
+    expect(write.payload.accessModel).toBe('organization-ward-role-v1');
+    expect(write.payload.organizationId).toBe('temperaturna-lista-dev');
+    expect(write.payload.wardId).toBe('infektologija');
+    expect(write.payload.clinicalPartitionKey).toBe('clinical-v1|temperaturna-lista-dev|infektologija');
+    expect(write.payload.roles).toContain('clinician');
     expect(write.payload.lastSaveTrigger).toBe('manual');
     expect(write.payload.label).toContain('Firebase Smoke Testic');
     expect(write.payload.patientMode).toBe('ward');
@@ -820,6 +859,9 @@ test.describe('GitHub Pages smoke test', () => {
     });
     expect(outpatientWrite).toBeTruthy();
     expect(outpatientWrite.payload.patientMode).toBe('outpatient');
+    expect(outpatientWrite.payload.organizationId).toBe('temperaturna-lista-dev');
+    expect(outpatientWrite.payload.wardId).toBe('infektologija');
+    expect(outpatientWrite.payload.clinicalPartitionKey).toBe('clinical-v1|temperaturna-lista-dev|infektologija');
     expect(outpatientWrite.payload.patientKey).toBe('patient-v1|outpatient|ambulanta mode testic|1988|2026-06-20');
     expect(outpatientWrite.payload.data.patientMode).toBe('outpatient');
     expect(outpatientWrite.payload.data.therapy).toBe('Amlodipin 5 mg 1,0,0 tbl');
@@ -1064,6 +1106,9 @@ test.describe('GitHub Pages smoke test', () => {
     expect(result.renameWrite.payload.data.fullName).toBe('Baza Uredena Testic');
     expect(result.renameWrite.payload.patientKey).toBe('patient-v1|ward|baza uredena testic|1982|2026-06-16');
     expect(result.renameWrite.payload.patientMode).toBe('ward');
+    expect(result.renameWrite.payload.organizationId).toBe('temperaturna-lista-dev');
+    expect(result.renameWrite.payload.wardId).toBe('infektologija');
+    expect(result.renameWrite.payload.clinicalPartitionKey).toBe('clinical-v1|temperaturna-lista-dev|infektologija');
     expect(result.deleteCount).toBe(1);
     expect(result.remainingDocs).toBe(0);
 
