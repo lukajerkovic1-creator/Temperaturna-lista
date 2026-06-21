@@ -1,3 +1,4 @@
+const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 
 const SAMPLE_OHBP_TEXT = [
@@ -387,6 +388,76 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#quickIdentityStatus')).toHaveText(/Spremno/i);
     await expect(page.locator('#page1Title')).toContainText(/prijem u srijedu/i);
     await expect(page.locator('#patientSyncStatus')).toContainText(/nespremljene promjene/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('shows downtime availability when the browser goes offline', async ({ page, context }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/Dostupnost/i);
+    await context.setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/offline na/i);
+    await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-network-status', 'offline');
+    await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-firebase-status', 'unavailable');
+
+    await context.setOffline(false);
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-network-status', 'online');
+  });
+
+  test('exports and restores a downtime backup envelope without browser auto-storage', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#fullName').fill('Downtime Testic');
+    await page.locator('#birthYear').fill('1961');
+    await page.locator('#admissionDate').fill('18.06.2026.');
+    await page.locator('#diagnosis').fill('Downtime smoke dijagnoza.');
+    await page.locator('#therapy').fill('Downtime smoke terapija.');
+
+    await openDataAdminAdvanced(page);
+    await expect(page.locator('#downloadDowntimeBackupBtn')).toBeEnabled();
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#downloadDowntimeBackupBtn').click();
+    const download = await downloadPromise;
+    const backupPath = await download.path();
+    expect(backupPath).toBeTruthy();
+    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    const backupImportPath = `${backupPath}.json`;
+    fs.copyFileSync(backupPath, backupImportPath);
+
+    expect(backup.schema).toBe('temperaturna-lista-downtime-backup-v1');
+    expect(backup.containsPatientData).toBe(true);
+    expect(backup.authorizedUseOnly).toBe(true);
+    expect(backup.retentionPolicy).toEqual({
+      patientDays: 90,
+      localDraftHours: 12,
+      parserTestDays: 30,
+      auditDays: 3650
+    });
+    expect(backup.availability).toHaveProperty('networkStatus');
+    expect(backup.data.fullName).toBe('Downtime Testic');
+    expect(backup.data.diagnosis).toBe('Downtime smoke dijagnoza.');
+
+    await page.locator('#fullName').fill('');
+    await page.locator('#diagnosis').fill('');
+    await page.locator('#therapy').fill('');
+    await page.locator('#loadDataInput').setInputFiles(backupImportPath);
+
+    await expect(page.locator('#fullName')).toHaveValue('Downtime Testic');
+    await expect(page.locator('#diagnosis')).toHaveValue('Downtime smoke dijagnoza.');
+    await expect(page.locator('#therapy')).toHaveValue('Downtime smoke terapija.');
+    await expect(page.locator('#statusBar')).toContainText(/downtime backup/i);
+    await expect(page.locator('#patientSyncStatus')).toContainText(/nespremljene promjene/i);
+    await expectBrowserStorageNotToContain(page, [
+      'Downtime Testic',
+      'Downtime smoke dijagnoza',
+      'Downtime smoke terapija'
+    ]);
 
     browserSignals.assertCleanBrowserSignals();
   });
