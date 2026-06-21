@@ -795,7 +795,8 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#patientModeOutpatientBtn').click();
     await expect(page.locator('#patientModeOutpatientBtn')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[data-collapsible-field="diagnosis"]')).toBeHidden();
-    await expect(page.locator('[data-collapsible-field="therapy"]')).toBeHidden();
+    await expect(page.locator('[data-collapsible-field="therapy"]')).toBeVisible();
+    await expect(page.locator('#therapyCsvStatus')).toBeVisible();
     await expect(page.locator('[data-collapsible-field="labRaw"]')).toBeHidden();
     await expect(page.locator('[data-collapsible-field="radiologyRaw"]')).toBeHidden();
     await expect(page.locator('[data-collapsible-field="patientOrigin"]')).toBeVisible();
@@ -807,6 +808,7 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#admissionDate').fill('20.06.2026.');
     await page.locator('#allergies').fill('nema');
     await page.locator('#patientOrigin').fill('Ambulanta');
+    await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
     await page.locator('#savePatientTopBtn').click();
     await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
 
@@ -820,6 +822,8 @@ test.describe('GitHub Pages smoke test', () => {
     expect(outpatientWrite.payload.patientMode).toBe('outpatient');
     expect(outpatientWrite.payload.patientKey).toBe('patient-v1|outpatient|ambulanta mode testic|1988|2026-06-20');
     expect(outpatientWrite.payload.data.patientMode).toBe('outpatient');
+    expect(outpatientWrite.payload.data.therapy).toBe('Amlodipin 5 mg 1,0,0 tbl');
+    expect(outpatientWrite.payload.data.showTherapyOnList).toBe(true);
 
     await page.locator('#openFirebasePatientDialogBtn').click();
     const dialog = page.locator('#firebasePatientDialog');
