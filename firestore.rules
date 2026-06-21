@@ -76,13 +76,31 @@ service cloud.firestore {
         && hasClinicalAccess(data.organizationId, data.wardId);
     }
 
+    function writesPatientAuditEvent(data) {
+      return signedIn()
+        && data.schema == 'temperaturna-lista-audit-v1'
+        && data.actorUid == request.auth.uid
+        && data.accessModel == 'organization-ward-role-v1'
+        && data.organizationId is string
+        && data.wardId is string
+        && data.clinicalPartitionKey == partitionKey(data.organizationId, data.wardId)
+        && hasClinicalAccess(data.organizationId, data.wardId);
+    }
+
     match /patients/{patientId} {
       allow create: if request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
-      allow read, delete: if readsClinicalDocument(resource.data);
+      allow read: if readsClinicalDocument(resource.data);
+      allow delete: if false;
       allow update: if readsClinicalDocument(resource.data)
         && request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
+    }
+
+    match /patientAuditEvents/{eventId} {
+      allow create: if writesPatientAuditEvent(request.resource.data);
+      allow read: if readsClinicalDocument(resource.data);
+      allow update, delete: if false;
     }
 
     match /parserTestCases/{caseId} {
