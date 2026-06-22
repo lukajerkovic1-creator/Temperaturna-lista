@@ -2446,6 +2446,38 @@ test.describe('GitHub Pages smoke test', () => {
     });
     expect(printEvent).toBeTruthy();
     expect(printEvent.pageCount).toBe(2);
+    const printFrameLayout = await page.evaluate(() => {
+      const frame = document.querySelector('#print-frame');
+      const doc = frame?.contentDocument || null;
+      const win = frame?.contentWindow || null;
+      const pageNode = doc?.querySelector('.page') || null;
+      const imageNode = doc?.querySelector('.page img') || null;
+      const pageStyle = pageNode && win ? win.getComputedStyle(pageNode) : null;
+      const imageStyle = imageNode && win ? win.getComputedStyle(imageNode) : null;
+      return {
+        styleText: Array.from(doc?.querySelectorAll('style') || []).map(style => style.textContent || '').join('\n'),
+        pageCount: doc?.querySelectorAll('.page').length || 0,
+        pageWidthPx: pageStyle ? Number.parseFloat(pageStyle.width) : 0,
+        pageHeightPx: pageStyle ? Number.parseFloat(pageStyle.height) : 0,
+        imageWidthPx: imageStyle ? Number.parseFloat(imageStyle.width) : 0,
+        imageHeightPx: imageStyle ? Number.parseFloat(imageStyle.height) : 0,
+        imageNaturalWidth: imageNode?.naturalWidth || 0,
+        imageNaturalHeight: imageNode?.naturalHeight || 0,
+        imageObjectFit: imageStyle?.objectFit || ''
+      };
+    });
+    expect(printFrameLayout.pageCount).toBe(2);
+    expect(printFrameLayout.styleText).toContain('size: A4 landscape');
+    expect(printFrameLayout.styleText).toContain('object-fit: contain');
+    expect(printFrameLayout.imageNaturalWidth).toBeGreaterThan(3000);
+    expect(printFrameLayout.imageNaturalHeight).toBeGreaterThan(2000);
+    expect(printFrameLayout.pageWidthPx).toBeGreaterThan(1000);
+    expect(printFrameLayout.pageWidthPx).toBeLessThan(1300);
+    expect(printFrameLayout.pageHeightPx).toBeGreaterThan(700);
+    expect(printFrameLayout.pageHeightPx).toBeLessThan(900);
+    expect(printFrameLayout.imageWidthPx).toBeLessThan(1300);
+    expect(printFrameLayout.imageHeightPx).toBeLessThan(900);
+    expect(printFrameLayout.imageObjectFit).toBe('contain');
 
     page.once('dialog', async (dialog) => {
       await dialog.dismiss();
