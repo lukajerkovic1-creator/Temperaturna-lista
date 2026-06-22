@@ -522,17 +522,19 @@
           <input id="firebasePatientShowArchivedToggle" type="checkbox">
           <span>Prikaži arhivirane</span>
         </label>
-        <div class="firebase-patient-dialog-search">
-          <svg class="firebase-patient-dialog-search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="m20 20-4.3-4.3M10.75 17.25a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <input id="firebasePatientSearchInput" type="search" autocomplete="off" placeholder="Pretraži pacijente po imenu..." aria-label="Pretraži spremljene pacijente po imenu">
+        <div class="firebase-patient-dialog-toolbar">
+          <div class="firebase-patient-dialog-search">
+            <svg class="firebase-patient-dialog-search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m20 20-4.3-4.3M10.75 17.25a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <input id="firebasePatientSearchInput" type="search" autocomplete="off" placeholder="Pretraži pacijente po imenu..." aria-label="Pretraži spremljene pacijente po imenu">
+          </div>
+          <button id="firebasePatientDialogRefreshBtn" class="secondary firebase-patient-dialog-refresh" type="button" disabled>Osvježi</button>
         </div>
         <div id="firebasePatientDialogList" class="firebase-patient-dialog-list" role="list" aria-label="Spremljeni Firebase pacijenti"></div>
         <div class="firebase-patient-dialog-actions">
           <div class="dialog-spacer"></div>
           <button id="firebasePatientDialogSignInBtn" class="primary" type="button">Prijava</button>
-          <button id="firebasePatientDialogRefreshBtn" class="secondary" type="button">Osvježi popis</button>
         </div>
       </div>
     </div>
