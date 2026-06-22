@@ -495,6 +495,11 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(gate).toBeHidden();
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Luka Jerkovic.*Infektologija/i);
     await expect(page.locator('#firebaseUserPanelName')).toHaveText('Luka Jerkovic');
+    await expect(page.locator('#firebaseUserPanelToggleBtn')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#firebaseUserPanelBody')).toBeHidden();
+    await page.locator('#firebaseUserPanelToggleBtn').click();
+    await expect(page.locator('#firebaseUserPanelToggleBtn')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#firebaseUserPanelBody')).toBeVisible();
     await expect(page.locator('#firebaseUserPanelMeta')).toContainText(/Infektologija/i);
     await expect(page.locator('#firebaseUserSwitchBtn')).toContainText(/Promijeni račun/i);
     await expect(page.locator('#firebaseUserNewBtn')).toContainText(/Novi korisnik/i);

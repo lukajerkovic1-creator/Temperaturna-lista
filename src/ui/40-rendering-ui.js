@@ -1238,6 +1238,25 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return 'Prijavljen korisnik';
   }
 
+  function setFirebaseUserPanelExpanded(expanded) {
+    const isExpanded = Boolean(expanded);
+    if (els.firebaseUserPanel) els.firebaseUserPanel.classList.toggle('is-expanded', isExpanded);
+    if (els.firebaseUserPanelToggleBtn) {
+      els.firebaseUserPanelToggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+      const displayName = els.firebaseUserPanelName?.textContent?.trim() || 'Korisnik';
+      els.firebaseUserPanelToggleBtn.setAttribute(
+        'aria-label',
+        `${displayName}. ${isExpanded ? 'Zatvori' : 'Otvori'} korisnički panel.`
+      );
+    }
+    if (els.firebaseUserPanelBody) els.firebaseUserPanelBody.hidden = !isExpanded;
+  }
+
+  function toggleFirebaseUserPanel() {
+    const isExpanded = els.firebaseUserPanelToggleBtn?.getAttribute('aria-expanded') === 'true';
+    setFirebaseUserPanelExpanded(!isExpanded);
+  }
+
   function renderFirebaseUserPanel() {
     if (!els.firebaseUserPanel) return;
     const user = state.firebasePatients.user;
@@ -1250,6 +1269,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     }
     if (els.firebaseUserPanelName) els.firebaseUserPanelName.textContent = displayName;
     if (els.firebaseUserPanelMeta) els.firebaseUserPanelMeta.textContent = getFirebaseUserPanelMeta(user, profile);
+    if (els.firebaseUserPanelToggleBtn) {
+      const isExpanded = els.firebaseUserPanelToggleBtn.getAttribute('aria-expanded') === 'true';
+      els.firebaseUserPanelToggleBtn.setAttribute(
+        'aria-label',
+        `${displayName}. ${isExpanded ? 'Zatvori' : 'Otvori'} korisnički panel.`
+      );
+    }
     if (els.firebaseUserPatientMode && typeof formatPatientModeLabel === 'function') {
       els.firebaseUserPatientMode.textContent = formatPatientModeLabel(getCurrentPatientMode());
     }

@@ -539,37 +539,40 @@
     <div class="mobile-workflow-note">Za uređivanje i ispis najbolje je koristiti desktop ili tablet. Na mobitelu je A4 pregled sužen: listu možeš pomicati lijevo-desno, a duga polja terapije imaju vlastiti scroll.</div>
 
     <section class="user-account-card" id="firebaseUserPanel" aria-labelledby="firebaseUserPanelTitle">
-      <div class="user-account-summary">
+      <button class="user-account-trigger" id="firebaseUserPanelToggleBtn" type="button" aria-expanded="false" aria-controls="firebaseUserPanelBody">
         <div class="user-account-avatar" id="firebaseUserAvatar" aria-hidden="true">?</div>
         <div class="user-account-copy">
           <div class="user-account-kicker" id="firebaseUserPanelTitle">Korisnik</div>
           <div class="user-account-name" id="firebaseUserPanelName">Nije prijavljeno</div>
           <div class="user-account-meta" id="firebaseUserPanelMeta">Firebase spremanje nije dostupno dok se ne prijavite.</div>
         </div>
-      </div>
-      <div class="user-account-status" id="firebaseUserPanelStatus" aria-live="polite">Firebase se povezuje...</div>
-      <div class="user-account-actions" aria-label="Korisničke radnje">
-        <button id="firebaseUserSwitchBtn" type="button">Prijava</button>
-        <button id="firebaseUserNewBtn" class="secondary" type="button">Novi korisnik</button>
-        <button id="firebaseUserSignOutBtn" class="secondary" type="button" disabled>Odjava</button>
-      </div>
-      <details class="user-account-settings" id="firebaseUserSettings">
-        <summary>Osnovne postavke</summary>
-        <div class="user-account-settings-body">
-          <div class="user-setting-row">
-            <span>Mod pacijenta</span>
-            <strong id="firebaseUserPatientMode">Odjelni pacijent</strong>
-          </div>
-          <div class="user-setting-row stacked">
-            <span>Sigurnost lokalnog drafta</span>
-            <div id="firebaseUserDraftStatus" class="patient-draft-status">Lokalni auto-save pacijentnih podataka je isključen.</div>
-          </div>
-          <div class="user-account-settings-actions">
-            <button id="firebaseUserEnableDraftBtn" type="button">Šifrirani oporavak</button>
-            <button id="firebaseUserClearDraftBtn" class="secondary danger" type="button" disabled>Obriši lokalni draft</button>
-          </div>
+        <span class="user-account-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="user-account-panel-body" id="firebaseUserPanelBody" hidden>
+        <div class="user-account-status" id="firebaseUserPanelStatus" aria-live="polite">Firebase se povezuje...</div>
+        <div class="user-account-actions" aria-label="Korisničke radnje">
+          <button id="firebaseUserSwitchBtn" type="button">Prijava</button>
+          <button id="firebaseUserNewBtn" class="secondary" type="button">Novi korisnik</button>
+          <button id="firebaseUserSignOutBtn" class="secondary" type="button" disabled>Odjava</button>
         </div>
-      </details>
+        <details class="user-account-settings" id="firebaseUserSettings">
+          <summary>Osnovne postavke</summary>
+          <div class="user-account-settings-body">
+            <div class="user-setting-row">
+              <span>Mod pacijenta</span>
+              <strong id="firebaseUserPatientMode">Odjelni pacijent</strong>
+            </div>
+            <div class="user-setting-row stacked">
+              <span>Sigurnost lokalnog drafta</span>
+              <div id="firebaseUserDraftStatus" class="patient-draft-status">Lokalni auto-save pacijentnih podataka je isključen.</div>
+            </div>
+            <div class="user-account-settings-actions">
+              <button id="firebaseUserEnableDraftBtn" type="button">Šifrirani oporavak</button>
+              <button id="firebaseUserClearDraftBtn" class="secondary danger" type="button" disabled>Obriši lokalni draft</button>
+            </div>
+          </div>
+        </details>
+      </div>
     </section>
 
     <div class="footer-note" id="appVersionNote">Lokalna offline aplikacija. Prije ispisa ručno provjeriti automatski prepoznate podatke.</div>

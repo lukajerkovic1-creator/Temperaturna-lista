@@ -2488,6 +2488,8 @@
     firebasePatientSignInBtn: document.getElementById('firebasePatientSignInBtn'),
     firebasePatientSignOutBtn: document.getElementById('firebasePatientSignOutBtn'),
     firebaseUserPanel: document.getElementById('firebaseUserPanel'),
+    firebaseUserPanelToggleBtn: document.getElementById('firebaseUserPanelToggleBtn'),
+    firebaseUserPanelBody: document.getElementById('firebaseUserPanelBody'),
     firebaseUserAvatar: document.getElementById('firebaseUserAvatar'),
     firebaseUserPanelName: document.getElementById('firebaseUserPanelName'),
     firebaseUserPanelMeta: document.getElementById('firebaseUserPanelMeta'),
