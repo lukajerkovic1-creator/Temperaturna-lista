@@ -283,7 +283,7 @@ async function openApp(page, path = './') {
   const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `GitHub Pages response should be OK, got ${response?.status()}`).toBe(true);
   await expect(page).toHaveTitle(/Temperaturna lista.*v\d+/);
-  await expect(page.getByRole('heading', { name: /Generator temperaturne liste/i })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'Generator temperaturne liste' })).toBeVisible();
   await expect(page.locator('#page1Title')).toBeVisible();
 
   return {
@@ -380,7 +380,7 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.getByRole('button', { name: /Nastavi s Googleom/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Novi korisnik/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Nastavi bez Firebasea/i })).toHaveCount(0);
-    await expect(page.locator('body')).not.toContainText(/Vite|Next\.js|Webpack|Unhandled Runtime Error/i);
+    await expect(page.locator('body')).not.toContainText(/\bVite\b|Next\.js|Webpack|Unhandled Runtime Error/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -494,6 +494,15 @@ test.describe('GitHub Pages smoke test', () => {
 
     await expect(gate).toBeHidden();
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Luka Jerkovic.*Infektologija/i);
+    await expect(page.locator('#firebaseUserPanelName')).toHaveText('Luka Jerkovic');
+    await expect(page.locator('#firebaseUserPanelMeta')).toContainText(/Infektologija/i);
+    await expect(page.locator('#firebaseUserSwitchBtn')).toContainText(/Promijeni račun/i);
+    await expect(page.locator('#firebaseUserNewBtn')).toContainText(/Novi korisnik/i);
+    await expect(page.locator('#firebaseUserSignOutBtn')).toBeEnabled();
+    await page.locator('#firebaseUserSettings > summary').click();
+    await expect(page.locator('#firebaseUserSettings')).toHaveAttribute('open', '');
+    await expect(page.locator('#firebaseUserPatientMode')).toContainText(/Odjelni pacijent/i);
+    await expect(page.locator('#firebaseUserDraftStatus')).toContainText(/Lokalni auto-save/i);
     await expect(page.locator('#savePatientTopBtn')).toBeEnabled();
     await expect(page.locator('#openFirebasePatientDialogBtn')).toBeEnabled();
 

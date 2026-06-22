@@ -292,7 +292,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function setPatientDraftStatus(message, tone = 'neutral', details = {}) {
-    [els.patientDraftStatus, els.patientDraftAdvancedStatus].filter(Boolean).forEach((element) => {
+    [els.patientDraftStatus, els.patientDraftAdvancedStatus, els.firebaseUserDraftStatus].filter(Boolean).forEach((element) => {
       element.textContent = message || '';
       element.classList.toggle('ok', tone === 'ok');
       element.classList.toggle('warn', tone === 'warn');
@@ -604,6 +604,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       els.enableEncryptedPatientDraftBtn.disabled = !hasPatientDraftCryptoSupport();
       els.enableEncryptedPatientDraftBtn.textContent = encryptedSessionActive ? 'Promijeni passphrase' : 'Uključi šifrirani oporavak';
     }
+    if (els.firebaseUserEnableDraftBtn) {
+      els.firebaseUserEnableDraftBtn.disabled = !hasPatientDraftCryptoSupport();
+      els.firebaseUserEnableDraftBtn.textContent = encryptedSessionActive ? 'Promijeni passphrase' : 'Šifrirani oporavak';
+    }
     if (els.restorePatientDraftBtn) {
       els.restorePatientDraftBtn.disabled = !hasStoredDraft;
       els.restorePatientDraftBtn.textContent = metadata?.kind === 'legacy'
@@ -615,6 +619,12 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       els.clearPatientDraftBtn.textContent = metadata?.kind === 'legacy'
         ? 'Trajno obriši lokalni draft'
         : 'Obriši lokalni draft';
+    }
+    if (els.firebaseUserClearDraftBtn) {
+      els.firebaseUserClearDraftBtn.disabled = !hasStoredDraft && !encryptedSessionActive;
+      els.firebaseUserClearDraftBtn.textContent = metadata?.kind === 'legacy'
+        ? 'Obriši stari draft'
+        : 'Obriši draft';
     }
     if (els.downloadPatientBackupBtn) els.downloadPatientBackupBtn.disabled = !isPatientDataDifferentFromEmpty(getFormData());
     if (options.preserveStatus) return;
@@ -1207,12 +1217,42 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function setFirebasePatientStatus(message, tone = '') {
-    [els.firebasePatientAuthStatus, els.firebasePatientQuickStatus].filter(Boolean).forEach((element) => {
+    [els.firebasePatientAuthStatus, els.firebasePatientQuickStatus, els.firebaseUserPanelStatus].filter(Boolean).forEach((element) => {
       element.textContent = message || '';
       element.title = message || '';
       element.classList.toggle('ok', tone === 'ok');
       element.classList.toggle('error', tone === 'error');
     });
+    renderFirebaseUserPanel();
+  }
+
+  function getFirebaseUserPanelMeta(user = state.firebasePatients.user, profile = state.firebasePatients.userProfile) {
+    if (!user) return 'Firebase spremanje nije dostupno dok se ne prijavite.';
+    const email = normalizeFirebaseProfileEmail(profile?.email || user.email || '');
+    const department = normalizeFirebaseProfileText(profile?.department || '', 100);
+    const authContext = getFirebaseAuthContext();
+    if (department && email) return `${department} · ${email}`;
+    if (department) return department;
+    if (email) return `${email} · dovršite korisnički profil`;
+    if (!authContext.hasValidClinicalContext) return 'Dovršite korisnički profil i odjel.';
+    return 'Prijavljen korisnik';
+  }
+
+  function renderFirebaseUserPanel() {
+    if (!els.firebaseUserPanel) return;
+    const user = state.firebasePatients.user;
+    const profile = state.firebasePatients.userProfile;
+    const hasUser = Boolean(user);
+    const displayName = hasUser ? getFirebaseUserDisplayName(user, profile) : 'Nije prijavljeno';
+    if (els.firebaseUserAvatar) {
+      els.firebaseUserAvatar.textContent = hasUser ? getFirebaseUserInitials(user, profile) : '?';
+      els.firebaseUserAvatar.classList.toggle('is-signed-in', hasUser);
+    }
+    if (els.firebaseUserPanelName) els.firebaseUserPanelName.textContent = displayName;
+    if (els.firebaseUserPanelMeta) els.firebaseUserPanelMeta.textContent = getFirebaseUserPanelMeta(user, profile);
+    if (els.firebaseUserPatientMode && typeof formatPatientModeLabel === 'function') {
+      els.firebaseUserPatientMode.textContent = formatPatientModeLabel(getCurrentPatientMode());
+    }
   }
 
   function setFirebaseLoginGateStatus(message, isError = false) {
@@ -1501,6 +1541,21 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function getFirebaseProfileDisplayName(profile = {}) {
     const full = `${profile.firstName || ''} ${profile.lastName || ''}`.replace(/\s+/g, ' ').trim();
     return full || profile.email || 'Korisnik';
+  }
+
+  function getFirebaseUserDisplayName(user = state.firebasePatients.user, profile = state.firebasePatients.userProfile) {
+    const profileName = `${profile?.firstName || ''} ${profile?.lastName || ''}`.replace(/\s+/g, ' ').trim();
+    return profileName || profile?.displayName || profile?.email || user?.displayName || user?.email || 'Korisnik';
+  }
+
+  function getFirebaseUserInitials(user = state.firebasePatients.user, profile = state.firebasePatients.userProfile) {
+    const source = getFirebaseUserDisplayName(user, profile);
+    const parts = String(source || '')
+      .replace(/@.*/, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    const initials = parts.slice(0, 2).map(part => part.charAt(0).toUpperCase()).join('');
+    return initials || '?';
   }
 
   function normalizeClinicalContextId(value, maxLength = 80) {
@@ -1831,6 +1886,18 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     document.body.appendChild(els.firebasePatientDialog);
   }
 
+  function setFirebaseLoginGateBackgroundInert(isInert) {
+    const appRoot = document.getElementById('appRoot');
+    if (!appRoot) return;
+    if (isInert) {
+      appRoot.setAttribute('aria-hidden', 'true');
+      if ('inert' in appRoot) appRoot.inert = true;
+      return;
+    }
+    appRoot.removeAttribute('aria-hidden');
+    if ('inert' in appRoot) appRoot.inert = false;
+  }
+
   function hasDismissedFirebaseLoginGateThisSession() {
     return state.firebasePatients.loginGateDismissed || safeSessionStorageGetItem(FIREBASE_LOGIN_GATE_SESSION_KEY) === 'true';
   }
@@ -1856,6 +1923,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     mountFirebaseLoginGateOnBody();
     els.firebaseLoginGate.classList.remove('hidden');
     els.firebaseLoginGate.setAttribute('aria-hidden', 'false');
+    setFirebaseLoginGateBackgroundInert(true);
     if (message) setFirebaseLoginGateStatus(message);
     window.setTimeout(() => {
       if (!els.firebaseLoginGate || els.firebaseLoginGate.classList.contains('hidden')) return;
@@ -1870,6 +1938,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (!els.firebaseLoginGate) return;
     els.firebaseLoginGate.classList.add('hidden');
     els.firebaseLoginGate.setAttribute('aria-hidden', 'true');
+    setFirebaseLoginGateBackgroundInert(false);
   }
 
   function getFirebaseLoginGateFocusableElements() {
@@ -1939,6 +2008,19 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     } else {
       hideFirebaseLoginGate();
     }
+  }
+
+  function showFirebaseNewUserProfileForm() {
+    resetFirebaseLoginGateDismissal();
+    state.firebasePatients.pendingRegistrationProfile = null;
+    fillFirebaseRegistrationFormFromProfile(
+      state.firebasePatients.userProfile || buildProfileSeedFromFirebaseUser(state.firebasePatients.user),
+      { force: true }
+    );
+    setFirebaseRegistrationMode(true, { focus: false });
+    showFirebaseLoginGate(state.firebasePatients.user
+      ? 'Uredi ili dovrši korisnički profil. Za potpuno drugi Google račun odaberi Promijeni račun.'
+      : 'Upiši podatke novog korisnika, zatim potvrdi Google račun.');
   }
 
   function isFirebasePatientDialogVisible() {
@@ -2721,6 +2803,15 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (els.newPatientEntryBtn) els.newPatientEntryBtn.disabled = busy || state.firebasePatients.autoSaveInFlight;
     if (els.firebasePatientSignInBtn) els.firebasePatientSignInBtn.disabled = busy || !hasClient || hasUser;
     if (els.firebasePatientSignOutBtn) els.firebasePatientSignOutBtn.disabled = busy || !hasClient || !hasUser;
+    if (els.firebaseUserSwitchBtn) {
+      els.firebaseUserSwitchBtn.disabled = busy || !hasClient;
+      els.firebaseUserSwitchBtn.textContent = hasUser ? 'Promijeni račun' : 'Prijava';
+    }
+    if (els.firebaseUserNewBtn) {
+      els.firebaseUserNewBtn.disabled = busy || !hasClient;
+      els.firebaseUserNewBtn.textContent = hasUser && !hasProfile ? 'Dovrši profil' : 'Novi korisnik';
+    }
+    if (els.firebaseUserSignOutBtn) els.firebaseUserSignOutBtn.disabled = busy || !hasClient || !hasUser;
     if (els.savePatientToFirebaseBtn) els.savePatientToFirebaseBtn.disabled = busy || state.firebasePatients.autoSaveInFlight || !hasClient || !hasUser || !hasClinicalAccess;
     if (els.refreshFirebasePatientsBtn) els.refreshFirebasePatientsBtn.disabled = busy || !hasClient || !hasUser || !hasClinicalAccess;
     if (els.firebasePatientSelect) els.firebasePatientSelect.disabled = busy || !hasUser || !hasClinicalAccess || !hasRecords;
@@ -2740,6 +2831,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       els.firebasePatientDialogRefreshBtn.disabled = busy || !hasClient || !hasUser || !hasClinicalAccess;
       els.firebasePatientDialogRefreshBtn.hidden = !hasUser || !hasClinicalAccess;
     }
+    renderFirebaseUserPanel();
     const canShowArchived = canManageArchivedFirebasePatients();
     if (!canShowArchived && state.firebasePatients.showArchived) {
       state.firebasePatients.showArchived = false;
@@ -4511,5 +4603,3 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     canvases.push(page1, page2);
     return canvases;
   }
-
-

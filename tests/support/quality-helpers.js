@@ -72,7 +72,7 @@ async function openApp(page, path = './') {
   const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `App response should be OK, got ${response?.status()}`).toBe(true);
   await expect(page).toHaveTitle(/Temperaturna lista.*v\d+/);
-  await expect(page.getByRole('heading', { name: /Generator temperaturne liste/i })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'Generator temperaturne liste' })).toBeVisible();
   await expect(page.locator('#page1Title')).toBeVisible();
   return browserSignals;
 }

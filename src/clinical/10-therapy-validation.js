@@ -4599,6 +4599,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (typeof applyWorkflowTabOrder === 'function') applyWorkflowTabOrder();
     if (typeof scheduleAutoResizeTextareas === 'function') scheduleAutoResizeTextareas();
     syncFirebasePatientDialogModeUi();
+    if (typeof renderFirebaseUserPanel === 'function') renderFirebaseUserPanel();
   }
 
   function applyPatientMode(mode, options = {}) {
