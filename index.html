@@ -557,24 +557,7 @@
           <button id="firebaseUserNewBtn" class="secondary" type="button">Novi korisnik</button>
           <button id="firebaseUserSignOutBtn" class="secondary" type="button" disabled>Odjava</button>
         </div>
-        <details class="user-account-settings" id="firebaseUserSettings">
-          <summary>Osnovne postavke</summary>
-          <div class="user-account-settings-body">
-            <div class="user-setting-row">
-              <span>Mod pacijenta</span>
-              <strong id="firebaseUserPatientMode">Odjelni pacijent</strong>
-            </div>
-            <div class="user-setting-row stacked">
-              <span>Sigurnost lokalnog drafta</span>
-              <div id="firebaseUserDraftStatus" class="patient-draft-status">Lokalni auto-save pacijentnih podataka je isključen.</div>
-            </div>
-            <div class="user-account-settings-actions">
-              <button id="firebaseUserEnableDraftBtn" type="button">Šifrirani oporavak</button>
-              <button id="firebaseUserClearDraftBtn" class="secondary danger" type="button" disabled>Obriši lokalni draft</button>
-              <button id="firebaseUserMigrateLegacyPatientsBtn" class="secondary" type="button" disabled>Prebaci stare pacijente</button>
-            </div>
-          </div>
-        </details>
+        <button id="firebaseUserMigrateLegacyPatientsBtn" class="secondary user-account-legacy-action" type="button" disabled hidden>Prebaci stare pacijente</button>
       </div>
     </section>
 

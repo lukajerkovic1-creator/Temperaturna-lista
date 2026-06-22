@@ -731,28 +731,29 @@
     position: static;
     z-index: auto;
     margin-top: 0;
-    padding: 6px;
+    padding: 4px;
     border: 1px solid #cbd5e1;
-    border-radius: 13px;
+    border-radius: 14px;
     background: rgba(255, 255, 255, .96);
-    box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, .07);
     display: grid;
     gap: 0;
     backdrop-filter: blur(10px);
   }
 
   .user-account-card.is-expanded {
-    padding: 10px;
-    gap: 10px;
-    box-shadow: 0 -12px 30px rgba(15, 23, 42, .10);
+    padding: 8px;
+    gap: 8px;
+    border-color: #bfdbfe;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .10);
   }
 
   .user-account-trigger {
     width: 100%;
-    min-height: 46px;
-    padding: 5px 7px;
+    min-height: 44px;
+    padding: 5px 8px;
     border: 0;
-    border-radius: 11px;
+    border-radius: 12px;
     background: transparent;
     box-shadow: none;
     color: inherit;
@@ -766,12 +767,12 @@
 
   .user-account-trigger:hover,
   .user-account-card.is-expanded .user-account-trigger {
-    background: #f8fafc;
+    background: #f8fbff;
   }
 
   .user-account-trigger:focus-visible {
-    outline: 3px solid rgba(37, 99, 235, .35);
-    outline-offset: 2px;
+    outline: 2px solid rgba(37, 99, 235, .30);
+    outline-offset: 1px;
   }
 
   .user-account-avatar {
@@ -847,7 +848,9 @@
 
   .user-account-panel-body {
     display: grid;
-    gap: 10px;
+    gap: 8px;
+    padding-top: 7px;
+    border-top: 1px solid #e2e8f0;
   }
 
   .user-account-panel-body[hidden] {
@@ -855,7 +858,7 @@
   }
 
   .user-account-status {
-    padding: 8px 10px;
+    padding: 7px 9px;
     border: 1px solid #dbe3ef;
     border-radius: 10px;
     background: #f8fafc;
@@ -872,6 +875,13 @@
     font-weight: 800;
   }
 
+  .user-account-status.warn {
+    border-color: #fed7aa;
+    background: #fff7ed;
+    color: #9a3412;
+    font-weight: 800;
+  }
+
   .user-account-status.error {
     border-color: #fecaca;
     background: #fef2f2;
@@ -879,81 +889,21 @@
     font-weight: 800;
   }
 
-  .user-account-actions,
-  .user-account-settings-actions {
+  .user-account-actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
   }
 
   .user-account-actions button,
-  .user-account-settings-actions button {
+  .user-account-legacy-action {
     min-height: 36px;
     padding-inline: 10px;
     font-size: 12px;
   }
 
-  .user-account-settings {
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    background: #fbfcfd;
-    overflow: hidden;
-  }
-
-  .user-account-settings summary {
-    list-style: none;
-    cursor: pointer;
-    padding: 9px 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    color: var(--ink);
-    font-size: 12px;
-    font-weight: 900;
-  }
-
-  .user-account-settings summary::-webkit-details-marker {
+  .user-account-legacy-action[hidden] {
     display: none;
-  }
-
-  .user-account-settings summary::after {
-    content: '▾';
-    color: var(--muted);
-    transition: transform .15s ease;
-  }
-
-  .user-account-settings[open] summary::after {
-    transform: rotate(180deg);
-  }
-
-  .user-account-settings-body {
-    border-top: 1px solid #e2e8f0;
-    padding: 10px;
-    display: grid;
-    gap: 10px;
-  }
-
-  .user-setting-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.35;
-  }
-
-  .user-setting-row strong {
-    color: var(--ink);
-    font-size: 12px;
-    text-align: right;
-  }
-
-  .user-setting-row.stacked {
-    display: grid;
-    justify-content: stretch;
-    gap: 5px;
   }
 
   .firebase-patient-panel {
@@ -4497,8 +4447,7 @@
       position: static;
       box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
     }
-    .user-account-actions,
-    .user-account-settings-actions {
+    .user-account-actions {
       grid-template-columns: 1fr;
     }
   }

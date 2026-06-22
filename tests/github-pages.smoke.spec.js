@@ -102,6 +102,7 @@ function installFirebaseSmokeClient(page, options = {}) {
     let idCounter = 0;
     const failWritesWithPermissionDenied = Boolean(smokeOptions.failWritesWithPermissionDenied);
     const failPatientWritesWithPermissionDenied = Boolean(smokeOptions.failPatientWritesWithPermissionDenied);
+    let popupClosedFailuresRemaining = Number(smokeOptions.popupClosedFailures || 0);
     const smokeUser = {
       uid: 'smoke-user-uid',
       email: smokeOptions.userEmail || 'smoke.firebase@example.test',
@@ -168,7 +169,15 @@ function installFirebaseSmokeClient(page, options = {}) {
         window.setTimeout(() => callback(smokeUser), 0);
         return () => {};
       },
-      signInWithPopup: async () => ({ user: smokeUser }),
+      signInWithPopup: async () => {
+        if (popupClosedFailuresRemaining > 0) {
+          popupClosedFailuresRemaining -= 1;
+          const error = new Error('Popup closed by user');
+          error.code = 'auth/popup-closed-by-user';
+          throw error;
+        }
+        return { user: smokeUser };
+      },
       signOut: async () => {},
       collection(_db, name) {
         return { name };
@@ -537,10 +546,8 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#firebaseUserSwitchBtn')).toContainText(/Promijeni račun/i);
     await expect(page.locator('#firebaseUserNewBtn')).toContainText(/Novi korisnik/i);
     await expect(page.locator('#firebaseUserSignOutBtn')).toBeEnabled();
-    await page.locator('#firebaseUserSettings > summary').click();
-    await expect(page.locator('#firebaseUserSettings')).toHaveAttribute('open', '');
-    await expect(page.locator('#firebaseUserPatientMode')).toContainText(/Odjelni pacijent/i);
-    await expect(page.locator('#firebaseUserDraftStatus')).toContainText(/Lokalni auto-save/i);
+    await expect(page.locator('#firebaseUserSettings')).toHaveCount(0);
+    await expect(page.getByText('Osnovne postavke')).toHaveCount(0);
     await expect(page.locator('#savePatientTopBtn')).toBeEnabled();
     await expect(page.locator('#openFirebasePatientDialogBtn')).toBeEnabled();
 
@@ -577,6 +584,24 @@ test.describe('GitHub Pages smoke test', () => {
       return client.__smokeWrites.filter(item => item.collection === 'patients').length;
     });
     expect(patientWrites).toBe(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('keeps Firebase availability healthy when account switch popup is cancelled', async ({ page }) => {
+    await installFirebaseSmokeClient(page, { popupClosedFailures: 1 });
+    const browserSignals = await openApp(page, './?qa=firebase-popup-cancel-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/Firebase je dostupan/i);
+
+    await page.locator('#firebaseUserPanelToggleBtn').click();
+    await page.locator('#firebaseUserSwitchBtn').click();
+
+    await expect(page.locator('#firebasePatientQuickStatus')).toContainText(/Promjena računa je prekinuta/i);
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/Firebase je dostupan/i);
+    await expect(page.locator('#appAvailabilityStatus')).not.toContainText(/nije dostupan|zatvorena prije završetka/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -1229,8 +1254,8 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#firebasePatientDialog')).toBeHidden();
 
     await page.locator('#firebaseUserPanelToggleBtn').click();
-    await page.locator('#firebaseUserSettings > summary').click();
     await expect(page.locator('#firebaseUserMigrateLegacyPatientsBtn')).toContainText('Prebaci stare pacijente (2)');
+    await expect(page.locator('#firebaseUserMigrateLegacyPatientsBtn')).toBeVisible();
     page.once('dialog', async (dialog) => {
       expect(dialog.message()).toContain('Prebaciti 2 starih Firebase pacijenata');
       await dialog.accept();

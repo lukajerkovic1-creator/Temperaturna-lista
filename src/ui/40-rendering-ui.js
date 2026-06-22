@@ -292,7 +292,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function setPatientDraftStatus(message, tone = 'neutral', details = {}) {
-    [els.patientDraftStatus, els.patientDraftAdvancedStatus, els.firebaseUserDraftStatus].filter(Boolean).forEach((element) => {
+    [els.patientDraftStatus, els.patientDraftAdvancedStatus].filter(Boolean).forEach((element) => {
       element.textContent = message || '';
       element.classList.toggle('ok', tone === 'ok');
       element.classList.toggle('warn', tone === 'warn');
@@ -604,10 +604,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       els.enableEncryptedPatientDraftBtn.disabled = !hasPatientDraftCryptoSupport();
       els.enableEncryptedPatientDraftBtn.textContent = encryptedSessionActive ? 'Promijeni passphrase' : 'Uključi šifrirani oporavak';
     }
-    if (els.firebaseUserEnableDraftBtn) {
-      els.firebaseUserEnableDraftBtn.disabled = !hasPatientDraftCryptoSupport();
-      els.firebaseUserEnableDraftBtn.textContent = encryptedSessionActive ? 'Promijeni passphrase' : 'Šifrirani oporavak';
-    }
     if (els.restorePatientDraftBtn) {
       els.restorePatientDraftBtn.disabled = !hasStoredDraft;
       els.restorePatientDraftBtn.textContent = metadata?.kind === 'legacy'
@@ -619,12 +615,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       els.clearPatientDraftBtn.textContent = metadata?.kind === 'legacy'
         ? 'Trajno obriši lokalni draft'
         : 'Obriši lokalni draft';
-    }
-    if (els.firebaseUserClearDraftBtn) {
-      els.firebaseUserClearDraftBtn.disabled = !hasStoredDraft && !encryptedSessionActive;
-      els.firebaseUserClearDraftBtn.textContent = metadata?.kind === 'legacy'
-        ? 'Obriši stari draft'
-        : 'Obriši draft';
     }
     if (els.downloadPatientBackupBtn) els.downloadPatientBackupBtn.disabled = !isPatientDataDifferentFromEmpty(getFormData());
     if (options.preserveStatus) return;
@@ -1221,6 +1211,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       element.textContent = message || '';
       element.title = message || '';
       element.classList.toggle('ok', tone === 'ok');
+      element.classList.toggle('warn', tone === 'warn');
       element.classList.toggle('error', tone === 'error');
     });
     renderFirebaseUserPanel();
@@ -1275,9 +1266,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         'aria-label',
         `${displayName}. ${isExpanded ? 'Zatvori' : 'Otvori'} korisnički panel.`
       );
-    }
-    if (els.firebaseUserPatientMode && typeof formatPatientModeLabel === 'function') {
-      els.firebaseUserPatientMode.textContent = formatPatientModeLabel(getCurrentPatientMode());
     }
   }
 
@@ -2930,6 +2918,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (els.firebaseUserSignOutBtn) els.firebaseUserSignOutBtn.disabled = busy || !hasClient || !hasUser;
     if (els.firebaseUserMigrateLegacyPatientsBtn) {
       els.firebaseUserMigrateLegacyPatientsBtn.disabled = busy || !hasClient || !hasUser || !hasClinicalAccess || !legacyRecordCount;
+      els.firebaseUserMigrateLegacyPatientsBtn.hidden = !legacyRecordCount;
       els.firebaseUserMigrateLegacyPatientsBtn.textContent = legacyRecordCount
         ? `Prebaci stare pacijente (${legacyRecordCount})`
         : 'Nema starih pacijenata';
@@ -3660,11 +3649,22 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       await client.signInWithPopup(client.auth, client.provider);
     } catch (error) {
       console.warn('Firebase prijava nije uspjela.', error);
-      const message = getFirebaseAuthErrorMessage(error);
-      markFirebaseAvailabilityUnavailable(message);
-      setFirebasePatientStatus(message, 'error');
-      if (options.fromGate) setFirebaseLoginGateStatus(message, true);
-      setStatus(message, true);
+      const authErrorCode = String(error?.code || '');
+      const wasPopupClosed = authErrorCode === 'auth/popup-closed-by-user';
+      const wasPopupCancelled = authErrorCode === 'auth/cancelled-popup-request';
+      const wasBrowserPopupIssue = authErrorCode === 'auth/popup-blocked';
+      const isInteractivePopupIssue = wasPopupClosed || wasPopupCancelled || wasBrowserPopupIssue;
+      const hasExistingUser = Boolean(state.firebasePatients.user);
+      const message = wasPopupClosed && hasExistingUser
+        ? 'Promjena računa je prekinuta. Trenutni korisnik je ostao prijavljen.'
+        : wasPopupClosed
+          ? 'Prijava je prekinuta. Firebase je dostupan; pokušaj ponovno kad želiš.'
+        : getFirebaseAuthErrorMessage(error);
+      if (isInteractivePopupIssue) markFirebaseAvailabilityAvailable();
+      else markFirebaseAvailabilityUnavailable(message);
+      setFirebasePatientStatus(message, isInteractivePopupIssue ? 'warn' : 'error');
+      if (options.fromGate) setFirebaseLoginGateStatus(message, !isInteractivePopupIssue);
+      setStatus(message, !isInteractivePopupIssue);
     } finally {
       state.firebasePatients.loading = false;
       updateFirebasePatientControls();

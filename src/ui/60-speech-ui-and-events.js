@@ -1166,10 +1166,6 @@ function getTherapySuggestionPanel(targetId) {
     if (els.firebaseUserSwitchBtn) els.firebaseUserSwitchBtn.addEventListener('click', () => signInFirebasePatients({ fromGate: true }));
     if (els.firebaseUserNewBtn) els.firebaseUserNewBtn.addEventListener('click', showFirebaseNewUserProfileForm);
     if (els.firebaseUserSignOutBtn) els.firebaseUserSignOutBtn.addEventListener('click', signOutFirebasePatients);
-    if (els.firebaseUserEnableDraftBtn) els.firebaseUserEnableDraftBtn.addEventListener('click', () => {
-      void enableEncryptedPatientDraftRecovery();
-    });
-    if (els.firebaseUserClearDraftBtn) els.firebaseUserClearDraftBtn.addEventListener('click', () => clearPatientDraft());
     if (els.firebaseUserMigrateLegacyPatientsBtn) els.firebaseUserMigrateLegacyPatientsBtn.addEventListener('click', () => migrateLegacyFirebasePatientsToCurrentProfile());
     if (els.firebaseLoginGateSignInBtn) els.firebaseLoginGateSignInBtn.addEventListener('click', () => signInFirebasePatients({ fromGate: true }));
     if (els.firebaseLoginGateNewUserBtn) els.firebaseLoginGateNewUserBtn.addEventListener('click', () => {
