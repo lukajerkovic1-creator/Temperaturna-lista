@@ -1538,6 +1538,52 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('blocks Firebase save and warns before clearing unnamed patient', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=unnamed-patient-save-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
+
+    await page.locator('#birthYear').fill('1979');
+    await page.locator('#admissionDate').fill('16.06.2026.');
+    await page.locator('#diagnosis').fill('Dijagnoza bez imena.');
+    await page.locator('#therapy').fill('ceftriakson 2 g iv.');
+
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent neće biti spremljen jer nema imena/i);
+    await expect(page.locator('#fullName')).toBeFocused();
+
+    let patientWrites = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites.filter(item => item.collection === 'patients');
+    });
+    expect(patientWrites).toHaveLength(0);
+
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+      dialogs.push({ type: dialog.type(), message: dialog.message() });
+      await dialog.accept();
+    });
+
+    await page.locator('#newPatientEntryBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/nije spremljen jer nema imena/i);
+    await expect(page.locator('#birthYear')).toHaveValue('');
+    await expect(page.locator('#diagnosis')).toHaveValue('');
+    await expect(page.locator('#therapy')).toHaveValue('');
+
+    patientWrites = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites.filter(item => item.collection === 'patients');
+    });
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0].type).toBe('confirm');
+    expect(dialogs[0].message).toContain('Pacijent neće biti spremljen jer nema imena');
+    expect(patientWrites).toHaveLength(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('updates an existing Firebase patient instead of creating a duplicate', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');

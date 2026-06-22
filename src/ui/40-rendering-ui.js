@@ -3923,6 +3923,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       return false;
     }
 
+    if (!hasPatientFullName(patientData)) {
+      const message = MISSING_PATIENT_NAME_SAVE_MESSAGE;
+      state.firebasePatients.lastSaveErrorMessage = message;
+      if (automatic) {
+        setFirebasePatientStatus(`${automaticStatusLabel} čeka ime pacijenta.`, 'warn');
+      } else {
+        setFirebasePatientStatus(message, 'error');
+        setStatus(message, true);
+        if (els.fullName) window.setTimeout(() => els.fullName.focus({ preventScroll: true }), 0);
+      }
+      markPatientSyncFailed(message, {
+        data: patientData,
+        status: 'dirty',
+        lastSaveTarget: 'none'
+      });
+      return false;
+    }
+
     const validation = validatePatientDataObject(patientData);
     if (!validation.ok) {
       const message = `Podaci pacijenta nisu valjani za Firebase: ${validation.errors.join(' ')}`;

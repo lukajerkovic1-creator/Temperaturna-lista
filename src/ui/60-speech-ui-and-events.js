@@ -1131,7 +1131,7 @@ function getTherapySuggestionPanel(targetId) {
       });
     }
 
-    els.newBtn.addEventListener('click', clearForm);
+    els.newBtn.addEventListener('click', startNewPatientEntry);
     els.saveDataBtn.addEventListener('click', savePatientData);
     els.loadDataBtn.addEventListener('click', () => els.loadDataInput.click());
     if (els.enableEncryptedPatientDraftBtn) els.enableEncryptedPatientDraftBtn.addEventListener('click', () => {
@@ -1236,6 +1236,12 @@ function getTherapySuggestionPanel(targetId) {
     if (els.firebasePatientSelect) els.firebasePatientSelect.addEventListener('change', updateFirebasePatientControls);
     if (els.loadPatientFromFirebaseBtn) els.loadPatientFromFirebaseBtn.addEventListener('click', loadSelectedFirebasePatient);
     if (els.deletePatientFromFirebaseBtn) els.deletePatientFromFirebaseBtn.addEventListener('click', archiveSelectedFirebasePatient);
+    window.addEventListener('beforeunload', (event) => {
+      if (!shouldWarnAboutUnnamedPatient()) return;
+      event.preventDefault();
+      event.returnValue = MISSING_PATIENT_NAME_SAVE_MESSAGE;
+      return MISSING_PATIENT_NAME_SAVE_MESSAGE;
+    });
     initFirebasePatients();
     els.printBtn.addEventListener('click', printPages);
     if (els.adminToggleBtn) els.adminToggleBtn.addEventListener('click', toggleAdminMode);

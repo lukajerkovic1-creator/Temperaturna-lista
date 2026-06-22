@@ -4733,6 +4733,20 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return Object.keys(empty).some((key) => key !== 'patientMode' && data[key] !== empty[key]);
   }
 
+  const MISSING_PATIENT_NAME_SAVE_MESSAGE = 'Pacijent neće biti spremljen jer nema imena.';
+
+  function hasPatientFullName(data = {}) {
+    return Boolean(String(data?.fullName || '').replace(/\s+/g, ' ').trim());
+  }
+
+  function shouldWarnAboutUnnamedPatient(data = getFormData()) {
+    return isPatientDataDifferentFromEmpty(data) && !hasPatientFullName(data);
+  }
+
+  function getUnnamedPatientNewEntryMessage() {
+    return `${MISSING_PATIENT_NAME_SAVE_MESSAGE}\n\nOtvoriti novi unos i obrisati podatke iz obrasca?`;
+  }
+
   function setFormData(data = {}) {
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
@@ -5418,10 +5432,26 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   async function startNewPatientEntry() {
-    const hasPatientData = isPatientDataDifferentFromEmpty(getFormData());
+    const currentData = getFormData();
+    const hasPatientData = isPatientDataDifferentFromEmpty(currentData);
     if (!hasPatientData) {
       clearForm({
         statusMessage: 'Novi unos je spreman.',
+        draftStatusMessage: 'Lokalni draft obrisan za novi unos.',
+        focusFirstField: true
+      });
+      return;
+    }
+
+    if (!hasPatientFullName(currentData)) {
+      const continueWithoutSave = window.confirm(getUnnamedPatientNewEntryMessage());
+      if (!continueWithoutSave) {
+        setStatus('Novi unos je odgođen; pacijent nema ime i nije spremljen.');
+        if (els.fullName) window.setTimeout(() => els.fullName.focus({ preventScroll: true }), 0);
+        return;
+      }
+      clearForm({
+        statusMessage: 'Novi unos je spreman. Prethodni pacijent nije spremljen jer nema imena.',
         draftStatusMessage: 'Lokalni draft obrisan za novi unos.',
         focusFirstField: true
       });
