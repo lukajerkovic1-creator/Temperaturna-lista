@@ -2280,6 +2280,21 @@ test.describe('GitHub Pages smoke test', () => {
 
     await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
 
+    await page.locator('#therapy').fill('Zzzcustomol 7 mg 1,0,0 tbl');
+    await expect(therapyBox.locator('.therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
+    await expect(therapyBox).toBeHidden();
+
+    await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
+    const amlodipinSaveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
+    await expect(amlodipinSaveOption).toBeVisible();
+    await expect(amlodipinSaveOption).toContainText(/Spremi moj unos/i);
+    await continueWithoutFirebaseIfVisible(page);
+    await amlodipinSaveOption.click();
+
+    await page.locator('#therapy').fill('amlodipin 5 mg 1,0,0 tbl');
+    await expect(therapyBox.locator('.therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
+    await expect(therapyBox).toBeHidden();
+
     await page.locator('#therapy').fill('Zzz');
     await expect(therapyBox).toBeVisible();
     await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);

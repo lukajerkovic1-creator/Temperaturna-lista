@@ -1124,14 +1124,62 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return key ? state.therapyAutocomplete.usage?.[key] || null : null;
   }
 
+  function normalizeTherapyAutocompleteComparableKey(value) {
+    let key = normalizeTherapyAutocompleteUsageKey(value || '');
+    if (!key) return '';
+    key = key
+      .replace(/\bi\s+v\b/g, 'iv')
+      .replace(/\bs\s+c\b/g, 'sc')
+      .replace(/\bp\s+o\b/g, 'po')
+      .replace(/\btablete?\b/g, 'tbl')
+      .replace(/\bkapsule?\b/g, 'kaps')
+      .replace(/\bampule?\b/g, 'amp')
+      .replace(/\binjekcija\b/g, 'inj')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return key.slice(0, 180);
+  }
+
+  function getTherapyAutocompleteComparableKeys(line) {
+    const keys = new Set();
+    const clean = String(line || '')
+      .replace(THERAPY_BULLET_PREFIX_RE, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const key = normalizeTherapyAutocompleteComparableKey(clean);
+    if (!key) return keys;
+    keys.add(key);
+    const withoutTerminalForm = key.replace(/\s+(?:tbl|kaps|caps)\s*$/i, '').trim();
+    if (withoutTerminalForm && withoutTerminalForm !== key) keys.add(withoutTerminalForm);
+    return keys;
+  }
+
+  function therapyAutocompleteKeySetsOverlap(left, right) {
+    for (const key of left || []) {
+      if (right?.has?.(key)) return true;
+    }
+    return false;
+  }
+
+  function findExistingTherapyAutocompleteUsageKeyForLine(line) {
+    const desiredKeys = getTherapyAutocompleteComparableKeys(line);
+    if (!desiredKeys.size) return '';
+    const exactKey = normalizeTherapyAutocompleteUsageKey(line || '');
+    if (exactKey && state.therapyAutocomplete.usage?.[exactKey]) return exactKey;
+    for (const [storedKey, value] of Object.entries(state.therapyAutocomplete.usage || {})) {
+      const normalized = normalizeTherapyAutocompleteUsageRecord(storedKey, value);
+      if (!normalized) continue;
+      const storedKeys = getTherapyAutocompleteComparableKeys(normalized.record.line || storedKey);
+      if (therapyAutocompleteKeySetsOverlap(desiredKeys, storedKeys)) return storedKey;
+    }
+    return '';
+  }
+
   function hasTherapyAutocompleteUsageForLine(line) {
     const key = normalizeTherapyAutocompleteUsageKey(line || '');
     if (!key) return false;
     if (normalizeTherapyAutocompleteUsageRecord(key, state.therapyAutocomplete.usage?.[key])) return true;
-    return Object.entries(state.therapyAutocomplete.usage || {}).some(([storedKey, value]) => {
-      const normalized = normalizeTherapyAutocompleteUsageRecord(storedKey, value);
-      return Boolean(normalized && normalized.key === key);
-    });
+    return Boolean(findExistingTherapyAutocompleteUsageKeyForLine(line));
   }
 
   function buildTherapyAutocompleteMeta(item, usageRecord) {
@@ -1168,13 +1216,14 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function recordTherapyAutocompleteSelection(item, options = {}) {
-    const key = normalizeTherapyAutocompleteUsageKey(item?.line || '');
+    const line = String(item?.line || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+    const key = findExistingTherapyAutocompleteUsageKeyForLine(line) || normalizeTherapyAutocompleteUsageKey(line);
     if (!key) return;
     const usage = state.therapyAutocomplete.usage || {};
     const previous = usage[key] || {};
     const source = options.source || item?.source || previous.source || '';
     usage[key] = {
-      line: String(item.line || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+      line,
       count: Math.min(9999, Math.max(0, Number(previous.count || 0)) + 1),
       lastUsedAt: new Date().toISOString(),
       source: source === 'custom' ? 'custom' : ''
@@ -1216,8 +1265,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       updateRememberTherapyAutocompleteButtonState();
       return false;
     }
-    const key = normalizeTherapyAutocompleteUsageKey(line);
-    const alreadyStored = Boolean(key && state.therapyAutocomplete.usage?.[key]);
+    const alreadyStored = hasTherapyAutocompleteUsageForLine(line);
     recordTherapyAutocompleteSelection({ line, source: 'custom' }, { source: 'custom' });
     updateRememberTherapyAutocompleteButtonState();
     setStatus(`${alreadyStored ? 'Osvježen' : 'Upamćen'} je lokalni prijedlog kronične terapije: ${line}`);
@@ -1227,7 +1275,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function deleteCustomTherapyAutocompleteSuggestion(index = state.therapyAutocomplete.activeIndex || 0) {
     const suggestions = state.therapyAutocomplete.suggestions || [];
     const item = suggestions[index];
-    const key = normalizeTherapyAutocompleteUsageKey(item?.line || '');
+    const key = findExistingTherapyAutocompleteUsageKeyForLine(item?.line || '') || normalizeTherapyAutocompleteUsageKey(item?.line || '');
     if (!key || item?.source !== 'custom' || state.therapyAutocomplete.usage?.[key]?.source !== 'custom') {
       return false;
     }
