@@ -1872,13 +1872,17 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     };
   }
 
-  function switchPersonalSuggestionsToUser(userId) {
+  let personalAutocompleteProfileSaveTimer = null;
+
+  function switchPersonalSuggestionsToUser(userId, options = {}) {
     const nextUserId = normalizePersonalStorageUserId(userId || 'local');
-    if (activePersonalSuggestionsStorageUserId === nextUserId) return;
     activePersonalSuggestionsStorageUserId = nextUserId;
     state.therapyAutocomplete.usage = loadTherapyAutocompleteUsageFromStorage();
     state.diagnosisAutocomplete.usage = loadDiagnosisAutocompleteUsageFromStorage();
     state.diagnosisAutocomplete.recordedKeys = new Set(Object.keys(state.diagnosisAutocomplete.usage || {}));
+    if (nextUserId !== 'local') {
+      applyPersonalAutocompletePayloadFromProfile(options.profile || state.firebasePatients.userProfile || {});
+    }
     hideTherapyAutocomplete();
     hideDiagnosisAutocomplete();
   }
@@ -1904,10 +1908,65 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       wardIds: clinical.wardIds,
       activeWardId: clinical.activeWardId,
       createdAt: String(payload.createdAt || ''),
-      updatedAt: String(payload.updatedAt || '')
+      updatedAt: String(payload.updatedAt || ''),
+      personalAutocomplete: normalizePersonalAutocompleteProfilePayload(payload.personalAutocomplete || payload.personalSuggestions || {})
     };
     if (!profile.displayName) profile.displayName = getFirebaseProfileDisplayName(profile);
     return profile.uid && profile.email ? profile : null;
+  }
+
+  function canPersistPersonalAutocompleteProfile() {
+    return Boolean(
+      state.firebasePatients.user?.uid &&
+      state.firebasePatients.userProfile?.uid &&
+      isFirebaseUserProfileComplete(state.firebasePatients.userProfile)
+    );
+  }
+
+  async function persistPersonalAutocompleteProfileToFirebase() {
+    if (!canPersistPersonalAutocompleteProfile()) return false;
+    const user = state.firebasePatients.user;
+    const profile = state.firebasePatients.userProfile;
+    const client = await getFirebasePatientsClient();
+    const nowIso = new Date().toISOString();
+    const personalAutocomplete = buildPersonalAutocompleteProfilePayload();
+    const patch = {
+      schema: 'temperaturna-lista-user-profile-v1',
+      appVersion: APP_VERSION,
+      uid: user.uid,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      department: profile.department,
+      email: profile.email,
+      displayName: getFirebaseProfileDisplayName(profile),
+      organizationId: profile.organizationId,
+      wardIds: profile.wardIds,
+      activeWardId: profile.activeWardId,
+      roles: profile.roles,
+      role: profile.roles?.[0] || profile.role || DEFAULT_CLINICAL_ROLE,
+      personalAutocomplete,
+      updatedAt: nowIso,
+      serverUpdatedAt: client.serverTimestamp()
+    };
+    await client.setDoc(client.doc(client.db, FIREBASE_USER_PROFILES_COLLECTION, user.uid), patch, { merge: true });
+    state.firebasePatients.userProfile = normalizeFirebaseUserProfilePayload({
+      ...profile,
+      ...patch
+    }, user) || profile;
+    return true;
+  }
+
+  function schedulePersonalAutocompleteProfileSave() {
+    if (!canPersistPersonalAutocompleteProfile()) return false;
+    if (personalAutocompleteProfileSaveTimer) window.clearTimeout(personalAutocompleteProfileSaveTimer);
+    personalAutocompleteProfileSaveTimer = window.setTimeout(() => {
+      personalAutocompleteProfileSaveTimer = null;
+      persistPersonalAutocompleteProfileToFirebase().catch((error) => {
+        console.warn('Spremanje osobnih prijedloga u Firebase profil nije uspjelo.', error);
+        setStatus('Osobni prijedlog je spremljen u ovoj sesiji, ali nije spremljen u Firebase profil.', true);
+      });
+    }, 250);
+    return true;
   }
 
   function isFirebaseUserProfileComplete(profile) {
@@ -1973,6 +2032,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       activeWardId: clinical.activeWardId,
       roles: clinical.roles,
       role: clinical.roles[0] || DEFAULT_CLINICAL_ROLE,
+      personalAutocomplete: buildPersonalAutocompleteProfilePayload(),
       updatedAt: nowIso,
       serverUpdatedAt: client.serverTimestamp()
     };
@@ -1985,7 +2045,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     state.firebasePatients.userProfile = savedProfile;
     refreshFirebaseAuthContext();
     state.firebasePatients.pendingRegistrationProfile = null;
-    switchPersonalSuggestionsToUser(user.uid);
+    switchPersonalSuggestionsToUser(user.uid, { profile: savedProfile });
     hideFirebaseLoginGate();
     setFirebasePatientStatus(`Prijavljeno: ${getFirebaseProfileDisplayName(savedProfile)} - ${savedProfile.department}`, 'ok');
     setFirebaseLoginGateStatus(`Profil spremljen: ${getFirebaseProfileDisplayName(savedProfile)}.`);
@@ -3621,7 +3681,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function setFirebaseUserProfileReady(profile) {
     state.firebasePatients.userProfile = profile;
     const authContext = refreshFirebaseAuthContext();
-    switchPersonalSuggestionsToUser(state.firebasePatients.user?.uid || 'local');
+    switchPersonalSuggestionsToUser(state.firebasePatients.user?.uid || 'local', { profile });
     resetFirebaseLoginGateDismissal();
     setFirebaseRegistrationMode(false, { focus: false });
     hideFirebaseLoginGate();

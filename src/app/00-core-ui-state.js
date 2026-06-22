@@ -3143,6 +3143,9 @@
     const payload = buildTherapyAutocompleteUsagePayload();
     if (payload?.records) state.therapyAutocomplete.usage = payload.records;
     clearLocalStorageKeysWithPrefix(STORAGE_KEYS.therapyAutocompleteUsage);
+    if (typeof schedulePersonalAutocompleteProfileSave === 'function') {
+      schedulePersonalAutocompleteProfileSave();
+    }
     return true;
   }
 
@@ -3218,7 +3221,91 @@
     const payload = buildDiagnosisAutocompleteUsagePayload();
     if (payload?.records) state.diagnosisAutocomplete.usage = payload.records;
     clearLocalStorageKeysWithPrefix(STORAGE_KEYS.diagnosisAutocompleteUsage);
+    if (typeof schedulePersonalAutocompleteProfileSave === 'function') {
+      schedulePersonalAutocompleteProfileSave();
+    }
     return true;
+  }
+
+  const PERSONAL_AUTOCOMPLETE_SCHEMA = 'temperaturna-lista-personal-autocomplete-v1';
+
+  function normalizeTherapyAutocompleteUsagePayload(payload = {}) {
+    const records = {};
+    const source = payload && typeof payload === 'object'
+      ? (payload.records && typeof payload.records === 'object' ? payload.records : payload)
+      : {};
+    Object.entries(source || {})
+      .map(([key, value]) => normalizeTherapyAutocompleteUsageRecord(key, value))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b.record.count !== a.record.count) return b.record.count - a.record.count;
+        return (Date.parse(b.record.lastUsedAt || '') || 0) - (Date.parse(a.record.lastUsedAt || '') || 0);
+      })
+      .slice(0, 250)
+      .forEach(({ key, record }) => {
+        records[key] = record;
+      });
+    return records;
+  }
+
+  function normalizeDiagnosisAutocompleteUsagePayload(payload = {}) {
+    const records = {};
+    const source = payload && typeof payload === 'object'
+      ? (payload.records && typeof payload.records === 'object' ? payload.records : payload)
+      : {};
+    Object.entries(source || {})
+      .map(([key, value]) => normalizeDiagnosisAutocompleteUsageRecord(key, value))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b.record.count !== a.record.count) return b.record.count - a.record.count;
+        return (Date.parse(b.record.lastUsedAt || '') || 0) - (Date.parse(a.record.lastUsedAt || '') || 0);
+      })
+      .slice(0, 300)
+      .forEach(({ key, record }) => {
+        records[key] = record;
+      });
+    return records;
+  }
+
+  function normalizePersonalAutocompleteProfilePayload(payload = {}) {
+    const source = payload && typeof payload === 'object' ? payload : {};
+    return {
+      schema: PERSONAL_AUTOCOMPLETE_SCHEMA,
+      storageVersion: 1,
+      savedAt: String(source.savedAt || ''),
+      therapies: {
+        storageVersion: 1,
+        savedAt: String(source.therapies?.savedAt || source.savedAt || ''),
+        records: normalizeTherapyAutocompleteUsagePayload(source.therapies || {})
+      },
+      diagnoses: {
+        storageVersion: 1,
+        savedAt: String(source.diagnoses?.savedAt || source.savedAt || ''),
+        records: normalizeDiagnosisAutocompleteUsagePayload(source.diagnoses || {})
+      }
+    };
+  }
+
+  function getPersonalAutocompletePayloadFromProfile(profile = {}) {
+    return normalizePersonalAutocompleteProfilePayload(profile?.personalAutocomplete || profile?.personalSuggestions || {});
+  }
+
+  function applyPersonalAutocompletePayloadFromProfile(profile = {}) {
+    const payload = getPersonalAutocompletePayloadFromProfile(profile);
+    state.therapyAutocomplete.usage = normalizeTherapyAutocompleteUsagePayload(payload.therapies || {});
+    state.diagnosisAutocomplete.usage = normalizeDiagnosisAutocompleteUsagePayload(payload.diagnoses || {});
+    state.diagnosisAutocomplete.recordedKeys = new Set(Object.keys(state.diagnosisAutocomplete.usage || {}));
+    return payload;
+  }
+
+  function buildPersonalAutocompleteProfilePayload() {
+    return {
+      schema: PERSONAL_AUTOCOMPLETE_SCHEMA,
+      storageVersion: 1,
+      savedAt: new Date().toISOString(),
+      therapies: buildTherapyAutocompleteUsagePayload(),
+      diagnoses: buildDiagnosisAutocompleteUsagePayload()
+    };
   }
 
   // ============================================================

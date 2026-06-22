@@ -133,6 +133,9 @@ function installFirebaseSmokeClient(page, options = {}) {
         profile.roles = [];
         profile.role = '';
       }
+      if (smokeOptions.personalAutocomplete) {
+        profile.personalAutocomplete = smokeOptions.personalAutocomplete;
+      }
       docs.set(`userProfiles/${smokeUser.uid}`, profile);
     }
     const cloneJson = (value) => JSON.parse(JSON.stringify(value));
@@ -2332,6 +2335,60 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(therapyBox).toBeHidden();
     await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
     await expect(page.locator('#therapyCsvStatus')).toContainText(/Baza lijekova OK/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('loads and persists custom chronic therapy suggestions through the Firebase user profile', async ({ page }) => {
+    await installFirebaseSmokeClient(page, {
+      personalAutocomplete: {
+        schema: 'temperaturna-lista-personal-autocomplete-v1',
+        storageVersion: 1,
+        savedAt: '2026-06-22T08:00:00.000Z',
+        therapies: {
+          storageVersion: 1,
+          savedAt: '2026-06-22T08:00:00.000Z',
+          records: {
+            'fragmin 1x2500 i j s c': {
+              line: 'Fragmin 1x2500 i.j. s.c.',
+              count: 3,
+              lastUsedAt: '2026-06-22T08:00:00.000Z',
+              source: 'custom'
+            }
+          }
+        },
+        diagnoses: {
+          storageVersion: 1,
+          savedAt: '2026-06-22T08:00:00.000Z',
+          records: {}
+        }
+      }
+    });
+    const browserSignals = await openApp(page, './?qa=firebase-personal-therapy-suggestions&firebaseSmoke=1');
+
+    const therapyBox = page.locator('#therapyAutocompleteBox');
+    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Prijavljeno/i);
+
+    await page.locator('#therapy').fill('Fragmin 1x2500 i.j. s.c.');
+    await expect(therapyBox.locator('.therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
+    await expect(therapyBox).toBeHidden();
+
+    await page.locator('#therapy').fill('Zzzprofilex 4 mg 1,0,0 tbl');
+    const saveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
+    await expect(saveOption).toBeVisible();
+    await saveOption.click();
+
+    const findProfileSuggestionWrite = () => page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const writes = client.__smokeWrites
+        .filter(item => item.op === 'setDoc' && item.collection === 'userProfiles' && item.id === 'smoke-user-uid');
+      return writes.find(item => JSON.stringify(item.payload || {}).includes('Zzzprofilex 4 mg 1,0,0 tbl')) || null;
+    });
+    await expect.poll(findProfileSuggestionWrite).not.toBeNull();
+    const profileSuggestionWrite = await findProfileSuggestionWrite();
+    expect(JSON.stringify(profileSuggestionWrite.payload.personalAutocomplete)).toContain('Zzzprofilex 4 mg 1,0,0 tbl');
+
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
 
     browserSignals.assertCleanBrowserSignals();
   });
