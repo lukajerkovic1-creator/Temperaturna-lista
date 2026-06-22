@@ -2130,6 +2130,10 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
     await page.keyboard.press('Enter');
     await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*0,1,0 tbl/i);
+    const rememberedTherapyLine = await page.locator('#therapy').inputValue();
+    await page.locator('#therapy').fill(rememberedTherapyLine);
+    await expect(page.locator('#therapyAutocompleteBox .therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
+    await expect(page.locator('#therapyAutocompleteBox')).toBeHidden();
 
     browserSignals.assertCleanBrowserSignals();
   });

@@ -1124,6 +1124,16 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return key ? state.therapyAutocomplete.usage?.[key] || null : null;
   }
 
+  function hasTherapyAutocompleteUsageForLine(line) {
+    const key = normalizeTherapyAutocompleteUsageKey(line || '');
+    if (!key) return false;
+    if (normalizeTherapyAutocompleteUsageRecord(key, state.therapyAutocomplete.usage?.[key])) return true;
+    return Object.entries(state.therapyAutocomplete.usage || {}).some(([storedKey, value]) => {
+      const normalized = normalizeTherapyAutocompleteUsageRecord(storedKey, value);
+      return Boolean(normalized && normalized.key === key);
+    });
+  }
+
   function buildTherapyAutocompleteMeta(item, usageRecord) {
     if (item?.kind === 'save-custom') return item.meta || 'spremi u moje prijedloge';
     if (item?.source === 'custom') return 'moj spremljeni prijedlog';
@@ -1281,7 +1291,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (!isRememberableTherapyAutocompleteLine(line)) return null;
     if (!/\s/.test(line) || line.length < 8) return null;
     const key = normalizeTherapyAutocompleteUsageKey(line);
-    if (!key || state.therapyAutocomplete.usage?.[key]?.source === 'custom') return null;
+    if (!key || hasTherapyAutocompleteUsageForLine(line)) return null;
     const alreadySuggested = (existingSuggestions || []).some((item) => normalizeTherapyAutocompleteUsageKey(item?.line || '') === key);
     if (alreadySuggested) return null;
     return {
