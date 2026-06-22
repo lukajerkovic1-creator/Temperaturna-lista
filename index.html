@@ -12,7 +12,7 @@
 </head>
 <body>
 <div class="app" id="appRoot">
-  <div class="admin-service-banner" role="status" aria-live="polite">
+  <div class="admin-service-banner" id="adminServiceBanner" role="status" aria-live="polite">
     <div>
       <strong>Servisni režim je uključen</strong>
       <span>Ovaj način mijenja položaje i veličine polja na ispisu. Koristiti samo za kalibraciju obrasca.</span>
@@ -625,10 +625,64 @@
 <section id="adminPanel" class="admin-panel">
       <button id="adminCloseBtn" class="admin-close-btn" type="button" title="Isključi servisni režim" aria-label="Isključi servisni režim">×</button>
       <div class="admin-title-row">
-        <div class="admin-floating-title"><span class="admin-kicker">Servisni režim</span><span>Admin kalibracija</span></div>
+        <div class="admin-floating-title"><span class="admin-kicker">Admin dashboard</span><span>Nadzor i kalibracija</span></div>
         <div id="adminUnsavedIndicator" class="admin-unsaved-indicator hidden" aria-live="polite" aria-hidden="true">Nespremljene admin promjene</div>
       </div>
-      <div class="admin-service-note">Ovdje se podešavaju okviri na ispisu. Ovo nije standardni klinički unos podataka.</div>
+      <div id="adminAccessStatus" class="admin-service-note">Admin pristup je zaključan dok se ne potvrdi Lukin administratorski kontekst.</div>
+      <section class="admin-dashboard" id="adminDashboard" aria-label="Administratorski dashboard">
+        <div class="admin-dashboard-header">
+          <div>
+            <h2>Pregled sustava</h2>
+            <p>Sažetak korisnika, odjela, aktivnosti, grešaka i sigurnih admin radnji.</p>
+          </div>
+          <button id="adminRefreshDashboardBtn" type="button">Osvježi</button>
+        </div>
+        <div class="admin-metric-grid" aria-label="Admin metrike">
+          <div class="admin-metric-card"><span>Korisnici</span><strong id="adminMetricUsers">0</strong></div>
+          <div class="admin-metric-card"><span>Odjeli</span><strong id="adminMetricWards">0</strong></div>
+          <div class="admin-metric-card"><span>Pacijenti</span><strong id="adminMetricPatients">0</strong></div>
+          <div class="admin-metric-card"><span>Audit događaji</span><strong id="adminMetricAuditEvents">0</strong></div>
+          <div class="admin-metric-card warning"><span>Greške</span><strong id="adminMetricErrors">0</strong></div>
+        </div>
+        <div class="admin-dashboard-actions">
+          <button id="adminExportReportBtn" type="button">Export admin izvještaja</button>
+          <button id="adminAddUserBtn" type="button" disabled>Dodaj korisnika</button>
+          <button id="adminApproveUserBtn" type="button" disabled>Odobri prava</button>
+          <button id="adminEditUserRolesBtn" type="button" disabled>Uredi odjel i uloge</button>
+          <button id="adminDeactivateUserBtn" type="button" disabled>Deaktiviraj korisnika</button>
+        </div>
+        <div class="admin-guard-note">Promjena tuđih ovlasti mora ići kroz Firestore pravila i/ili Cloud Functions. Ovdje je pripremljen UI, ali rizične promjene ostaju zaključane dok ne postoji serverska admin zaštita.</div>
+        <div class="admin-dashboard-status" id="adminDashboardStatus" role="status" aria-live="polite">Dashboard još nije učitan.</div>
+        <section class="admin-dashboard-section" aria-labelledby="adminUsersTitle">
+          <h3 id="adminUsersTitle">Korisnici i ovlasti</h3>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Korisnik</th>
+                  <th>Odjel</th>
+                  <th>Uloge</th>
+                  <th>Pacijenti</th>
+                  <th>Korištenje</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersTableBody">
+                <tr><td colspan="6">Nema učitanih korisnika.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="admin-dashboard-section" aria-labelledby="adminAuditTitle">
+          <h3 id="adminAuditTitle">Audit log</h3>
+          <div class="admin-list" id="adminAuditList">Nema učitanih audit događaja.</div>
+        </section>
+        <section class="admin-dashboard-section" aria-labelledby="adminErrorsTitle">
+          <h3 id="adminErrorsTitle">Greške i poteškoće</h3>
+          <div class="admin-list" id="adminErrorList">Nema učitanih grešaka.</div>
+        </section>
+      </section>
+      <div class="admin-service-note">Kalibracija ispod podešava okvire na ispisu. Ovo nije standardni klinički unos podataka.</div>
       <div class="admin-floating-grid">
         <div>
           <label for="fieldFontSizeInput">Veličina fonta</label>

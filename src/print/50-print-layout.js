@@ -619,6 +619,7 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
 
   function setAdminMode(enabled) {
     const nextEnabled = Boolean(enabled);
+    if (nextEnabled && !requireSuperAdminForAdminMode()) return;
     const wasEnabled = Boolean(state.admin.enabled);
     state.admin.enabled = nextEnabled;
 
@@ -653,14 +654,17 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
     updateUndoRedoButtons();
     updateAdminAdvancedControls();
     updateAdminUnsavedIndicator();
+    updateAdminAccessVisibility();
     if (state.admin.enabled) {
       updateSelectAllTextBoxesButton();
-      setStatus('Servisni režim je uključen. Mijenjate okvire na ispisu.');
+      renderAdminDashboard();
+      refreshAdminDashboard({ silent: true });
+      setStatus('Admin dashboard je uključen. Kalibraciju ispisa koristi samo za servisne izmjene.');
     } else {
       state.admin.selectAllTextBoxes = false;
       state.admin.drag = null;
       updateSelectAllTextBoxesButton();
-      setStatus('Servisni režim je isključen.');
+      setStatus('Admin dashboard je isključen.');
     }
   }
 
@@ -668,7 +672,8 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
     if (state.admin.enabled) {
       requestCloseAdminMode();
     } else {
-      const confirmed = window.confirm('Uključiti servisni režim za admin kalibraciju? Ovaj način mijenja položaje i veličine polja na ispisu.');
+      if (!requireSuperAdminForAdminMode()) return;
+      const confirmed = window.confirm('Uključiti admin dashboard? Ovdje se vide korisnici, audit i servisna kalibracija ispisa.');
       if (!confirmed) return;
       setAdminMode(true);
     }
@@ -1151,7 +1156,3 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
     if (textarea.id === 'therapy') syncTherapyEditorFromTextarea();
     return true;
   }
-
-
-
-  

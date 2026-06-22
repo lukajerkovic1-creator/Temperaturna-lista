@@ -1244,6 +1244,11 @@ function getTherapySuggestionPanel(targetId) {
     els.printBtn.addEventListener('click', printPages);
     if (els.adminToggleBtn) els.adminToggleBtn.addEventListener('click', toggleAdminMode);
     if (els.adminCloseBtn) els.adminCloseBtn.addEventListener('click', closeAdminMode);
+    if (els.adminRefreshDashboardBtn) els.adminRefreshDashboardBtn.addEventListener('click', () => refreshAdminDashboard());
+    if (els.adminExportReportBtn) els.adminExportReportBtn.addEventListener('click', exportAdminDashboardReport);
+    [els.adminAddUserBtn, els.adminApproveUserBtn, els.adminEditUserRolesBtn, els.adminDeactivateUserBtn]
+      .filter(Boolean)
+      .forEach((button) => button.addEventListener('click', explainLockedAdminServerAction));
     els.saveCalibrationEmbeddedBtn.addEventListener('click', saveCalibrationInsideHtmlApp);
     els.saveCalibrationBtn.addEventListener('click', () => { saveCalibration(); });
     els.loadCalibrationBtn.addEventListener('click', () => els.loadCalibrationInput.click());
@@ -1342,6 +1347,7 @@ function getTherapySuggestionPanel(targetId) {
     populateAdminLayoutSelect();
     populateAdminFieldSelect();
     forceAdminModeOffOnStartup();
+    updateAdminAccessVisibility();
     setDisplayTogglesDefaultOn();
     applyPatientMode(DEFAULT_PATIENT_MODE, { renderLists: false });
     renderPatientSyncState();

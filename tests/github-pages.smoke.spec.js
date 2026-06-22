@@ -105,16 +105,16 @@ function installFirebaseSmokeClient(page, options = {}) {
     const smokeUser = {
       uid: 'smoke-user-uid',
       email: smokeOptions.userEmail || 'smoke.firebase@example.test',
-      displayName: 'Smoke Firebase User'
+      displayName: smokeOptions.displayName || 'Smoke Firebase User'
     };
     if (!smokeOptions.noUserProfile) {
       const profile = {
         schema: 'temperaturna-lista-user-profile-v1',
         appVersion: 'smoke-test',
         uid: smokeUser.uid,
-        firstName: 'Smoke',
-        lastName: 'Firebase User',
-        department: 'Infektologija',
+        firstName: smokeOptions.firstName || 'Smoke',
+        lastName: smokeOptions.lastName || 'Firebase User',
+        department: smokeOptions.department || 'Infektologija',
         organizationId: 'temperaturna-lista-dev',
         wardIds: ['infektologija'],
         activeWardId: 'infektologija',
@@ -201,6 +201,11 @@ function installFirebaseSmokeClient(page, options = {}) {
         const filters = queryFiltersOf(queryRef);
         const maxRows = queryLimitOf(queryRef);
         events.push({ op: 'getDocs', collection, filters: cloneJson(filters), limit: maxRows });
+        const roles = smokeOptions.roles || ['clinician'];
+        const isSmokeSuperAdmin = smokeUser.email === 'luka.jerkovic1@gmail.com' && roles.includes('admin');
+        if ((collection === 'userProfiles' || collection === 'patientAuditEvents') && !isSmokeSuperAdmin) {
+          throwPermissionDenied();
+        }
         if (collection === 'patients') {
           const filterMap = new Map(filters
             .filter(([, operator]) => operator === '==')
@@ -212,7 +217,7 @@ function installFirebaseSmokeClient(page, options = {}) {
             filterMap.get('clinicalPartitionKey') === 'clinical-v1|temperaturna-lista-dev|infektologija';
           const hasLegacyOwnerMigrationScope = filterMap.get('ownerUid') === smokeUser.uid;
           const hasLegacyEmailMigrationScope = filterMap.get('ownerEmail') === smokeUser.email;
-          if (!hasClinicalListScope && !hasLegacyOwnerMigrationScope && !hasLegacyEmailMigrationScope) throwPermissionDenied();
+          if (!isSmokeSuperAdmin && !hasClinicalListScope && !hasLegacyOwnerMigrationScope && !hasLegacyEmailMigrationScope) throwPermissionDenied();
         }
         let rows = Array.from(docs.entries())
           .map(([key, payload]) => {
@@ -895,6 +900,121 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('blocks admin dashboard for authenticated non-admin users', async ({ page }) => {
+    await installFirebaseSmokeClient(page, {
+      userEmail: 'iva.korisnik@example.test',
+      displayName: 'Iva Korisnik',
+      firstName: 'Iva',
+      lastName: 'Korisnik',
+      roles: ['clinician']
+    });
+    const browserSignals = await openApp(page, './?qa=admin-access-block&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#dataAdminAdvancedSection')).toBeHidden();
+    await page.keyboard.press('Control+Alt+A');
+    await expect(page.locator('#adminPanel')).toBeHidden();
+    await expect(page.locator('#statusBar')).toContainText(/samo Luka Jerković|Admin dashboard je zaključan/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('opens admin dashboard only for Luka super admin and loads safe admin overview', async ({ page }) => {
+    await installFirebaseSmokeClient(page, {
+      userEmail: 'luka.jerkovic1@gmail.com',
+      displayName: 'Luka Jerković',
+      firstName: 'Luka',
+      lastName: 'Jerković',
+      roles: ['clinician', 'admin']
+    });
+    const browserSignals = await openApp(page, './?qa=admin-dashboard&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      client.__smokeDocs.set('userProfiles/ana-admin-test', {
+        schema: 'temperaturna-lista-user-profile-v1',
+        appVersion: 'smoke-test',
+        uid: 'ana-admin-test',
+        firstName: 'Ana',
+        lastName: 'Admin Test',
+        displayName: 'Ana Admin Test',
+        department: 'Infektologija',
+        organizationId: 'temperaturna-lista-dev',
+        wardIds: ['infektologija'],
+        activeWardId: 'infektologija',
+        roles: ['clinician'],
+        role: 'clinician',
+        email: 'ana.admin@example.test',
+        createdAt: '2026-06-20T08:00:00.000Z',
+        updatedAt: '2026-06-20T08:00:00.000Z',
+        status: 'active'
+      });
+      client.__smokeDocs.set('patients/admin-patient-001', {
+        schema: 'temperaturna-lista-patient-v1',
+        appVersion: 'smoke-test',
+        accessModel: 'organization-ward-role-v1',
+        organizationId: 'temperaturna-lista-dev',
+        wardId: 'infektologija',
+        clinicalPartitionKey: 'clinical-v1|temperaturna-lista-dev|infektologija',
+        ownerUid: 'ana-admin-test',
+        ownerEmail: 'ana.admin@example.test',
+        patientMode: 'ward',
+        label: 'SINTETSKI PACIJENT',
+        status: 'active',
+        createdAt: '2026-06-20T08:10:00.000Z',
+        updatedAt: '2026-06-20T08:30:00.000Z',
+        data: { patientMode: 'ward', fullName: 'SINTETSKI PACIJENT' }
+      });
+      client.__smokeDocs.set('patientAuditEvents/audit-admin-001', {
+        schema: 'temperaturna-lista-audit-v1',
+        eventType: 'patient.update',
+        accessModel: 'organization-ward-role-v1',
+        organizationId: 'temperaturna-lista-dev',
+        wardId: 'infektologija',
+        clinicalPartitionKey: 'clinical-v1|temperaturna-lista-dev|infektologija',
+        actorUid: 'ana-admin-test',
+        actorEmail: 'ana.admin@example.test',
+        actorRole: 'clinician',
+        patientDocId: 'admin-patient-001',
+        createdAt: '2026-06-20T08:35:00.000Z',
+        source: 'client',
+        trigger: 'smoke-test'
+      });
+      client.__smokeDocs.set('patientAuditEvents/audit-admin-002', {
+        schema: 'temperaturna-lista-audit-v1',
+        eventType: 'patient.saveFailed',
+        accessModel: 'organization-ward-role-v1',
+        organizationId: 'temperaturna-lista-dev',
+        wardId: 'infektologija',
+        clinicalPartitionKey: 'clinical-v1|temperaturna-lista-dev|infektologija',
+        actorUid: 'ana-admin-test',
+        actorEmail: 'ana.admin@example.test',
+        actorRole: 'clinician',
+        patientDocId: 'admin-patient-001',
+        createdAt: '2026-06-20T08:40:00.000Z',
+        source: 'client',
+        trigger: 'smoke-test'
+      });
+    });
+
+    await expect(page.locator('#dataAdminAdvancedSection')).toBeVisible();
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      await dialog.accept();
+    });
+    await page.keyboard.press('Control+Alt+A');
+    await expect(page.locator('#adminPanel')).toBeVisible();
+    await expect(page.locator('#adminAccessStatus')).toContainText(/Admin pristup potvrđen/i);
+    await expect(page.locator('#adminUsersTableBody')).toContainText(/Ana Admin Test/i);
+    await expect(page.locator('#adminMetricPatients')).toHaveText('1');
+    await expect(page.locator('#adminMetricErrors')).toHaveText('1');
+    await expect(page.locator('#adminAuditList')).toContainText(/patient\.update/i);
+    await expect(page.locator('#adminErrorList')).toContainText(/patient\.saveFailed/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('saves patient data to Firebase through the smoke client', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
@@ -1317,11 +1437,7 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
-    const saveButton = page.locator('#savePatientToFirebaseBtn');
-    const advancedSection = page.locator('#dataAdminAdvancedSection');
-    const advancedSummary = advancedSection.locator('summary');
-    await advancedSummary.click();
-    await expect(advancedSection).toHaveAttribute('open', '');
+    const saveButton = page.locator('#savePatientTopBtn');
 
     await page.locator('#fullName').fill('Duplikat Testic');
     await page.locator('#birthYear').fill('1978');
@@ -1465,16 +1581,12 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
-    const advancedSection = page.locator('#dataAdminAdvancedSection');
-    await advancedSection.locator('summary').click();
-    await expect(advancedSection).toHaveAttribute('open', '');
-
     await page.locator('#fullName').fill('Baza Akcija Testic');
     await page.locator('#birthYear').fill('1982');
     await page.locator('#admissionDate').fill('16.06.2026.');
     await page.locator('#diagnosis').fill('Test upravljanja Firebase pacijentima.');
     await page.locator('#therapy').fill('ceftriakson 2 g iv.');
-    await page.locator('#savePatientToFirebaseBtn').click();
+    await page.locator('#savePatientTopBtn').click();
     await expect(page.locator('#statusBar')).toContainText(/Pacijent je spremljen u Firebase/i);
 
     await page.locator('#openFirebasePatientDialogBtn').click();

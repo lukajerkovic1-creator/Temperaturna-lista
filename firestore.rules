@@ -22,6 +22,19 @@ service cloud.firestore {
       return ['clinician', 'physician', 'nurse', 'admin'];
     }
 
+    function superAdminEmails() {
+      return ['luka.jerkovic1@gmail.com'];
+    }
+
+    function isSuperAdmin() {
+      return signedIn()
+        && request.auth.token.email in superAdminEmails()
+        && hasUserProfile()
+        && userProfile().email == request.auth.token.email
+        && userProfile().roles is list
+        && userProfile().roles.hasAny(['admin']);
+    }
+
     function hasClinicalRole() {
       return hasUserProfile()
         && userProfile().roles is list
@@ -42,7 +55,26 @@ service cloud.firestore {
         && data.organizationId.size() > 0
         && data.activeWardId.size() > 0
         && data.activeWardId in data.wardIds
-        && data.roles.hasAny(allowedClinicalRoles());
+        && data.roles.hasAny(allowedClinicalRoles())
+        && data.roles.hasOnly(allowedClinicalRoles());
+    }
+
+    function validManagedUserProfileData(data, userId) {
+      return data.schema == 'temperaturna-lista-user-profile-v1'
+        && data.uid == userId
+        && data.email is string
+        && data.firstName is string
+        && data.lastName is string
+        && data.department is string
+        && data.organizationId is string
+        && data.activeWardId is string
+        && data.wardIds is list
+        && data.roles is list
+        && data.organizationId.size() > 0
+        && data.activeWardId.size() > 0
+        && data.activeWardId in data.wardIds
+        && data.roles.hasAny(allowedClinicalRoles())
+        && data.roles.hasOnly(allowedClinicalRoles());
     }
 
     function hasClinicalAccess(organizationId, wardId) {
@@ -99,7 +131,8 @@ service cloud.firestore {
     match /patients/{patientId} {
       allow create: if request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
-      allow read: if readsClinicalDocument(resource.data)
+      allow read: if isSuperAdmin()
+        || readsClinicalDocument(resource.data)
         || readsLegacyOwnedPatientForMigration(resource.data);
       allow delete: if false;
       allow update: if (readsClinicalDocument(resource.data) || readsLegacyOwnedPatientForMigration(resource.data))
@@ -109,7 +142,7 @@ service cloud.firestore {
 
     match /patientAuditEvents/{eventId} {
       allow create: if writesPatientAuditEvent(request.resource.data);
-      allow read: if readsClinicalDocument(resource.data);
+      allow read: if isSuperAdmin() || readsClinicalDocument(resource.data);
       allow update, delete: if false;
     }
 
@@ -123,10 +156,16 @@ service cloud.firestore {
     }
 
     match /userProfiles/{userId} {
-      allow read: if signedIn() && userId == request.auth.uid;
-      allow create, update: if signedIn()
-        && userId == request.auth.uid
-        && validClinicalProfileData(request.resource.data, userId);
+      allow read: if (signedIn() && userId == request.auth.uid) || isSuperAdmin();
+      allow create, update: if (
+          signedIn()
+          && userId == request.auth.uid
+          && validClinicalProfileData(request.resource.data, userId)
+        ) || (
+          isSuperAdmin()
+          && validManagedUserProfileData(request.resource.data, userId)
+        );
+      allow delete: if false;
     }
   }
 }

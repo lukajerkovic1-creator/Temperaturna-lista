@@ -1681,11 +1681,78 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function refreshFirebaseAuthContext() {
     const context = buildAuthContext(state.firebasePatients.user, state.firebasePatients.userProfile);
     state.firebasePatients.authContext = context;
+    updateAdminAccessVisibility();
     return context;
   }
 
   function getFirebaseAuthContext() {
     return state.firebasePatients.authContext || refreshFirebaseAuthContext();
+  }
+
+  function isSuperAdmin(authContext = getFirebaseAuthContext()) {
+    if (!authContext?.isAuthenticated) return false;
+    const email = normalizeFirebaseProfileEmail(authContext.email || state.firebasePatients.user?.email || '');
+    if (!SUPER_ADMIN_EMAILS.includes(email)) return false;
+    return normalizeClinicalRoleList(authContext.roles || []).includes('admin');
+  }
+
+  function getAdminAccessMessage(authContext = getFirebaseAuthContext()) {
+    if (isSuperAdmin(authContext)) {
+      return `Admin pristup potvrđen: ${authContext.displayName || authContext.email}.`;
+    }
+    if (!authContext?.isAuthenticated) {
+      return 'Admin dashboard je zaključan. Potrebna je Lukina Firebase prijava s admin ulogom.';
+    }
+    return 'Admin dashboard je zaključan. Samo Luka Jerković s admin ulogom može otvoriti administraciju.';
+  }
+
+  function updateAdminAccessVisibility() {
+    const authContext = state.firebasePatients.authContext || createEmptyAuthContext();
+    const allowed = isSuperAdmin(authContext);
+    const hasAuthenticatedUser = Boolean(authContext.isAuthenticated);
+    const canShowAdvancedSection = allowed || !hasAuthenticatedUser;
+
+    if (els.dataAdminAdvancedSection) {
+      els.dataAdminAdvancedSection.classList.toggle('hidden', !canShowAdvancedSection);
+      els.dataAdminAdvancedSection.setAttribute('aria-hidden', canShowAdvancedSection ? 'false' : 'true');
+      if (!canShowAdvancedSection) els.dataAdminAdvancedSection.open = false;
+    }
+    if (els.dataAdminAdvancedTitle) {
+      els.dataAdminAdvancedTitle.textContent = allowed
+        ? 'Napredno: podatci i administracija'
+        : 'Napredno: sigurnosni alati i backup';
+    }
+    if (els.adminToggleBtn) {
+      els.adminToggleBtn.hidden = !allowed;
+      els.adminToggleBtn.disabled = !allowed;
+    }
+    if (els.adminAccessStatus) {
+      const message = getAdminAccessMessage(authContext);
+      els.adminAccessStatus.textContent = message;
+      els.adminAccessStatus.classList.toggle('ok', allowed);
+      els.adminAccessStatus.classList.toggle('error', !allowed);
+    }
+    if (els.adminServiceBanner) {
+      els.adminServiceBanner.classList.toggle('admin-locked', !allowed);
+    }
+    if (!allowed && state.admin.enabled) {
+      setAdminMode(false);
+    }
+    window.__TEMPERATURNA_LISTA_ADMIN_CONTEXT__ = {
+      isSuperAdmin: allowed,
+      email: authContext.email || '',
+      roles: Array.isArray(authContext.roles) ? authContext.roles.slice() : []
+    };
+    return allowed;
+  }
+
+  function requireSuperAdminForAdminMode(options = {}) {
+    const allowed = updateAdminAccessVisibility();
+    if (allowed) return true;
+    if (!options.silent) {
+      setStatus(getAdminAccessMessage(), true);
+    }
+    return false;
   }
 
   function getClinicalPartitionKey(authContext = getFirebaseAuthContext()) {
@@ -2898,6 +2965,320 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       els.firebasePatientShowArchivedToggle.disabled = busy || !canShowArchived;
       els.firebasePatientShowArchivedToggle.checked = Boolean(canShowArchived && state.firebasePatients.showArchived);
     }
+  }
+
+  function setAdminDashboardStatus(message, tone = 'neutral') {
+    if (!els.adminDashboardStatus) return;
+    els.adminDashboardStatus.textContent = message || '';
+    els.adminDashboardStatus.classList.toggle('ok', tone === 'ok');
+    els.adminDashboardStatus.classList.toggle('warn', tone === 'warn');
+    els.adminDashboardStatus.classList.toggle('error', tone === 'error');
+  }
+
+  function getAdminUserDisplayName(profile = {}) {
+    return getFirebaseProfileDisplayName(profile) || normalizeFirebaseProfileEmail(profile.email || '') || profile.uid || 'Nepoznati korisnik';
+  }
+
+  function normalizeAdminUserProfileRecord(docSnap) {
+    const data = typeof docSnap?.data === 'function' ? docSnap.data() : docSnap || {};
+    return {
+      id: docSnap?.id || data.uid || '',
+      uid: data.uid || docSnap?.id || '',
+      email: normalizeFirebaseProfileEmail(data.email || ''),
+      displayName: getAdminUserDisplayName(data),
+      department: normalizeFirebaseProfileText(data.department || data.activeWardId || '', 100),
+      organizationId: normalizeClinicalContextId(data.organizationId || '', 80),
+      activeWardId: normalizeClinicalContextId(data.activeWardId || '', 80),
+      wardIds: normalizeClinicalWardList(data.wardIds, data.activeWardId || data.department || ''),
+      roles: normalizeClinicalRoleList(data.roles || data.role),
+      status: String(data.status || data.accountStatus || 'active').toLowerCase(),
+      updatedAt: data.updatedAt || data.createdAt || ''
+    };
+  }
+
+  function normalizeAdminAuditRecord(docSnap) {
+    const data = typeof docSnap?.data === 'function' ? docSnap.data() : docSnap || {};
+    return {
+      id: docSnap?.id || data.id || '',
+      eventType: String(data.eventType || 'audit.event'),
+      actorUid: String(data.actorUid || ''),
+      actorEmail: normalizeFirebaseProfileEmail(data.actorEmail || ''),
+      actorRole: String(data.actorRole || ''),
+      organizationId: String(data.organizationId || ''),
+      wardId: String(data.wardId || ''),
+      createdAt: data.createdAt || data.serverCreatedAt || '',
+      patientDocId: String(data.patientDocId || ''),
+      trigger: String(data.trigger || ''),
+      metadata: isPlainJsonObject(data.metadata) ? data.metadata : {}
+    };
+  }
+
+  function getAdminRecordMillis(value) {
+    return firebaseTimestampToMillis(value) || Date.parse(String(value || '')) || 0;
+  }
+
+  function isAdminErrorAuditEvent(event = {}) {
+    return /saveFailed|printWithoutSync|conflictDetected|failed|error|denied/i.test(String(event.eventType || ''));
+  }
+
+  function getAdminLastSeen(user, patientRecords = [], auditEvents = []) {
+    const candidates = [user.updatedAt];
+    patientRecords.forEach((record) => {
+      const ownerEmail = normalizeFirebaseProfileEmail(record.ownerEmail || '');
+      if (record.ownerUid === user.uid || (ownerEmail && ownerEmail === user.email)) {
+        candidates.push(record.updatedAt || record.serverUpdatedAt || record.createdAt || record.serverCreatedAt);
+      }
+    });
+    auditEvents.forEach((event) => {
+      if (event.actorUid === user.uid || (event.actorEmail && event.actorEmail === user.email)) {
+        candidates.push(event.createdAt);
+      }
+    });
+    const best = candidates
+      .map(getAdminRecordMillis)
+      .filter(Boolean)
+      .sort((a, b) => b - a)[0];
+    return best ? new Date(best).toISOString() : '';
+  }
+
+  function countAdminUserPatients(user, patientRecords = []) {
+    return patientRecords.filter((record) => {
+      const ownerEmail = normalizeFirebaseProfileEmail(record.ownerEmail || '');
+      return record.ownerUid === user.uid || (ownerEmail && ownerEmail === user.email);
+    }).length;
+  }
+
+  function countAdminUserAuditEvents(user, auditEvents = []) {
+    return auditEvents.filter((event) => (
+      event.actorUid === user.uid ||
+      (event.actorEmail && event.actorEmail === user.email)
+    )).length;
+  }
+
+  function setAdminMetric(element, value) {
+    if (element) element.textContent = String(value ?? 0);
+  }
+
+  function renderAdminList(target, items, emptyText, formatter) {
+    if (!target) return;
+    target.textContent = '';
+    if (!items.length) {
+      target.textContent = emptyText;
+      return;
+    }
+    items.slice(0, 12).forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'admin-list-item';
+      const title = document.createElement('strong');
+      title.textContent = formatter(item).title;
+      const meta = document.createElement('span');
+      meta.textContent = formatter(item).meta;
+      row.append(title, meta);
+      target.appendChild(row);
+    });
+  }
+
+  function renderAdminUsersTable() {
+    const body = els.adminUsersTableBody;
+    if (!body) return;
+    const users = state.adminDashboard.users || [];
+    const patientRecords = state.adminDashboard.patientRecords || [];
+    const auditEvents = state.adminDashboard.auditEvents || [];
+    body.textContent = '';
+    if (!users.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 6;
+      cell.textContent = state.adminDashboard.loading ? 'Učitavam korisnike...' : 'Nema učitanih korisnika.';
+      row.appendChild(cell);
+      body.appendChild(row);
+      return;
+    }
+
+    users.slice(0, 80).forEach((user) => {
+      const row = document.createElement('tr');
+      const patientCount = countAdminUserPatients(user, patientRecords);
+      const usageCount = countAdminUserAuditEvents(user, auditEvents);
+      const lastSeen = getAdminLastSeen(user, patientRecords, auditEvents);
+      const cells = [
+        `${user.displayName}\n${user.email || user.uid}`,
+        user.department || user.activeWardId || 'Bez odjela',
+        user.roles.length ? user.roles.join(', ') : 'bez uloge',
+        String(patientCount),
+        lastSeen ? `${usageCount} događaja · ${formatPatientDraftSavedAt(lastSeen)}` : `${usageCount} događaja`,
+        user.status === 'active' ? 'Aktivan' : user.status
+      ];
+      cells.forEach((value, index) => {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        if (index === 5) cell.className = user.status === 'active' ? 'admin-status-ok' : 'admin-status-warn';
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function renderAdminDashboard() {
+    const users = state.adminDashboard.users || [];
+    const patientRecords = state.adminDashboard.patientRecords || [];
+    const auditEvents = state.adminDashboard.auditEvents || [];
+    const errors = state.adminDashboard.errors || [];
+    const wardIds = new Set();
+    users.forEach((user) => {
+      (user.wardIds || []).forEach((wardId) => { if (wardId) wardIds.add(wardId); });
+      if (user.activeWardId) wardIds.add(user.activeWardId);
+    });
+    patientRecords.forEach((record) => { if (record.wardId) wardIds.add(record.wardId); });
+
+    setAdminMetric(els.adminMetricUsers, users.length);
+    setAdminMetric(els.adminMetricWards, wardIds.size);
+    setAdminMetric(els.adminMetricPatients, patientRecords.length);
+    setAdminMetric(els.adminMetricAuditEvents, auditEvents.length);
+    setAdminMetric(els.adminMetricErrors, errors.length);
+    renderAdminUsersTable();
+    renderAdminList(
+      els.adminAuditList,
+      auditEvents.slice().sort((a, b) => getAdminRecordMillis(b.createdAt) - getAdminRecordMillis(a.createdAt)),
+      'Nema učitanih audit događaja.',
+      (event) => ({
+        title: event.eventType,
+        meta: `${event.actorEmail || event.actorUid || 'nepoznati korisnik'} · ${event.wardId || 'bez odjela'} · ${formatPatientDraftSavedAt(event.createdAt)}`
+      })
+    );
+    renderAdminList(
+      els.adminErrorList,
+      errors.slice().sort((a, b) => getAdminRecordMillis(b.createdAt) - getAdminRecordMillis(a.createdAt)),
+      'Nema zabilježenih grešaka u učitanom audit uzorku.',
+      (event) => ({
+        title: event.eventType,
+        meta: `${event.actorEmail || event.actorUid || 'nepoznati korisnik'} · ${formatPatientDraftSavedAt(event.createdAt)}`
+      })
+    );
+    if (state.adminDashboard.loading) {
+      setAdminDashboardStatus('Učitavam admin podatke...', 'warn');
+    } else if (state.adminDashboard.lastError) {
+      setAdminDashboardStatus(state.adminDashboard.lastError, 'error');
+    } else if (state.adminDashboard.lastLoadedAt) {
+      setAdminDashboardStatus(`Učitano: ${formatPatientDraftSavedAt(state.adminDashboard.lastLoadedAt)}.`, 'ok');
+    }
+  }
+
+  async function refreshAdminDashboard(options = {}) {
+    if (!requireSuperAdminForAdminMode({ silent: options.silent })) return false;
+    try {
+      state.adminDashboard.loading = true;
+      state.adminDashboard.lastError = '';
+      renderAdminDashboard();
+      const client = await getFirebasePatientsClient();
+      const [usersSnapshot, patientsSnapshot, auditSnapshot] = await Promise.all([
+        client.getDocs(client.query(client.collection(client.db, FIREBASE_USER_PROFILES_COLLECTION), client.limit(150))),
+        client.getDocs(client.query(client.collection(client.db, FIREBASE_PATIENTS_COLLECTION), client.limit(500))),
+        client.getDocs(client.query(client.collection(client.db, FIREBASE_PATIENT_AUDIT_EVENTS_COLLECTION), client.limit(250)))
+      ]);
+      const users = usersSnapshot.docs.map(normalizeAdminUserProfileRecord).filter(user => user.uid || user.email);
+      const patientRecords = patientsSnapshot.docs
+        .map((docSnap) => normalizeFirebasePatientRecord(docSnap, { allowLegacy: true }))
+        .filter(Boolean);
+      const auditEvents = auditSnapshot.docs.map(normalizeAdminAuditRecord);
+      state.adminDashboard.users = users.sort((a, b) => a.displayName.localeCompare(b.displayName, 'hr'));
+      state.adminDashboard.patientRecords = patientRecords;
+      state.adminDashboard.auditEvents = auditEvents;
+      state.adminDashboard.errors = auditEvents.filter(isAdminErrorAuditEvent);
+      state.adminDashboard.lastLoadedAt = new Date().toISOString();
+      markFirebaseAvailabilityAvailable();
+      renderAdminDashboard();
+      return true;
+    } catch (error) {
+      console.warn('Admin dashboard nije učitan.', error);
+      const message = `Admin dashboard nije učitan: ${getFirebaseAuthErrorMessage(error)}`;
+      state.adminDashboard.lastError = message;
+      markFirebaseAvailabilityUnavailable(error);
+      setAdminDashboardStatus(message, 'error');
+      setStatus(message, true);
+      renderAdminDashboard();
+      return false;
+    } finally {
+      state.adminDashboard.loading = false;
+      renderAdminDashboard();
+    }
+  }
+
+  function buildAdminDashboardExportPayload() {
+    const users = state.adminDashboard.users || [];
+    const patientRecords = state.adminDashboard.patientRecords || [];
+    const auditEvents = state.adminDashboard.auditEvents || [];
+    const errors = state.adminDashboard.errors || [];
+    return {
+      schema: 'temperaturna-lista-admin-report-v1',
+      appVersion: APP_VERSION,
+      generatedAt: new Date().toISOString(),
+      generatedBy: {
+        uid: getFirebaseAuthContext().uid,
+        email: getFirebaseAuthContext().email,
+        roles: getFirebaseAuthContext().roles
+      },
+      privacy: {
+        containsPatientClinicalText: false,
+        note: 'Izvještaj sadrži administratorske metapodatke, ne klinički tekst pacijenata.'
+      },
+      metrics: {
+        users: users.length,
+        patients: patientRecords.length,
+        auditEvents: auditEvents.length,
+        errors: errors.length
+      },
+      users: users.map((user) => ({
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        department: user.department,
+        organizationId: user.organizationId,
+        activeWardId: user.activeWardId,
+        wardIds: user.wardIds,
+        roles: user.roles,
+        status: user.status,
+        patientCount: countAdminUserPatients(user, patientRecords),
+        auditEventCount: countAdminUserAuditEvents(user, auditEvents),
+        lastSeenAt: getAdminLastSeen(user, patientRecords, auditEvents)
+      })),
+      auditSample: auditEvents.slice(0, 100).map((event) => ({
+        id: event.id,
+        eventType: event.eventType,
+        actorUid: event.actorUid,
+        actorEmail: event.actorEmail,
+        actorRole: event.actorRole,
+        organizationId: event.organizationId,
+        wardId: event.wardId,
+        createdAt: event.createdAt,
+        patientDocId: event.patientDocId,
+        trigger: event.trigger
+      })),
+      errorSample: errors.slice(0, 100).map((event) => ({
+        id: event.id,
+        eventType: event.eventType,
+        actorUid: event.actorUid,
+        actorEmail: event.actorEmail,
+        wardId: event.wardId,
+        createdAt: event.createdAt,
+        trigger: event.trigger
+      }))
+    };
+  }
+
+  function exportAdminDashboardReport() {
+    if (!requireSuperAdminForAdminMode()) return;
+    const payload = buildAdminDashboardExportPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const filename = `temperaturna-lista-admin-izvjestaj-${getLocalIsoDateString(new Date())}.json`;
+    downloadBlob(filename, blob);
+    setAdminDashboardStatus('Admin izvještaj je preuzet. Ne sadrži klinički tekst pacijenata.', 'ok');
+    setStatus('Admin izvještaj je preuzet.');
+  }
+
+  function explainLockedAdminServerAction() {
+    const message = 'Ova radnja je zaključana dok se ne doda serverska Firebase Admin SDK / Cloud Function zaštita. Frontend ne smije sam dodjeljivati ovlasti.';
+    setAdminDashboardStatus(message, 'warn');
+    setStatus(message, true);
   }
 
   function renderFirebasePatientList(preferredId = '') {

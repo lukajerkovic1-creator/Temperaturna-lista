@@ -2362,6 +2362,7 @@
   const DEFAULT_CLINICAL_ROLE = 'clinician';
   const CLINICAL_PATIENT_ACCESS_ROLES = Object.freeze(['clinician', 'physician', 'nurse', 'admin']);
   const CLINICAL_ARCHIVE_MANAGER_ROLES = Object.freeze(['admin']);
+  const SUPER_ADMIN_EMAILS = Object.freeze(['luka.jerkovic1@gmail.com']);
   const FIREBASE_CONFIG = Object.freeze({
     apiKey: 'AIzaSyBaYql6bCSQO-2t0Qkkt46zHLapO_cFZAY',
     authDomain: 'temperaturna-lista-dev.firebaseapp.com',
@@ -2531,6 +2532,9 @@
     firebasePatientShowArchivedFilter: document.getElementById('firebasePatientShowArchivedFilter'),
     firebasePatientShowArchivedToggle: document.getElementById('firebasePatientShowArchivedToggle'),
     printBtn: document.getElementById('printBtn'),
+    dataAdminAdvancedSection: document.getElementById('dataAdminAdvancedSection'),
+    dataAdminAdvancedTitle: document.querySelector('#dataAdminAdvancedSection .advanced-section-title'),
+    adminServiceBanner: document.getElementById('adminServiceBanner'),
     adminToggleBtn: document.getElementById('adminToggleBtn'),
     adminCloseBtn: document.getElementById('adminCloseBtn'),
     saveCalibrationEmbeddedBtn: document.getElementById('saveCalibrationEmbeddedBtn'),
@@ -2542,6 +2546,23 @@
     statusBar: document.getElementById('statusBar'),
     overflowWarningStatus: document.getElementById('overflowWarningStatus'),
     adminPanel: document.getElementById('adminPanel'),
+    adminAccessStatus: document.getElementById('adminAccessStatus'),
+    adminDashboard: document.getElementById('adminDashboard'),
+    adminRefreshDashboardBtn: document.getElementById('adminRefreshDashboardBtn'),
+    adminExportReportBtn: document.getElementById('adminExportReportBtn'),
+    adminAddUserBtn: document.getElementById('adminAddUserBtn'),
+    adminApproveUserBtn: document.getElementById('adminApproveUserBtn'),
+    adminEditUserRolesBtn: document.getElementById('adminEditUserRolesBtn'),
+    adminDeactivateUserBtn: document.getElementById('adminDeactivateUserBtn'),
+    adminDashboardStatus: document.getElementById('adminDashboardStatus'),
+    adminMetricUsers: document.getElementById('adminMetricUsers'),
+    adminMetricWards: document.getElementById('adminMetricWards'),
+    adminMetricPatients: document.getElementById('adminMetricPatients'),
+    adminMetricAuditEvents: document.getElementById('adminMetricAuditEvents'),
+    adminMetricErrors: document.getElementById('adminMetricErrors'),
+    adminUsersTableBody: document.getElementById('adminUsersTableBody'),
+    adminAuditList: document.getElementById('adminAuditList'),
+    adminErrorList: document.getElementById('adminErrorList'),
     adminUnsavedIndicator: document.getElementById('adminUnsavedIndicator'),
     adminLayoutSelect: document.getElementById('adminLayoutSelect'),
     adminFieldSelect: document.getElementById('adminFieldSelect'),
@@ -2738,6 +2759,15 @@
       drag: null,
       sessionStartSnapshot: null,
       savedSnapshot: null
+    },
+    adminDashboard: {
+      loading: false,
+      users: [],
+      patientRecords: [],
+      auditEvents: [],
+      errors: [],
+      lastLoadedAt: '',
+      lastError: ''
     },
     therapyValidation: {
       csvRaw: '',
