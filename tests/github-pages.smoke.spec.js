@@ -498,6 +498,32 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#firebaseUserPanelName')).toHaveText('Luka Jerkovic');
     await expect(page.locator('#firebaseUserPanelToggleBtn')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#firebaseUserPanelBody')).toBeHidden();
+    const userPanelScrollBehavior = await page.evaluate(() => {
+      const sidebar = document.querySelector('.sidebar');
+      const panel = document.querySelector('#firebaseUserPanel');
+      const isDesktop = window.matchMedia('(min-width: 901px)').matches;
+      if (!sidebar || !panel) {
+        return { checked: false, position: 'missing', visibleAtTop: false, visibleAtBottom: false };
+      }
+      const position = window.getComputedStyle(panel).position;
+      if (!isDesktop || sidebar.scrollHeight <= sidebar.clientHeight + 20) {
+        return { checked: false, position, visibleAtTop: false, visibleAtBottom: false };
+      }
+      sidebar.scrollTop = 0;
+      const topSidebarRect = sidebar.getBoundingClientRect();
+      const topPanelRect = panel.getBoundingClientRect();
+      const visibleAtTop = topPanelRect.bottom > topSidebarRect.top && topPanelRect.top < topSidebarRect.bottom;
+      sidebar.scrollTop = sidebar.scrollHeight;
+      const bottomSidebarRect = sidebar.getBoundingClientRect();
+      const bottomPanelRect = panel.getBoundingClientRect();
+      const visibleAtBottom = bottomPanelRect.bottom > bottomSidebarRect.top && bottomPanelRect.top < bottomSidebarRect.bottom;
+      return { checked: true, position, visibleAtTop, visibleAtBottom };
+    });
+    expect(userPanelScrollBehavior.position).not.toBe('sticky');
+    if (userPanelScrollBehavior.checked) {
+      expect(userPanelScrollBehavior.visibleAtTop).toBe(false);
+      expect(userPanelScrollBehavior.visibleAtBottom).toBe(true);
+    }
     await page.locator('#firebaseUserPanelToggleBtn').click();
     await expect(page.locator('#firebaseUserPanelToggleBtn')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#firebaseUserPanelBody')).toBeVisible();
