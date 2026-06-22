@@ -1448,24 +1448,33 @@ test.describe('GitHub Pages smoke test', () => {
     const modeCounts = await page.evaluate(() => {
       const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
       const patientWrites = client.__smokeWrites
-        .filter(item => item.op === 'addDoc' && item.collection === 'patients')
+        .filter(item => ['addDoc', 'setDoc'].includes(item.op) && item.collection === 'patients')
         .filter(item => item.payload?.data?.fullName === 'Ambulanta Mode Testic');
+      const patientAdds = patientWrites.filter(item => item.op === 'addDoc');
+      const patientUpdates = patientWrites.filter(item => item.op === 'setDoc');
+      const activeDocs = Array.from(client.__smokeDocs.entries())
+        .filter(([key, payload]) => key.startsWith('patients/') && payload?.data?.fullName === 'Ambulanta Mode Testic')
+        .filter(([, payload]) => payload?.status !== 'deleted');
       return {
-        addCount: patientWrites.length,
+        addCount: patientAdds.length,
+        updateCount: patientUpdates.length,
+        writeIds: patientWrites.map(item => item.id),
         modes: patientWrites.map(item => item.payload?.patientMode),
         keys: patientWrites.map(item => item.payload?.patientKey),
-        docModes: Array.from(client.__smokeDocs.values())
-          .filter(payload => payload?.data?.fullName === 'Ambulanta Mode Testic')
-          .map(payload => payload.patientMode)
+        activeDocCount: activeDocs.length,
+        docModes: activeDocs.map(([, payload]) => payload.patientMode)
       };
     });
-    expect(modeCounts.addCount).toBe(2);
+    expect(modeCounts.addCount).toBe(1);
+    expect(modeCounts.updateCount).toBeGreaterThanOrEqual(1);
+    expect(new Set(modeCounts.writeIds).size).toBe(1);
     expect(modeCounts.modes).toEqual(expect.arrayContaining(['outpatient', 'ward']));
     expect(modeCounts.keys).toEqual(expect.arrayContaining([
       'patient-v1|outpatient|ambulanta mode testic|1988|2026-06-20',
       'patient-v1|ward|ambulanta mode testic|1988|2026-06-20'
     ]));
-    expect(modeCounts.docModes.sort()).toEqual(['outpatient', 'ward']);
+    expect(modeCounts.activeDocCount).toBe(1);
+    expect(modeCounts.docModes).toEqual(['ward']);
 
     browserSignals.assertCleanBrowserSignals();
   });

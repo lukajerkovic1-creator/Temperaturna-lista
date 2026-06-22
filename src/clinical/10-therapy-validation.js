@@ -4639,7 +4639,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         syncPatientModeUi();
         return false;
       }
-      resetCurrentFirebasePatientContext();
     }
 
     applyPatientMode(nextMode);

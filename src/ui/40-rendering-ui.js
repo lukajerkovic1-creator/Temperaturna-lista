@@ -2684,6 +2684,75 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     }
   }
 
+  function findActiveFirebasePatientDuplicatesAcrossModes(data = {}, options = {}) {
+    const identityKey = getLegacyFirebasePatientIdentityKey(data);
+    const excludeId = String(options.excludeId || '');
+    if (!identityKey) return [];
+    return state.firebasePatients.records.filter((record) => {
+      if (!record?.id || record.id === excludeId || isFirebasePatientRecordArchived(record)) return false;
+      return getLegacyFirebasePatientIdentityKey(record.data || {}) === identityKey;
+    });
+  }
+
+  async function archiveFirebasePatientModeDuplicateRecords({ client, savedRecord, previousRecord, nowIso }) {
+    const previousMode = previousRecord ? getFirebasePatientRecordMode(previousRecord) : '';
+    const nextMode = savedRecord ? getFirebasePatientRecordMode(savedRecord) : '';
+    if (!savedRecord?.id || !previousMode || previousMode === nextMode) return [];
+
+    const duplicates = findActiveFirebasePatientDuplicatesAcrossModes(savedRecord.data, { excludeId: savedRecord.id });
+    if (!duplicates.length) return [];
+
+    const user = state.firebasePatients.user;
+    const authContext = getFirebaseAuthContext();
+    const archivedRecords = duplicates.map((record) => ({
+      ...record,
+      status: FIREBASE_PATIENT_STATUSES.DELETED,
+      deletedAt: nowIso,
+      deletedByUid: user?.uid || '',
+      deletedByEmail: user?.email || authContext.email || '',
+      deleteReason: 'Automatski arhivirano jer je isti pacijent premješten u drugi mod.',
+      updatedAt: nowIso,
+      lastSaveTrigger: 'patient-mode-move-duplicate-archive'
+    }));
+
+    await Promise.all(archivedRecords.map((record) => client.setDoc(
+      client.doc(client.db, FIREBASE_PATIENTS_COLLECTION, record.id),
+      {
+        schema: 'temperaturna-lista-patient-v1',
+        appVersion: APP_VERSION,
+        status: FIREBASE_PATIENT_STATUSES.DELETED,
+        deletedAt: nowIso,
+        deletedByUid: user?.uid || '',
+        deletedByEmail: user?.email || authContext.email || '',
+        deleteReason: 'Automatski arhivirano jer je isti pacijent premješten u drugi mod.',
+        updatedAt: nowIso,
+        lastSaveTrigger: 'patient-mode-move-duplicate-archive',
+        serverUpdatedAt: client.serverTimestamp()
+      },
+      { merge: true }
+    )));
+
+    await Promise.all(archivedRecords.map((record) => writePatientAuditEvent('patient.softDelete', {
+      client,
+      patientDocId: record.id,
+      patientKey: record.patientKey,
+      previousRecord: duplicates.find(item => item.id === record.id),
+      newRecord: record,
+      trigger: 'patient-mode-move-duplicate-archive',
+      changeSummary: 'Duplikat pacijenta automatski je arhiviran nakon premještanja između ambulantnog i odjelnog moda.',
+      changedFields: ['status', 'deletedAt', 'deletedByUid', 'deletedByEmail', 'deleteReason'],
+      metadata: {
+        canonicalPatientDocId: savedRecord.id,
+        previousMode,
+        nextMode
+      }
+    })));
+
+    const archivedById = new Map(archivedRecords.map(record => [record.id, record]));
+    state.firebasePatients.records = state.firebasePatients.records.map(record => archivedById.get(record.id) || record);
+    return archivedRecords;
+  }
+
   function resetCurrentFirebasePatientContext() {
     state.firebasePatients.currentRecordId = '';
     state.firebasePatients.currentRecordVersion = 0;
@@ -3408,24 +3477,49 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return `patient-v1|${name}|${birthYear}|${admissionDate}`;
   }
 
-  function findFirebasePatientRecordByIdentity(data = {}) {
+  function isFirebasePatientRecordIdentityMatch(record, data = {}) {
+    if (!record || isFirebasePatientRecordArchived(record)) return false;
     const identityKey = getFirebasePatientIdentityKey(data);
-    if (!identityKey) return null;
+    if (!identityKey) return false;
     const identityKeys = new Set([identityKey]);
-    if (getPatientModeFromData(data) === PATIENT_MODES.WARD) {
-      const legacyKey = getLegacyFirebasePatientIdentityKey(data);
-      if (legacyKey) identityKeys.add(legacyKey);
+    const legacyKey = getLegacyFirebasePatientIdentityKey(data);
+    if (legacyKey) identityKeys.add(legacyKey);
+    const recordKey = record.patientKey || getFirebasePatientIdentityKey(record.data);
+    if (identityKeys.has(recordKey)) return true;
+    const legacyRecordKey = getLegacyFirebasePatientIdentityKey(record.data);
+    if (identityKeys.has(legacyRecordKey)) return true;
+    if (getFirebasePatientRecordMode(record) !== getPatientModeFromData(data)) return false;
+    const recordIdentityKey = getFirebasePatientIdentityKey(record.data);
+    return identityKeys.has(recordIdentityKey);
+  }
+
+  function findFirebasePatientRecordByIdentityInRecords(records = [], data = {}) {
+    return records.find(record => isFirebasePatientRecordIdentityMatch(record, data)) || null;
+  }
+
+  function findFirebasePatientRecordByIdentity(data = {}) {
+    return findFirebasePatientRecordByIdentityInRecords(state.firebasePatients.records, data);
+  }
+
+  async function findRemoteFirebasePatientRecordByIdentity(client, data = {}) {
+    try {
+      const patientQuery = client.query(
+        client.collection(client.db, FIREBASE_PATIENTS_COLLECTION),
+        client.where('accessModel', '==', CLINICAL_ACCESS_MODEL_VERSION),
+        client.where('organizationId', '==', getFirebaseAuthContext().organizationId),
+        client.where('wardId', '==', getFirebaseAuthContext().activeWardId),
+        client.where('clinicalPartitionKey', '==', getClinicalPartitionKey()),
+        client.limit(100)
+      );
+      const snapshot = await client.getDocs(patientQuery);
+      const records = (snapshot.docs || [])
+        .map(normalizeFirebasePatientRecord)
+        .filter(Boolean);
+      return findFirebasePatientRecordByIdentityInRecords(records, data);
+    } catch (error) {
+      console.warn('Dodatna provjera postojeceg Firebase pacijenta nije uspjela.', error);
+      return null;
     }
-    return state.firebasePatients.records.find((record) => {
-      if (isFirebasePatientRecordArchived(record)) return false;
-      const recordKey = record.patientKey || getFirebasePatientIdentityKey(record.data);
-      if (identityKeys.has(recordKey)) return true;
-      if (getFirebasePatientRecordMode(record) !== getPatientModeFromData(data)) return false;
-      const recordIdentityKey = getFirebasePatientIdentityKey(record.data);
-      if (identityKeys.has(recordIdentityKey)) return true;
-      const legacyRecordKey = getLegacyFirebasePatientIdentityKey(record.data);
-      return identityKeys.has(legacyRecordKey);
-    }) || null;
   }
 
   function getFirebaseAuthErrorMessage(error) {
@@ -3863,13 +3957,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       const expiresAt = getFirebasePatientExpiresAtIso(new Date(nowIso));
       const user = state.firebasePatients.user;
       const clinicalPartitionKey = getClinicalPartitionKey(authContext);
-      let matchingRecord = state.firebasePatients.currentRecordId
+      const trackedRecordId = state.firebasePatients.currentRecordId || state.patientSyncState.currentPatientDocId || '';
+      let matchingRecord = trackedRecordId
         ? null
         : findFirebasePatientRecordByIdentity(dataToSave);
-      let existingId = state.firebasePatients.currentRecordId || matchingRecord?.id || '';
+      let existingId = trackedRecordId || matchingRecord?.id || '';
       let previousRecord = existingId ? (getFirebasePatientRecordById(existingId) || matchingRecord || null) : null;
       let remoteRecord = previousRecord;
       let conflictAction = '';
+
+      if (!existingId) {
+        const remoteMatchingRecord = await findRemoteFirebasePatientRecordByIdentity(client, dataToSave);
+        if (remoteMatchingRecord) {
+          matchingRecord = remoteMatchingRecord;
+          existingId = remoteMatchingRecord.id;
+          previousRecord = remoteMatchingRecord;
+          remoteRecord = remoteMatchingRecord;
+        }
+      }
 
       if (existingId) {
         try {
@@ -4016,6 +4121,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       state.firebasePatients.currentRecordBaseData = clonePatientDataForConflict(dataToSave);
       state.firebasePatients.lastAutoSaveSignature = dataSignature;
       upsertFirebasePatientRecord(savedRecord);
+      const archivedModeDuplicates = await archiveFirebasePatientModeDuplicateRecords({
+        client,
+        savedRecord,
+        previousRecord,
+        nowIso
+      });
+      if (archivedModeDuplicates.length) renderFirebasePatientList(recordId);
       savePatientDraftNow({ quiet: true, startupRecovery: false, recoveryReason: 'firebase-saved' });
       await writePatientAuditEvent(previousRecord ? 'patient.update' : 'patient.create', {
         client,
@@ -4066,7 +4178,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       setFirebasePatientStatus(automatic ? `${automaticStatusLabel} spremljen: ${savedAtText}.` : 'Spremljeno.', 'ok');
       if (!automatic) {
         const saveVerb = matchingRecord ? 'ažuriran postojeći zapis u' : 'spremljen u';
-        setStatus(`Pacijent je ${saveVerb} Firebase kolekciju "${FIREBASE_PATIENTS_COLLECTION}". Automatsko arhiviranje: nakon ${RETENTION_POLICY.patientDays} dana.`);
+        const duplicateSuffix = archivedModeDuplicates.length
+          ? ` Arhiviran je ${archivedModeDuplicates.length} duplikat iz prethodnog moda.`
+          : '';
+        setStatus(`Pacijent je ${saveVerb} Firebase kolekciju "${FIREBASE_PATIENTS_COLLECTION}".${duplicateSuffix} Automatsko arhiviranje: nakon ${RETENTION_POLICY.patientDays} dana.`);
       }
       return true;
     } catch (error) {
