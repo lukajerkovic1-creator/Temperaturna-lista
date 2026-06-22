@@ -1170,6 +1170,7 @@ function getTherapySuggestionPanel(targetId) {
       void enableEncryptedPatientDraftRecovery();
     });
     if (els.firebaseUserClearDraftBtn) els.firebaseUserClearDraftBtn.addEventListener('click', () => clearPatientDraft());
+    if (els.firebaseUserMigrateLegacyPatientsBtn) els.firebaseUserMigrateLegacyPatientsBtn.addEventListener('click', () => migrateLegacyFirebasePatientsToCurrentProfile());
     if (els.firebaseLoginGateSignInBtn) els.firebaseLoginGateSignInBtn.addEventListener('click', () => signInFirebasePatients({ fromGate: true }));
     if (els.firebaseLoginGateNewUserBtn) els.firebaseLoginGateNewUserBtn.addEventListener('click', () => {
       fillFirebaseRegistrationFormFromProfile(buildProfileSeedFromFirebaseUser(state.firebasePatients.user), { force: false });

@@ -79,7 +79,10 @@ service cloud.firestore {
     function readsLegacyOwnedPatientForMigration(data) {
       return signedIn()
         && data.schema == 'temperaturna-lista-patient-v1'
-        && data.ownerUid == request.auth.uid;
+        && (
+          data.ownerUid == request.auth.uid
+          || (data.ownerEmail is string && data.ownerEmail == request.auth.token.email)
+        );
     }
 
     function writesPatientAuditEvent(data) {

@@ -2501,6 +2501,7 @@
     firebaseUserDraftStatus: document.getElementById('firebaseUserDraftStatus'),
     firebaseUserEnableDraftBtn: document.getElementById('firebaseUserEnableDraftBtn'),
     firebaseUserClearDraftBtn: document.getElementById('firebaseUserClearDraftBtn'),
+    firebaseUserMigrateLegacyPatientsBtn: document.getElementById('firebaseUserMigrateLegacyPatientsBtn'),
     savePatientToFirebaseBtn: document.getElementById('savePatientToFirebaseBtn'),
     refreshFirebasePatientsBtn: document.getElementById('refreshFirebasePatientsBtn'),
     firebasePatientSelect: document.getElementById('firebasePatientSelect'),
