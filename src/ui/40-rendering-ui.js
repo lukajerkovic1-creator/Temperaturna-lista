@@ -1769,6 +1769,27 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       !String(payload.clinicalPartitionKey || '');
   }
 
+  function extractRecoverableFirebasePatientData(payload = {}) {
+    if (!isPlainJsonObject(payload)) return null;
+    if (isPlainJsonObject(payload.data)) return payload.data;
+    const candidate = {};
+    PATIENT_JSON_SCHEMA.allowedPatientKeys.forEach((key) => {
+      if (hasOwnKey(payload, key)) candidate[key] = payload[key];
+    });
+    return Object.keys(candidate).length ? candidate : null;
+  }
+
+  function hasRecoverableFirebasePatientData(payload = {}) {
+    const candidate = extractRecoverableFirebasePatientData(payload);
+    return Boolean(candidate && validatePatientDataObject(candidate).ok);
+  }
+
+  function canRecoverAdminFirebasePatientPayload(payload = {}, authContext = getFirebaseAuthContext()) {
+    if (!isSuperAdmin(authContext) || !isPlainJsonObject(payload)) return false;
+    if (payload.schema && payload.schema !== 'temperaturna-lista-patient-v1') return false;
+    return hasRecoverableFirebasePatientData(payload);
+  }
+
   function getFirebaseClinicalContextErrorMessage() {
     return 'Firebase pristup pacijentima čeka valjan klinički kontekst: ustanova, odjel i uloga korisnika.';
   }
@@ -4196,17 +4217,23 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
   function normalizeFirebasePatientRecord(docSnap, options = {}) {
     const payload = docSnap.data();
-    if (!isPlainJsonObject(payload) || payload.schema !== 'temperaturna-lista-patient-v1') return null;
+    if (!isPlainJsonObject(payload)) return null;
+    const authContext = getFirebaseAuthContext();
+    const hasPatientSchema = payload.schema === 'temperaturna-lista-patient-v1';
+    const hasAdminRecoveryAccess = Boolean(options.allowAdminRecovery && canRecoverAdminFirebasePatientPayload(payload, authContext));
+    if (!hasPatientSchema && !hasAdminRecoveryAccess) return null;
     const hasClinicalAccess = canAuthContextAccessClinicalPayload(payload);
     const hasLegacyAccess = Boolean(options.allowLegacy && canRecoverLegacyOwnedFirebasePatientPayload(payload));
-    if (options.legacyOnly && !hasLegacyAccess) return null;
-    if (!hasClinicalAccess && !hasLegacyAccess) return null;
-    const validation = validatePatientDataObject(payload.data);
+    const canRecoverForCurrentUser = hasLegacyAccess || hasAdminRecoveryAccess;
+    if (options.legacyOnly && !canRecoverForCurrentUser) return null;
+    if (!hasClinicalAccess && !canRecoverForCurrentUser) return null;
+    const validation = validatePatientDataObject(extractRecoverableFirebasePatientData(payload));
     if (!validation.ok) return null;
-    const patientMode = normalizePatientMode(payload.patientMode || validation.data.patientMode);
+    const needsClinicalMigration = !hasClinicalAccess && canRecoverForCurrentUser;
+    const patientMode = needsClinicalMigration
+      ? PATIENT_MODES.WARD
+      : normalizePatientMode(payload.patientMode || validation.data.patientMode);
     const data = { ...validation.data, patientMode };
-    const authContext = getFirebaseAuthContext();
-    const needsClinicalMigration = !hasClinicalAccess && hasLegacyAccess;
     const status = payload.status === FIREBASE_PATIENT_STATUSES.DELETED
       ? FIREBASE_PATIENT_STATUSES.DELETED
       : FIREBASE_PATIENT_STATUSES.ACTIVE;
@@ -4271,6 +4298,21 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return { docs: Array.from(docsById.values()), blocked };
   }
 
+  async function queryAdminRecoverableFirebasePatientSnapshots(client) {
+    if (!isSuperAdmin(getFirebaseAuthContext())) return { docs: [], blocked: false };
+    try {
+      const recoveryQuery = client.query(
+        client.collection(client.db, FIREBASE_PATIENTS_COLLECTION),
+        client.limit(500)
+      );
+      const recoverySnapshot = await client.getDocs(recoveryQuery);
+      return { docs: recoverySnapshot.docs || [], blocked: false };
+    } catch (recoveryError) {
+      console.warn('Admin recovery učitavanje svih Firebase pacijenata nije uspjelo.', recoveryError);
+      return { docs: [], blocked: true };
+    }
+  }
+
   async function refreshFirebasePatients(options = {}) {
     if (!requireFirebasePatientUser()) return;
     const preferredId = options.preferredId || getFirebasePatientSelectedId();
@@ -4312,6 +4354,21 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
             const aTime = firebaseTimestampToMillis(a.serverUpdatedAt) || firebaseTimestampToMillis(a.updatedAt);
             return bTime - aTime;
           });
+        }
+        if (isSuperAdmin(getFirebaseAuthContext())) {
+          const adminRecoverySnapshot = await queryAdminRecoverableFirebasePatientSnapshots(client);
+          legacyReadBlocked = legacyReadBlocked || adminRecoverySnapshot.blocked;
+          const currentIds = new Set(records.map(record => record.id));
+          const adminRecoveryRecords = adminRecoverySnapshot.docs
+            .map(docSnap => normalizeFirebasePatientRecord(docSnap, { allowLegacy: true, allowAdminRecovery: true, legacyOnly: true }))
+            .filter(record => record && !currentIds.has(record.id));
+          if (adminRecoveryRecords.length) {
+            records = records.concat(adminRecoveryRecords).sort((a, b) => {
+              const bTime = firebaseTimestampToMillis(b.serverUpdatedAt) || firebaseTimestampToMillis(b.updatedAt);
+              const aTime = firebaseTimestampToMillis(a.serverUpdatedAt) || firebaseTimestampToMillis(a.updatedAt);
+              return bTime - aTime;
+            });
+          }
         }
       }
       records = await deleteExpiredFirebasePatientRecords(records);

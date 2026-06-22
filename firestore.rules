@@ -135,7 +135,7 @@ service cloud.firestore {
         || readsClinicalDocument(resource.data)
         || readsLegacyOwnedPatientForMigration(resource.data);
       allow delete: if false;
-      allow update: if (readsClinicalDocument(resource.data) || readsLegacyOwnedPatientForMigration(resource.data))
+      allow update: if (isSuperAdmin() || readsClinicalDocument(resource.data) || readsLegacyOwnedPatientForMigration(resource.data))
         && request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
     }

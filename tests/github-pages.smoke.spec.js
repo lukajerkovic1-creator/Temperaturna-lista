@@ -1249,7 +1249,7 @@ test.describe('GitHub Pages smoke test', () => {
 
     await page.locator('#openFirebasePatientDialogBtn').click();
     await expect(page.locator('#firebasePatientDialog')).toBeVisible();
-    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/starih za migraciju: 1/i);
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/starih za migraciju: 2/i);
     await page.locator('#firebasePatientDialogCloseBtn').click();
     await expect(page.locator('#firebasePatientDialog')).toBeHidden();
 
@@ -1285,6 +1285,80 @@ test.describe('GitHub Pages smoke test', () => {
       expect(write.payload.data.patientMode).toBe('ward');
       expect(write.payload.lastSaveTrigger).toBe('legacy-bulk-migration');
     });
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('super admin recovers orphan Firebase patients into Luka ward profile', async ({ page }) => {
+    await installFirebaseSmokeClient(page, {
+      userEmail: 'luka.jerkovic1@gmail.com',
+      displayName: 'Luka Jerković',
+      firstName: 'Luka',
+      lastName: 'Jerković',
+      roles: ['clinician', 'admin']
+    });
+    const browserSignals = await openApp(page, './?qa=firebase-admin-orphan-recovery-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      client.__smokeDocs.set('patients/orphan-admin-recovery-001', {
+        appVersion: 'pre-access-model-smoke',
+        label: 'Orphan Recovery Testic (1974) 17.06.2026.',
+        data: {
+          fullName: 'Orphan Recovery Testic',
+          birthYear: '1974',
+          admissionDate: '2026-06-17',
+          diagnosis: 'Orphan recovery dijagnoza.',
+          allergies: 'nema',
+          therapy: 'Orphan recovery terapija.',
+          vitalSigns: '',
+          patientMode: 'outpatient',
+          showDiagnosisOnList: true,
+          showAllergiesOnList: true,
+          showTherapyOnList: true,
+          showVitalSignsOnList: true
+        },
+        createdAt: '2026-06-17T07:00:00.000Z',
+        updatedAt: '2026-06-17T07:20:00.000Z'
+      });
+    });
+
+    await page.locator('#openFirebasePatientDialogBtn').click();
+    await expect(page.locator('#firebasePatientDialog')).toBeVisible();
+    await page.locator('#firebasePatientDialogRefreshBtn').click();
+    await expect(page.locator('#firebasePatientDialogList')).toContainText('Orphan Recovery Testic');
+    await expect(page.locator('#firebasePatientDialogList')).toContainText(/stari zapis/i);
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/starih za migraciju/i);
+
+    await page.locator('#firebasePatientDialogCloseBtn').click();
+    await page.locator('#firebaseUserPanelToggleBtn').click();
+    await expect(page.locator('#firebaseUserMigrateLegacyPatientsBtn')).toContainText('Prebaci stare pacijente (1)');
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('Prebaciti 1 starih Firebase pacijenata');
+      await dialog.accept();
+    });
+    await page.locator('#firebaseUserMigrateLegacyPatientsBtn').click();
+    await expect(page.locator('#firebasePatientQuickStatus')).toContainText(/Prebačeno starih Firebase pacijenata.*1/i);
+
+    const recoveryResult = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      const unfilteredAdminQuery = client.__smokeEvents
+        .find(item => item.op === 'getDocs' && item.collection === 'patients' && !(item.filters || []).length) || null;
+      const write = client.__smokeWrites
+        .find(item => item.op === 'setDoc' && item.collection === 'patients' && item.id === 'orphan-admin-recovery-001') || null;
+      return { unfilteredAdminQuery, write };
+    });
+    expect(recoveryResult.unfilteredAdminQuery).toBeTruthy();
+    expect(recoveryResult.write).toBeTruthy();
+    expect(recoveryResult.write.payload.accessModel).toBe('organization-ward-role-v1');
+    expect(recoveryResult.write.payload.organizationId).toBe('temperaturna-lista-dev');
+    expect(recoveryResult.write.payload.wardId).toBe('infektologija');
+    expect(recoveryResult.write.payload.clinicalPartitionKey).toBe('clinical-v1|temperaturna-lista-dev|infektologija');
+    expect(recoveryResult.write.payload.ownerEmail).toBe('luka.jerkovic1@gmail.com');
+    expect(recoveryResult.write.payload.patientMode).toBe('ward');
+    expect(recoveryResult.write.payload.data.patientMode).toBe('ward');
+    expect(recoveryResult.write.payload.data.fullName).toBe('Orphan Recovery Testic');
 
     browserSignals.assertCleanBrowserSignals();
   });
