@@ -28,6 +28,14 @@ Patient and parser-test documents are stored with:
 
 `ownerUid` is no longer the access boundary for clinical documents.
 
+## Legacy Patient Migration
+
+Older patient documents may only contain `ownerUid` and may not yet have `accessModel`, `organizationId`, `wardId`, or `clinicalPartitionKey`.
+
+To avoid hiding already saved personal test/pilot records after the ward-based model is introduced, the client performs a limited legacy recovery query for records owned by the signed-in Firebase user. These records are marked as legacy in the patient picker and should be opened and saved once so the app writes the current ward-based access fields.
+
+This is a migration bridge only. New patient writes always use `organization-ward-role-v1`, and normal shared clinical access remains based on organization, ward, and role.
+
 ## Fail-Closed Behavior
 
 The app disables Firebase patient save/open controls unless all are true:

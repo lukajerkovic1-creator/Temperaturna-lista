@@ -210,7 +210,8 @@ function installFirebaseSmokeClient(page, options = {}) {
             filterMap.get('organizationId') === 'temperaturna-lista-dev' &&
             filterMap.get('wardId') === 'infektologija' &&
             filterMap.get('clinicalPartitionKey') === 'clinical-v1|temperaturna-lista-dev|infektologija';
-          if (!hasClinicalListScope) throwPermissionDenied();
+          const hasLegacyOwnerMigrationScope = filterMap.get('ownerUid') === smokeUser.uid;
+          if (!hasClinicalListScope && !hasLegacyOwnerMigrationScope) throwPermissionDenied();
         }
         let rows = Array.from(docs.entries())
           .map(([key, payload]) => {
@@ -947,6 +948,75 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('shows owned legacy Firebase patients and migrates them on save', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=firebase-legacy-patient-migration-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      client.__smokeDocs.set('patients/legacy-001', {
+        schema: 'temperaturna-lista-patient-v1',
+        appVersion: 'legacy-smoke',
+        ownerUid: 'smoke-user-uid',
+        ownerEmail: 'smoke.firebase@example.test',
+        label: 'Legacy Firebase Testic (1971) 14.06.2026.',
+        patientKey: 'patient-v1|legacy firebase testic|1971|2026-06-14',
+        patientMode: 'ward',
+        data: {
+          patientMode: 'ward',
+          fullName: 'Legacy Firebase Testic',
+          birthYear: '1971',
+          admissionDate: '2026-06-14',
+          diagnosis: 'Legacy migracijska dijagnoza.',
+          allergies: 'nema',
+          therapy: 'Legacy migracijska terapija.',
+          vitalSigns: '',
+          showDiagnosisOnList: true,
+          showAllergiesOnList: true,
+          showTherapyOnList: true,
+          showVitalSignsOnList: true
+        },
+        createdAt: '2026-06-14T07:00:00.000Z',
+        updatedAt: '2026-06-14T07:15:00.000Z'
+      });
+    });
+
+    await page.locator('#openFirebasePatientDialogBtn').click();
+    await expect(page.locator('#firebasePatientDialog')).toBeVisible();
+    await expect(page.locator('#firebasePatientDialogList')).toContainText('Legacy Firebase Testic');
+    await expect(page.locator('#firebasePatientDialogList')).toContainText(/Stari zapis|stari zapis/i);
+    await expect(page.locator('#firebasePatientDialogStatus')).toContainText(/starih za migraciju/i);
+
+    const legacyQuery = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeEvents
+        .filter(item => item.op === 'getDocs' && item.collection === 'patients')
+        .find(item => (item.filters || []).some(([field, operator, value]) => field === 'ownerUid' && operator === '==' && value === 'smoke-user-uid')) || null;
+    });
+    expect(legacyQuery).toBeTruthy();
+
+    await page.locator('[data-firebase-patient-action="open"][data-firebase-patient-id="legacy-001"]').click();
+    await expect(page.locator('#firebasePatientDialog')).toBeHidden();
+    await expect(page.locator('#fullName')).toHaveValue('Legacy Firebase Testic');
+
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#statusBar')).toContainText(/Pacijent je .*Firebase/i);
+    const migrationWrite = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites
+        .find(item => item.op === 'setDoc' && item.collection === 'patients' && item.id === 'legacy-001') || null;
+    });
+    expect(migrationWrite).toBeTruthy();
+    expect(migrationWrite.payload.accessModel).toBe('organization-ward-role-v1');
+    expect(migrationWrite.payload.organizationId).toBe('temperaturna-lista-dev');
+    expect(migrationWrite.payload.wardId).toBe('infektologija');
+    expect(migrationWrite.payload.clinicalPartitionKey).toBe('clinical-v1|temperaturna-lista-dev|infektologija');
+    expect(migrationWrite.payload.data.fullName).toBe('Legacy Firebase Testic');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('separates ambulatory and ward patient modes in the form and Firebase dialog', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=patient-mode-smoke&firebaseSmoke=1');
@@ -1000,7 +1070,7 @@ test.describe('GitHub Pages smoke test', () => {
       const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
       return client.__smokeEvents
         .filter(item => item.op === 'getDocs' && item.collection === 'patients')
-        .at(-1) || null;
+        .find(item => (item.filters || []).some(([field, operator, value]) => field === 'accessModel' && operator === '==' && value === 'organization-ward-role-v1')) || null;
     });
     expect(patientListQuery).toBeTruthy();
     expect(patientListQuery.filters).toEqual(expect.arrayContaining([

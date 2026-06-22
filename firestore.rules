@@ -76,6 +76,12 @@ service cloud.firestore {
         && hasClinicalAccess(data.organizationId, data.wardId);
     }
 
+    function readsLegacyOwnedPatientForMigration(data) {
+      return signedIn()
+        && data.schema == 'temperaturna-lista-patient-v1'
+        && data.ownerUid == request.auth.uid;
+    }
+
     function writesPatientAuditEvent(data) {
       return signedIn()
         && data.schema == 'temperaturna-lista-audit-v1'
@@ -90,9 +96,10 @@ service cloud.firestore {
     match /patients/{patientId} {
       allow create: if request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
-      allow read: if readsClinicalDocument(resource.data);
+      allow read: if readsClinicalDocument(resource.data)
+        || readsLegacyOwnedPatientForMigration(resource.data);
       allow delete: if false;
-      allow update: if readsClinicalDocument(resource.data)
+      allow update: if (readsClinicalDocument(resource.data) || readsLegacyOwnedPatientForMigration(resource.data))
         && request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
     }

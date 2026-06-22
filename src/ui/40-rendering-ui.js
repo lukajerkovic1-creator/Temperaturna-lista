@@ -1700,6 +1700,16 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       String(payload.clinicalPartitionKey || '') === getClinicalPartitionKey(authContext);
   }
 
+  function canRecoverLegacyOwnedFirebasePatientPayload(payload = {}, user = state.firebasePatients.user) {
+    if (!user?.uid || !isPlainJsonObject(payload)) return false;
+    if (payload.schema !== 'temperaturna-lista-patient-v1') return false;
+    if (String(payload.ownerUid || '') !== String(user.uid || '')) return false;
+    return String(payload.accessModel || '') !== CLINICAL_ACCESS_MODEL_VERSION ||
+      !String(payload.organizationId || '') ||
+      !String(payload.wardId || '') ||
+      !String(payload.clinicalPartitionKey || '');
+  }
+
   function getFirebaseClinicalContextErrorMessage() {
     return 'Firebase pristup pacijentima čeka valjan klinički kontekst: ustanova, odjel i uloga korisnika.';
   }
@@ -2229,9 +2239,14 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return records.filter(record => getFirebasePatientRecordSearchText(record).includes(query));
   }
 
+  function isLegacyFirebasePatientRecord(record) {
+    return Boolean(record?.needsClinicalMigration || record?.legacyAccess);
+  }
+
   function formatFirebasePatientDialogMeta(record) {
     const data = record?.data || {};
     const parts = [formatFirebasePatientModeShortLabel(getFirebasePatientRecordMode(record))];
+    if (isLegacyFirebasePatientRecord(record)) parts.push('stari zapis - otvori i spremi za migraciju');
     if (data.birthYear) parts.push(`Godište ${data.birthYear}`);
     if (data.admissionDate) parts.push(`Prijem ${formatIsoDateToCroatian(data.admissionDate)}`);
     const stored = formatFirebasePatientStoredDate(record?.updatedAt || record?.createdAt || record?.serverUpdatedAt || record?.serverCreatedAt);
@@ -2298,6 +2313,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       const row = document.createElement('div');
       row.className = 'firebase-patient-row';
       if (isFirebasePatientRecordArchived(record)) row.classList.add('is-archived');
+      if (isLegacyFirebasePatientRecord(record)) row.classList.add('is-legacy');
       row.dataset.firebasePatientId = record.id;
       row.dataset.firebasePatientStatus = record.status || FIREBASE_PATIENT_STATUSES.ACTIVE;
       row.setAttribute('role', 'listitem');
@@ -2363,7 +2379,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     });
 
     const archivedSuffix = shouldShowArchivedFirebasePatients() ? ' uključujući arhivirane' : '';
-    setFirebasePatientDialogStatus(`Prikazano ${records.length} od ${modeRecords.length} spremljenih pacijenata (${modeLabel})${archivedSuffix}.`);
+    const legacyCount = records.filter(isLegacyFirebasePatientRecord).length;
+    const legacySuffix = legacyCount ? `, od toga starih za migraciju: ${legacyCount}` : '';
+    setFirebasePatientDialogStatus(`Prikazano ${records.length} od ${modeRecords.length} spremljenih pacijenata (${modeLabel})${legacySuffix}${archivedSuffix}.`);
   }
 
   function getFirebasePatientSelectedId() {
@@ -2648,11 +2666,11 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return String(record?.dataHash || getFirebasePatientDataSignature(record?.data || {}) || '');
   }
 
-  async function fetchFirebasePatientRecordById(client, recordId) {
+  async function fetchFirebasePatientRecordById(client, recordId, options = {}) {
     if (!client || !recordId) return null;
     const docSnap = await client.getDoc(client.doc(client.db, FIREBASE_PATIENTS_COLLECTION, recordId));
     if (!docSnap.exists()) return null;
-    return normalizeFirebasePatientRecord(docSnap);
+    return normalizeFirebasePatientRecord(docSnap, options);
   }
 
   function getLocalFirebasePatientBaseForConflict(previousRecord) {
@@ -3442,7 +3460,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
       if (existingId) {
         try {
-          remoteRecord = await fetchFirebasePatientRecordById(client, existingId) || previousRecord;
+          remoteRecord = await fetchFirebasePatientRecordById(client, existingId, { allowLegacy: true }) || previousRecord;
         } catch (error) {
           console.warn('Provjera udaljene verzije pacijenta nije uspjela.', error);
           remoteRecord = previousRecord;
@@ -3784,14 +3802,19 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return 'Otvoren je dijalog za ispis.';
   }
 
-  function normalizeFirebasePatientRecord(docSnap) {
+  function normalizeFirebasePatientRecord(docSnap, options = {}) {
     const payload = docSnap.data();
     if (!isPlainJsonObject(payload) || payload.schema !== 'temperaturna-lista-patient-v1') return null;
-    if (!canAuthContextAccessClinicalPayload(payload)) return null;
+    const hasClinicalAccess = canAuthContextAccessClinicalPayload(payload);
+    const hasLegacyAccess = Boolean(options.allowLegacy && canRecoverLegacyOwnedFirebasePatientPayload(payload));
+    if (options.legacyOnly && !hasLegacyAccess) return null;
+    if (!hasClinicalAccess && !hasLegacyAccess) return null;
     const validation = validatePatientDataObject(payload.data);
     if (!validation.ok) return null;
     const patientMode = normalizePatientMode(payload.patientMode || validation.data.patientMode);
     const data = { ...validation.data, patientMode };
+    const authContext = getFirebaseAuthContext();
+    const needsClinicalMigration = !hasClinicalAccess && hasLegacyAccess;
     const status = payload.status === FIREBASE_PATIENT_STATUSES.DELETED
       ? FIREBASE_PATIENT_STATUSES.DELETED
       : FIREBASE_PATIENT_STATUSES.ACTIVE;
@@ -3801,9 +3824,11 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       patientKey: String(payload.patientKey || getFirebasePatientIdentityKey(data)),
       patientMode,
       status,
-      organizationId: String(payload.organizationId || ''),
-      wardId: String(payload.wardId || ''),
-      clinicalPartitionKey: String(payload.clinicalPartitionKey || ''),
+      legacyAccess: needsClinicalMigration,
+      needsClinicalMigration,
+      organizationId: String(payload.organizationId || (needsClinicalMigration ? authContext.organizationId : '')),
+      wardId: String(payload.wardId || (needsClinicalMigration ? authContext.activeWardId : '')),
+      clinicalPartitionKey: String(payload.clinicalPartitionKey || (needsClinicalMigration ? getClinicalPartitionKey(authContext) : '')),
       data,
       version: Number(payload.version || 0),
       lastKnownVersion: Number(payload.lastKnownVersion || 0),
@@ -3854,14 +3879,42 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
           const aTime = firebaseTimestampToMillis(a.serverUpdatedAt) || firebaseTimestampToMillis(a.updatedAt);
           return bTime - aTime;
         });
+      let legacyReadBlocked = false;
+      if (state.firebasePatients.user?.uid) {
+        try {
+          const legacyQuery = client.query(
+            client.collection(client.db, FIREBASE_PATIENTS_COLLECTION),
+            client.where('ownerUid', '==', state.firebasePatients.user.uid),
+            client.limit(100)
+          );
+          const legacySnapshot = await client.getDocs(legacyQuery);
+          const existingIds = new Set(records.map(record => record.id));
+          const legacyRecords = legacySnapshot.docs
+            .map(docSnap => normalizeFirebasePatientRecord(docSnap, { allowLegacy: true, legacyOnly: true }))
+            .filter(record => record && !existingIds.has(record.id));
+          if (legacyRecords.length) {
+            records = records.concat(legacyRecords).sort((a, b) => {
+              const bTime = firebaseTimestampToMillis(b.serverUpdatedAt) || firebaseTimestampToMillis(b.updatedAt);
+              const aTime = firebaseTimestampToMillis(a.serverUpdatedAt) || firebaseTimestampToMillis(a.updatedAt);
+              return bTime - aTime;
+            });
+          }
+        } catch (legacyError) {
+          legacyReadBlocked = true;
+          console.warn('Učitavanje starih vlastitih Firebase pacijenata nije uspjelo.', legacyError);
+        }
+      }
       records = await deleteExpiredFirebasePatientRecords(records);
       state.firebasePatients.records = records;
       renderFirebasePatientList(preferredId);
       markFirebaseAvailabilityAvailable();
       if (!options.silent) {
         const activeCount = state.firebasePatients.records.filter(record => !isFirebasePatientRecordArchived(record)).length;
-        setFirebasePatientStatus(`Učitano aktivnih: ${activeCount}`, 'ok');
-        setStatus(`Učitano je ${activeCount} aktivnih Firebase pacijenata.`);
+        const legacyCount = state.firebasePatients.records.filter(isLegacyFirebasePatientRecord).length;
+        const legacySuffix = legacyCount ? `, starih za migraciju: ${legacyCount}` : '';
+        const blockedSuffix = legacyReadBlocked ? ' Stari zapisi nisu dostupni dok se ne deployaju migracijska Firestore pravila.' : '';
+        setFirebasePatientStatus(`Učitano aktivnih: ${activeCount}${legacySuffix}${blockedSuffix}`, 'ok');
+        setStatus(`Učitano je ${activeCount} aktivnih Firebase pacijenata.${legacyCount ? ` Starih zapisa za migraciju: ${legacyCount}.` : ''}${blockedSuffix}`);
       }
     } catch (error) {
       console.warn('Učitavanje Firebase pacijenata nije uspjelo.', error);
@@ -3899,7 +3952,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         await refreshFirebasePatients({ silent: true });
         return;
       }
-      record = normalizeFirebasePatientRecord(docSnap);
+      record = normalizeFirebasePatientRecord(docSnap, { allowLegacy: true });
       if (!record) {
         setStatus('Firebase zapis ne odgovara shemi pacijenta.', true);
         return;

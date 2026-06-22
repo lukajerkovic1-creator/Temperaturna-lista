@@ -1279,6 +1279,20 @@
     vertical-align: middle;
   }
 
+  .firebase-patient-row.is-legacy .firebase-patient-row-name::after {
+    content: "Stari zapis";
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid #fbbf24;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 10px;
+    font-weight: 900;
+    vertical-align: middle;
+  }
+
   .firebase-patient-row-open {
     min-width: 0;
     width: 100%;
