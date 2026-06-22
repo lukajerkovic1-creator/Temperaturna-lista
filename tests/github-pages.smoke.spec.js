@@ -200,6 +200,18 @@ function installFirebaseSmokeClient(page, options = {}) {
         const collection = queryCollectionNameOf(queryRef);
         const filters = queryFiltersOf(queryRef);
         const maxRows = queryLimitOf(queryRef);
+        events.push({ op: 'getDocs', collection, filters: cloneJson(filters), limit: maxRows });
+        if (collection === 'patients') {
+          const filterMap = new Map(filters
+            .filter(([, operator]) => operator === '==')
+            .map(([field, , expectedValue]) => [field, expectedValue]));
+          const hasClinicalListScope =
+            filterMap.get('accessModel') === 'organization-ward-role-v1' &&
+            filterMap.get('organizationId') === 'temperaturna-lista-dev' &&
+            filterMap.get('wardId') === 'infektologija' &&
+            filterMap.get('clinicalPartitionKey') === 'clinical-v1|temperaturna-lista-dev|infektologija';
+          if (!hasClinicalListScope) throwPermissionDenied();
+        }
         let rows = Array.from(docs.entries())
           .map(([key, payload]) => {
             const [collectionName, id] = key.split('/');
@@ -970,6 +982,19 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#openFirebasePatientDialogBtn').click();
     const dialog = page.locator('#firebasePatientDialog');
     await expect(dialog).toBeVisible();
+    const patientListQuery = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeEvents
+        .filter(item => item.op === 'getDocs' && item.collection === 'patients')
+        .at(-1) || null;
+    });
+    expect(patientListQuery).toBeTruthy();
+    expect(patientListQuery.filters).toEqual(expect.arrayContaining([
+      ['accessModel', '==', 'organization-ward-role-v1'],
+      ['organizationId', '==', 'temperaturna-lista-dev'],
+      ['wardId', '==', 'infektologija'],
+      ['clinicalPartitionKey', '==', 'clinical-v1|temperaturna-lista-dev|infektologija']
+    ]));
     await expect(page.locator('#firebasePatientDialogOutpatientModeBtn')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('#firebasePatientDialogList')).toContainText('Ambulanta Mode Testic');
     await page.locator('#firebasePatientDialogWardModeBtn').click();

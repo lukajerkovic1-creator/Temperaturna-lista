@@ -3721,6 +3721,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
       const patientQuery = client.query(
         client.collection(client.db, FIREBASE_PATIENTS_COLLECTION),
+        client.where('accessModel', '==', CLINICAL_ACCESS_MODEL_VERSION),
+        client.where('organizationId', '==', getFirebaseAuthContext().organizationId),
+        client.where('wardId', '==', getFirebaseAuthContext().activeWardId),
         client.where('clinicalPartitionKey', '==', clinicalPartitionKey),
         client.limit(100)
       );
@@ -4510,5 +4513,3 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
 
-
-  
