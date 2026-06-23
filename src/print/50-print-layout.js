@@ -362,7 +362,7 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
       return dialog.querySelector('[data-admin-discard-confirm="no"]');
     }
     if (dialog.id === 'adminCloseDialog') {
-      return dialog.querySelector('[data-admin-close-action="json"]');
+      return dialog.querySelector('[data-admin-close-action="save"]');
     }
     if (dialog.id === 'printConfirmDialog') {
       return dialog.querySelector('[data-print-confirm-action="cancel"]');
@@ -598,11 +598,10 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
     dialog.innerHTML = `
       <div class="admin-close-dialog" tabindex="-1">
         <h2 id="adminCloseDialogTitle">Spremiti promjene prije izlaska iz admin načina?</h2>
-        <p id="adminCloseDialogDescription">Odaberi kako želiš završiti admin način. Ako spremiš novi HTML, nakon toga nastavi koristiti novostvorenu HTML datoteku jer samo ona sadrži ugrađene postavke. Odustani ostavlja admin način otvoren.</p>
+        <p id="adminCloseDialogDescription">Spremi upisuje promjene online u aplikaciju i vrijede pri sljedećem otvaranju. Odbaci promjene vraća stanje prije admin načina. Odustani ostavlja admin način otvoren.</p>
         <div class="admin-close-dialog-actions">
-          <button type="button" data-admin-close-action="json">Spremi u JSON</button>
-          <button type="button" class="secondary-action" data-admin-close-action="html">Spremi novi HTML – zatim koristiti novu datoteku</button>
-          <button type="button" class="discard-action" data-admin-close-action="discard">Zatvori i odbaci sve promjene</button>
+          <button type="button" data-admin-close-action="save">Spremi</button>
+          <button type="button" class="discard-action" data-admin-close-action="discard">Odbaci promjene</button>
           <button type="button" class="cancel-action" data-admin-close-action="cancel">Odustani</button>
         </div>
       </div>
@@ -623,29 +622,24 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
       }
 
       if (action === 'discard') {
-        showAdminDiscardConfirmDialog();
+        discardAdminSessionChangesAndClose();
         return;
       }
 
-      if (action === 'json') {
-        hideAdminCloseDialog();
+      if (action === 'save') {
+        actionButton.disabled = true;
         try {
-          const result = await saveCalibration();
-          if (!result || !result.ok) return;
+          const result = await saveCalibrationToOnlineApp();
+          if (!result || !result.ok) {
+            actionButton.disabled = false;
+            return;
+          }
+          hideAdminCloseDialog();
           setAdminMode(false);
           setStatus(`${result.message} Admin način je isključen.`);
         } catch (error) {
-          setStatus('Nije moguće spremiti kalibraciju u JSON datoteku.', true);
-        }
-        return;
-      }
-
-      if (action === 'html') {
-        hideAdminCloseDialog();
-        const saved = saveCalibrationInsideHtmlApp();
-        if (saved) {
-          setAdminMode(false);
-          setStatus('Stvorena je nova HTML aplikacija s ugrađenom kalibracijom. Važno: od sada nastavite koristiti novostvorenu HTML datoteku, a ne staru. Admin način je isključen.');
+          actionButton.disabled = false;
+          setStatus('Nije moguće spremiti online postavke aplikacije.', true);
         }
       }
     });
@@ -657,7 +651,7 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
   function showAdminCloseDialog() {
     hideAdminDiscardConfirmDialog({ restoreFocus: false });
     const dialog = getAdminCloseDialog();
-    showAccessibleAdminDialog(dialog, '[data-admin-close-action="json"]');
+    showAccessibleAdminDialog(dialog, '[data-admin-close-action="save"]');
   }
 
   function requestCloseAdminMode() {

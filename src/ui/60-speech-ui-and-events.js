@@ -1251,8 +1251,8 @@ function getTherapySuggestionPanel(targetId) {
     [els.adminAddUserBtn, els.adminApproveUserBtn, els.adminEditUserRolesBtn, els.adminDeactivateUserBtn]
       .filter(Boolean)
       .forEach((button) => button.addEventListener('click', explainLockedAdminServerAction));
-    els.saveCalibrationEmbeddedBtn.addEventListener('click', saveCalibrationInsideHtmlApp);
-    els.saveCalibrationBtn.addEventListener('click', () => { saveCalibration(); });
+    if (els.saveCalibrationEmbeddedBtn) els.saveCalibrationEmbeddedBtn.addEventListener('click', saveCalibrationInsideHtmlApp);
+    els.saveCalibrationBtn.addEventListener('click', () => { saveCalibrationToOnlineApp(); });
     els.loadCalibrationBtn.addEventListener('click', () => els.loadCalibrationInput.click());
     els.resetCalibrationBtn.addEventListener('click', resetCalibration);
     els.selectAllTextBoxesBtn.addEventListener('click', () => setSelectAllTextBoxes(!state.admin.selectAllTextBoxes));

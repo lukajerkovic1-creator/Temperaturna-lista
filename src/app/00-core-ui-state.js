@@ -22,8 +22,8 @@
       fieldVisible: 'Vidljivost odabranog okvira na ispisu',
       nudgeStep: 'Korak pomaka za kalibraciju u pikselima',
       resetCalibrationBtn: 'Vrati zadanu kalibraciju svih okvira',
-      saveCalibrationEmbeddedBtn: 'Spremi novu HTML aplikaciju s ugrađenom kalibracijom',
-      saveCalibrationBtn: 'Spremi kalibraciju u JSON datoteku',
+      saveCalibrationEmbeddedBtn: 'Servisni izvoz offline HTML aplikacije s ugrađenom kalibracijom',
+      saveCalibrationBtn: 'Spremi postavke ispisa online',
       loadCalibrationBtn: 'Učitaj kalibraciju iz JSON datoteke',
       runBuiltInParserTestsBtn: 'Pokreni ugrađene testove parsera',
       runParserTestBtn: 'Testiraj parser na upisanom OHBP tekstu',
@@ -2344,6 +2344,9 @@
   const FIREBASE_PATIENT_AUDIT_EVENTS_COLLECTION = 'patientAuditEvents';
   const FIREBASE_USER_PROFILES_COLLECTION = 'userProfiles';
   const FIREBASE_PARSER_TEST_CASES_COLLECTION = 'parserTestCases';
+  const FIREBASE_APP_CONFIG_COLLECTION = 'appConfig';
+  const FIREBASE_PRINT_CALIBRATION_CONFIG_ID = 'printCalibration';
+  const FIREBASE_PRINT_CALIBRATION_SCHEMA = 'temperaturna-lista-print-calibration-v1';
   const FIREBASE_PATIENT_AUDIT_SCHEMA = 'temperaturna-lista-audit-v1';
   const FIREBASE_PATIENT_CONFLICT_EVENTS = Object.freeze({
     DETECTED: 'patient.conflictDetected',
@@ -2763,6 +2766,14 @@
       auditEvents: [],
       errors: [],
       lastLoadedAt: '',
+      lastError: ''
+    },
+    remoteCalibration: {
+      loaded: false,
+      loading: false,
+      saving: false,
+      lastLoadedAt: '',
+      lastSavedAt: '',
       lastError: ''
     },
     therapyValidation: {

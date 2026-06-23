@@ -1043,6 +1043,53 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('saves admin print settings online when leaving admin mode', async ({ page }) => {
+    await installFirebaseSmokeClient(page, {
+      userEmail: 'luka.jerkovic1@gmail.com',
+      displayName: 'Luka Jerković',
+      firstName: 'Luka',
+      lastName: 'Jerković',
+      roles: ['clinician', 'admin']
+    });
+    const browserSignals = await openApp(page, './?qa=admin-online-calibration-save&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      await dialog.accept();
+    });
+    await page.keyboard.press('Control+Alt+A');
+    await expect(page.locator('#adminPanel')).toBeVisible();
+
+    await page.locator('#adminCloseBtn').click();
+    const closeDialog = page.locator('#adminCloseDialog');
+    await expect(closeDialog).toBeVisible();
+    await expect(closeDialog).toContainText(/Spremi/i);
+    await expect(closeDialog).toContainText(/Odbaci promjene/i);
+    await expect(closeDialog).toContainText(/Odustani/i);
+    await expect(closeDialog).not.toContainText(/JSON|novi HTML/i);
+
+    await closeDialog.locator('[data-admin-close-action="save"]').click();
+    await expect(closeDialog).toBeHidden();
+    await expect(page.locator('#adminPanel')).toBeHidden();
+    await expect(page.locator('#statusBar')).toContainText(/Postavke su spremljene online/i);
+
+    const onlineConfigWrite = await page.evaluate(() => {
+      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
+      return client.__smokeWrites
+        .filter(item => item.op === 'setDoc' && item.collection === 'appConfig' && item.id === 'printCalibration')
+        .at(-1) || null;
+    });
+
+    expect(onlineConfigWrite).toBeTruthy();
+    expect(onlineConfigWrite.payload.schema).toBe('temperaturna-lista-print-calibration-v1');
+    expect(onlineConfigWrite.payload.configId).toBe('printCalibration');
+    expect(onlineConfigWrite.payload.updatedByEmail).toBe('luka.jerkovic1@gmail.com');
+    expect(onlineConfigWrite.payload.calibration).toHaveProperty('page1Anchor1');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('saves patient data to Firebase through the smoke client', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');

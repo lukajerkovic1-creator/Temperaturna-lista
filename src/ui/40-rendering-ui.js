@@ -3678,6 +3678,117 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return client;
   }
 
+  function normalizeRemotePrintCalibrationPayload(payload = {}) {
+    if (!isPlainJsonObject(payload)) return null;
+    if (payload.schema !== FIREBASE_PRINT_CALIBRATION_SCHEMA) return null;
+    if (payload.configId && payload.configId !== FIREBASE_PRINT_CALIBRATION_CONFIG_ID) return null;
+    if (!isPlainJsonObject(payload.calibration)) return null;
+    return payload.calibration;
+  }
+
+  function applyRemotePrintCalibrationPayload(payload = {}, options = {}) {
+    const calibration = normalizeRemotePrintCalibrationPayload(payload);
+    if (!calibration) return false;
+    if (state.admin.enabled && typeof hasUnsavedAdminChanges === 'function' && hasUnsavedAdminChanges()) {
+      state.remoteCalibration.lastError = 'Online postavke nisu učitane jer je admin sesija imala nespremljene promjene.';
+      if (!options.silent) setStatus(state.remoteCalibration.lastError, true);
+      return false;
+    }
+    state.calibration = tunePrintFieldCapacity(mergeDeep(deepClone(DEFAULT_COORDS), calibration));
+    state.remoteCalibration.loaded = true;
+    state.remoteCalibration.lastLoadedAt = new Date().toISOString();
+    state.remoteCalibration.lastError = '';
+    saveCalibrationToStorage();
+    populateAdminFieldSelect();
+    updateAdminInputs();
+    renderAll();
+    markAdminCalibrationSaved();
+    if (!options.silent) {
+      setStatus('Online postavke ispisa su učitane.');
+    }
+    return true;
+  }
+
+  async function loadRemotePrintCalibrationConfig(options = {}) {
+    if (!state.firebasePatients.user) return false;
+    if (state.remoteCalibration.loading) return false;
+    state.remoteCalibration.loading = true;
+    try {
+      const client = await getFirebasePatientsClient();
+      const docRef = client.doc(client.db, FIREBASE_APP_CONFIG_COLLECTION, FIREBASE_PRINT_CALIBRATION_CONFIG_ID);
+      const snapshot = await client.getDoc(docRef);
+      if (!snapshot.exists()) {
+        state.remoteCalibration.loaded = false;
+        state.remoteCalibration.lastError = '';
+        return false;
+      }
+      const applied = applyRemotePrintCalibrationPayload(snapshot.data(), options);
+      if (applied) markFirebaseAvailabilityAvailable();
+      return applied;
+    } catch (error) {
+      const message = getFirebaseAuthErrorMessage(error);
+      state.remoteCalibration.lastError = message;
+      if (!options.silent) setStatus(`Online postavke ispisa nisu učitane: ${message}`, true);
+      markFirebaseAvailabilityUnavailable(error);
+      return false;
+    } finally {
+      state.remoteCalibration.loading = false;
+    }
+  }
+
+  function buildRemotePrintCalibrationPayload(client) {
+    const authContext = getFirebaseAuthContext();
+    return {
+      schema: FIREBASE_PRINT_CALIBRATION_SCHEMA,
+      appVersion: APP_VERSION,
+      configId: FIREBASE_PRINT_CALIBRATION_CONFIG_ID,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: authContext.uid || state.firebasePatients.user?.uid || '',
+      updatedByEmail: authContext.email || state.firebasePatients.user?.email || '',
+      updatedByDisplayName: authContext.displayName || state.firebasePatients.user?.displayName || '',
+      serverUpdatedAt: client.serverTimestamp(),
+      calibration: state.calibration
+    };
+  }
+
+  async function saveCalibrationToOnlineApp() {
+    if (!requireSuperAdminForAdminMode({ silent: true })) {
+      const message = getAdminAccessMessage();
+      setStatus(message, true);
+      return { ok: false, message };
+    }
+    if (state.remoteCalibration.saving) {
+      const message = 'Spremanje online postavki je već u tijeku.';
+      setStatus(message);
+      return { ok: false, message };
+    }
+    state.remoteCalibration.saving = true;
+    setStatus('Spremam online postavke aplikacije...');
+    try {
+      const client = await getFirebasePatientsClient();
+      const payload = buildRemotePrintCalibrationPayload(client);
+      const docRef = client.doc(client.db, FIREBASE_APP_CONFIG_COLLECTION, FIREBASE_PRINT_CALIBRATION_CONFIG_ID);
+      await client.setDoc(docRef, payload, { merge: true });
+      saveCalibrationToStorage();
+      markAdminCalibrationSaved();
+      state.remoteCalibration.loaded = true;
+      state.remoteCalibration.lastSavedAt = payload.updatedAt;
+      state.remoteCalibration.lastError = '';
+      markFirebaseAvailabilityAvailable();
+      const message = 'Postavke su spremljene online i vrijedit će pri sljedećem otvaranju aplikacije.';
+      setStatus(message);
+      return { ok: true, message };
+    } catch (error) {
+      const message = getFirebaseAuthErrorMessage(error);
+      state.remoteCalibration.lastError = message;
+      markFirebaseAvailabilityUnavailable(error);
+      setStatus(`Online spremanje postavki nije uspjelo: ${message}`, true);
+      return { ok: false, message };
+    } finally {
+      state.remoteCalibration.saving = false;
+    }
+  }
+
   function setFirebaseUserProfileReady(profile) {
     state.firebasePatients.userProfile = profile;
     const authContext = refreshFirebaseAuthContext();
@@ -3744,6 +3855,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         }
       }
 
+      await loadRemotePrintCalibrationConfig({ silent: true });
       await refreshFirebasePatients({ silent: true });
       scheduleFirebasePatientAutoSave({ force: true });
     } catch (error) {

@@ -128,6 +128,29 @@ service cloud.firestore {
         && hasClinicalAccess(data.organizationId, data.wardId);
     }
 
+    function validPrintCalibrationConfig(data, configId) {
+      return configId == 'printCalibration'
+        && data.keys().hasOnly([
+          'schema',
+          'appVersion',
+          'configId',
+          'updatedAt',
+          'updatedByUid',
+          'updatedByEmail',
+          'updatedByDisplayName',
+          'serverUpdatedAt',
+          'calibration'
+        ])
+        && data.schema == 'temperaturna-lista-print-calibration-v1'
+        && data.configId == configId
+        && data.appVersion is string
+        && data.updatedAt is string
+        && data.updatedByUid == request.auth.uid
+        && data.updatedByEmail == request.auth.token.email
+        && data.updatedByDisplayName is string
+        && data.calibration is map;
+    }
+
     match /patients/{patientId} {
       allow create: if request.resource.data.schema == 'temperaturna-lista-patient-v1'
         && writesClinicalDocument(request.resource.data);
@@ -153,6 +176,13 @@ service cloud.firestore {
       allow update: if readsClinicalDocument(resource.data)
         && request.resource.data.schema == 'temperaturna-lista-parser-test-case-v1'
         && writesClinicalDocument(request.resource.data);
+    }
+
+    match /appConfig/{configId} {
+      allow read: if signedIn();
+      allow create, update: if isSuperAdmin()
+        && validPrintCalibrationConfig(request.resource.data, configId);
+      allow delete: if false;
     }
 
     match /userProfiles/{userId} {
