@@ -423,6 +423,26 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('pulls vital signs from respiratory status lines in OHBP text', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#ohbpPasteBox').fill([
+      'PSEUDO PACIJENT RESPIRATORNI, rođen 01.01.1948, TESTNA 1, 47000 KARLOVAC',
+      'Datum nalaza: 24.06.2026.',
+      'Dg. Pneumonia bilateralis. Insufficientia respiratoria acuta.',
+      'Status:',
+      'RR 160/80 mmHg, cp: 100/min, resp. 20/min, spO2 75%, Tax 37,5°C',
+      'Pri svijesti, kontaktibilan, tahidispnoičan u mirovanju.',
+      'LAB: CRP 273,5 L 36,6 Hb 108 Trc 348 ureja 14,9 kreatinin 118.',
+      'Th. O2 6 L/min na masku, meropenem 2 g i.v.'
+    ].join('\n'));
+
+    await expect(page.locator('#vitalSigns')).toHaveValue(/160\/80[\s\S]*100\/min[\s\S]*20\/min[\s\S]*75%/);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('shows downtime availability when the browser goes offline', async ({ page, context }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);

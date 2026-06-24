@@ -1723,17 +1723,21 @@ function normalizeOhbpFusedSectionLabels(value) {
 
     const pulseMatch = source.match(/\bPuls\s*[:=]?\s*(\d{2,3})\s*(?:\.\s*)?(?:\/\s*min|u\s*min|\/min\.|min\b)?/i)
       || source.match(/\bp\s*[:=]\s*(\d{2,3})\s*(?:\/\s*min|u\s*min|\/min\.|min\b)?/i)
+      || source.match(/\b(?:cp|c\.p\.|sf)\s*[:=]?\s*(\d{2,3})\s*(?:\/\s*min|u\s*min|\/min\.|min\b)?/i)
       || source.match(/\b(?:sr[čc]ana\s+)?frekv(?:encija|\.)?\s*(?:srca)?\s*[:=]?\s*(\d{2,3})\s*(?:\/\s*min|u\s*min|\/min\.|min\b)/i);
+
+    const respiratoryRateMatch = source.match(/\b(?:Respirac\.?|resp\.?|disanje|frekv\.?\s*disanja|frekvencija\s*disanja|RRf)\s*[:=]?\s*(\d{1,3})\s*(?:\/\s*min|u\s*min|\/min\.|min\b)?/i);
 
     const spo2Match = source.match(/\bSpO\s*2\s*[:=]?\s*(\d{2,3})\s*%?/i)
       || source.match(/\bSpO₂\s*[:=]?\s*(\d{2,3})\s*%?/i)
       || source.match(/\b(?:saturacija|sat\.?\s*O\s*2|sat\.?\s*O₂)\s*[:=]?\s*(\d{2,3})\s*%?/i);
 
-    if (!rrMatch && !pulseMatch && !spo2Match) return null;
+    if (!rrMatch && !pulseMatch && !respiratoryRateMatch && !spo2Match) return null;
 
     const lines = [];
     if (rrMatch) lines.push(`${rrMatch[1]}/${rrMatch[2]}`);
     if (pulseMatch) lines.push(`${pulseMatch[1]}/min`);
+    if (respiratoryRateMatch) lines.push(`${respiratoryRateMatch[1]}/min`);
     if (spo2Match) {
       const context = extractOxygenContextFromSegment(source, spo2Match.index ?? -1);
       lines.push(`${spo2Match[1]}%${context ? ` (${context})` : ''}`);
@@ -1754,6 +1758,23 @@ function normalizeOhbpFusedSectionLabels(value) {
     const statusMatch = compact.match(/(?:\bKlini[čc]ki\s+status\s*:?|\bStatus\s*:?)([\s\S]*?)(?=\bLaboratorij\b|\bLaboratorijski\s+nalazi\b|\bLAB\s*:|\bEKG\b|\bRTG\b|\bUZV\b|\bZavr[šs]na\s+dijagnoza\b|\bDg\.\b|$)/i);
     if (statusMatch) {
       const vitalSigns = extractVitalSignsFromSegment(statusMatch[1]);
+      if (vitalSigns) return vitalSigns;
+    }
+
+    const vitalLineCandidates = text
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => {
+        if (/\b(?:monitor|monitorirati|pratiti|kontrol[aeu]?|kontrola|mjeriti|preporu)/i.test(line)) return false;
+        const hasBloodPressure = /\b(?:RR|TA|krvni\s+tlak|tlak)\s*[:=]?\s*\d{2,3}\s*[/\\]\s*\d{2,3}\b/i.test(line);
+        const hasPulse = /\b(?:Puls|cp|c\.p\.|sf)\s*[:=]?\s*\d{2,3}\b/i.test(line);
+        const hasRespiratoryRate = /\b(?:Respirac\.?|resp\.?|disanje|frekv\.?\s*disanja|RRf)\s*[:=]?\s*\d{1,3}\b/i.test(line);
+        const hasSpo2 = /\b(?:SpO\s*2|saturacija|sat\.?\s*O\s*2)\s*[:=]?\s*\d{2,3}\s*%?/i.test(line);
+        return (hasBloodPressure && (hasPulse || hasRespiratoryRate || hasSpo2)) || (hasSpo2 && (hasPulse || hasRespiratoryRate));
+      });
+    for (const line of vitalLineCandidates) {
+      const vitalSigns = extractVitalSignsFromSegment(line);
       if (vitalSigns) return vitalSigns;
     }
 
@@ -1843,7 +1864,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       safety.vitalSigns = makeClinicalSafety('empty');
     } else {
       const lines = vitalSigns.split('\n').map((line) => line.trim()).filter(Boolean);
-      const invalidVitalLine = lines.find((line) => !/^(?:\d{2,3}\/\d{2,3}|\d{2,3}\/min|\d{2,3}%(?:\s+\([^)]+\))?)$/.test(line));
+      const invalidVitalLine = lines.find((line) => !/^(?:\d{2,3}\/\d{2,3}|\d{1,3}\/min|\d{2,3}%(?:\s+\([^)]+\))?)$/.test(line));
       const spo2Value = (vitalSigns.match(/\b(\d{2,3})%/) || [])[1];
       const pulseValue = (vitalSigns.match(/\b(\d{2,3})\/min\b/) || [])[1];
       const rrMatch = vitalSigns.match(/\b(\d{2,3})\/(\d{2,3})\b/);
