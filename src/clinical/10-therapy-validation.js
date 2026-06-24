@@ -4650,10 +4650,22 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
 
   function syncPatientModeUi() {
     const mode = getCurrentPatientMode();
+    const isOutpatient = mode === PATIENT_MODES.OUTPATIENT;
     setModeButtonState(els.patientModeOutpatientBtn, mode === PATIENT_MODES.OUTPATIENT);
     setModeButtonState(els.patientModeWardBtn, mode === PATIENT_MODES.WARD);
-    document.body.classList.toggle('patient-mode-outpatient', mode === PATIENT_MODES.OUTPATIENT);
-    document.body.classList.toggle('patient-mode-ward', mode === PATIENT_MODES.WARD);
+    document.body.classList.toggle('patient-mode-outpatient', isOutpatient);
+    document.body.classList.toggle('patient-mode-ward', !isOutpatient);
+    if (els.departmentParserPanel) {
+      els.departmentParserPanel.classList.toggle('hidden', isOutpatient);
+      els.departmentParserPanel.setAttribute('aria-hidden', isOutpatient ? 'true' : 'false');
+    }
+    if (els.ambulatoryParserPanel) {
+      els.ambulatoryParserPanel.classList.toggle('hidden', !isOutpatient);
+      els.ambulatoryParserPanel.setAttribute('aria-hidden', isOutpatient ? 'false' : 'true');
+    }
+    if (isOutpatient && els.ambulatoryDiagnosis && !els.ambulatoryDiagnosis.value.trim() && els.diagnosis?.value?.trim()) {
+      els.ambulatoryDiagnosis.value = els.diagnosis.value.trim();
+    }
     if (typeof applyWorkflowTabOrder === 'function') applyWorkflowTabOrder();
     if (typeof scheduleAutoResizeTextareas === 'function') scheduleAutoResizeTextareas();
     syncFirebasePatientDialogModeUi();
@@ -4800,6 +4812,10 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     els.fullName.value = data.fullName || '';
     els.birthYear.value = data.birthYear || '';
     els.diagnosis.value = data.diagnosis || '';
+    if (els.ambulatoryDiagnosis) els.ambulatoryDiagnosis.value = data.diagnosis || '';
+    if (els.ambulatoryPasteBox && !isPatientDataDifferentFromEmpty(data)) els.ambulatoryPasteBox.value = '';
+    if (typeof updateAmbulatoryParserPreview === 'function') updateAmbulatoryParserPreview({ diagnosis: data.diagnosis || '' });
+    if (typeof setAmbulatoryParseStatus === 'function') setAmbulatoryParseStatus('');
     if (els.allergies) els.allergies.value = data.allergies || '';
     if (els.patientOrigin) els.patientOrigin.value = data.patientOrigin || '';
     els.therapy.value = data.therapy || '';
@@ -4808,6 +4824,13 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (els.followUpControlDate) els.followUpControlDate.value = formatIsoDateToCroatian(data.followUpControlDate || '');
     if (els.followUpControl) els.followUpControl.value = data.followUpControl || '';
     syncFollowUpControlLabPickerFromText();
+    if (typeof updateAmbulatoryParserPreview === 'function') {
+      updateAmbulatoryParserPreview({
+        diagnosis: data.diagnosis || '',
+        followUpControlDate: data.followUpControlDate || '',
+        followUpControlLabs: normalizeFollowUpControlLabList(data.followUpControl || '')
+      });
+    }
     if (els.microHemocultures) els.microHemocultures.checked = Boolean(data.microHemocultures);
     if (els.microUrineCulture) els.microUrineCulture.checked = Boolean(data.microUrineCulture);
     if (els.microStoolBacteriology) els.microStoolBacteriology.checked = Boolean(data.microStoolBacteriology);
@@ -5471,6 +5494,10 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     clearPatientDraft({ quiet: true });
     renderAll();
     resetPatientSyncState('empty', { data: getEmptyPatientData() });
+    if (els.ambulatoryPasteBox) els.ambulatoryPasteBox.value = '';
+    if (els.ambulatoryDiagnosis) els.ambulatoryDiagnosis.value = '';
+    if (typeof updateAmbulatoryParserPreview === 'function') updateAmbulatoryParserPreview();
+    if (typeof setAmbulatoryParseStatus === 'function') setAmbulatoryParseStatus('');
     updateDowntimeBackupControls();
     setStatus(statusMessage);
     setPatientDraftStatus(draftStatusMessage, 'warn', { state: 'cleared' });

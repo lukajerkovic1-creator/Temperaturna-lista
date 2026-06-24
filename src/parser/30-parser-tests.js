@@ -2551,7 +2551,7 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
     const page1Title = firstPreviewPage.title;
 
     const displaySettings = {
-      showDiagnosisOnList: !outpatient && defaultTrue(data.showDiagnosisOnList),
+      showDiagnosisOnList: defaultTrue(data.showDiagnosisOnList),
       showAllergiesOnList: defaultTrue(data.showAllergiesOnList),
       showPatientOriginOnList: defaultTrue(data.showPatientOriginOnList),
       showTherapyOnList: defaultTrue(data.showTherapyOnList),

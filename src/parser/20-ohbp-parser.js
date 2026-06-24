@@ -2358,6 +2358,103 @@ function normalizeOhbpFusedSectionLabels(value) {
     return assessClinicalParseSafety(data);
   }
 
+  function parseDepartmentPatientText(rawText, context = {}) {
+    const data = parseOhbpText(rawText);
+    data.patientMode = PATIENT_MODES.WARD;
+    data.parserMode = 'department';
+    if (context?.source) data.parserSource = context.source;
+    return data;
+  }
+
+  function findAmbulatoryBoundaryIndex(value) {
+    const text = String(value || '');
+    const boundaries = [
+      /\bKontrola\b/i,
+      /\bTh\.?\b/i,
+      /\bTerapija\b/i,
+      /\bPreporuka\b/i,
+      /\bPlan\b/i,
+      /\bNalaz\b/i
+    ];
+    return boundaries.reduce((best, pattern) => {
+      const match = text.match(pattern);
+      if (!match || match.index == null) return best;
+      return best < 0 ? match.index : Math.min(best, match.index);
+    }, -1);
+  }
+
+  function cleanAmbulatoryDiagnosis(value) {
+    let text = normalizeLineBreaks(value || '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s:;.,\-–—]+|[\s:;.,\-–—]+$/g, '')
+      .trim();
+    const boundary = findAmbulatoryBoundaryIndex(text);
+    if (boundary >= 0) text = text.slice(0, boundary).trim();
+    return text.replace(/[\s:;.,\-–—]+$/g, '').trim();
+  }
+
+  function extractAmbulatoryDiagnosis(rawText, fallback = '') {
+    const source = normalizeLineBreaks(rawText || '');
+    const labelled = source.match(/(?:^|\n)\s*(?:Dg\.?|Dijagnoza)\s*[:;\-–—]?\s*([\s\S]{1,400})/i);
+    if (labelled) {
+      const value = cleanAmbulatoryDiagnosis(labelled[1]);
+      if (value) return value;
+    }
+    return cleanAmbulatoryDiagnosis(fallback || '');
+  }
+
+  function extractAmbulatoryControlPlan(rawText, referenceIso = '') {
+    const source = compactOhbpText(rawText || '');
+    if (!source.trim()) return null;
+    const controlMatch = source.match(/\bKontrola\s+(?:(?:u|na|za|dana)\s+)?([^,\n]{0,50}?(\d{1,2}[.\/\-\s]+\d{1,2}(?:[.\/\-\s]+\d{4})?\.?))([\s\S]{0,260})/i);
+    if (!controlMatch) return null;
+    const dateIso = parseControlDateToIso(controlMatch[2], referenceIso);
+    const tail = String(controlMatch[3] || '')
+      .replace(/\b(?:kada|kad)\s+(?:ce|će)\s+se\b/gi, ' ')
+      .replace(/\b(?:ponoviti|kontrolirati|uciniti|učiniti|izvaditi|napraviti|odrediti)\b/gi, ' ')
+      .replace(/\b(?:nalazi?|pretrage?|laboratorij(?:ski)?)\b/gi, ' ');
+    const labs = normalizeFollowUpControlLabList(tail)
+      .map((item) => item.replace(/\burinokultur[aeu]?\b/i, 'urinokultura'))
+      .map((item) => item.replace(/\burin\b/i, 'urin'))
+      .filter(Boolean);
+    return {
+      date: dateIso,
+      text: buildFollowUpControlText(labs),
+      labs
+    };
+  }
+
+  function parseAmbulatoryPatientText(rawText, context = {}) {
+    const text = normalizeLineBreaks(rawText || '').trim();
+    const fallback = parseOhbpText(text);
+    const referenceIso = context.admissionDate || fallback.admissionDate || '';
+    const control = extractAmbulatoryControlPlan(text, referenceIso)
+      || extractAmbulatoryFollowUpControl(text, referenceIso);
+    const diagnosis = extractAmbulatoryDiagnosis(text, context.diagnosis || fallback.diagnosis || '');
+    const data = {
+      patientMode: PATIENT_MODES.OUTPATIENT,
+      parserMode: 'ambulatory',
+      reportType: 'ambulatory-control'
+    };
+    ['fullName', 'birthYear', 'admissionDate', 'patientOrigin', 'allergies', 'therapy'].forEach((field) => {
+      if (fallback[field]) data[field] = fallback[field];
+    });
+    if (diagnosis) data.diagnosis = diagnosis;
+    if (control?.date) data.followUpControlDate = control.date;
+    if (control?.text) data.followUpControl = control.text;
+    if (Array.isArray(control?.labs)) data.followUpControlLabs = control.labs;
+    if (fallback.nameValidationWarning) data.nameValidationWarning = fallback.nameValidationWarning;
+    if (fallback.nameOrderWarning) data.nameOrderWarning = fallback.nameOrderWarning;
+    if (fallback.clinicalSafety) data.clinicalSafety = fallback.clinicalSafety;
+    return data;
+  }
+
+  function parsePatientTextByMode(rawText, mode, context = {}) {
+    return normalizePatientMode(mode) === PATIENT_MODES.OUTPATIENT
+      ? parseAmbulatoryPatientText(rawText, context)
+      : parseDepartmentPatientText(rawText, context);
+  }
+
   function clearPatientFormValuesForNextPatient() {
     const cleared = isPatientDataDifferentFromEmpty(getFormData());
     setFormData(getEmptyPatientData());
@@ -2486,7 +2583,7 @@ function normalizeOhbpFusedSectionLabels(value) {
     // od prethodnog pacijenta ostanu prikazani ako novi nalaz nema tu sekciju ili je parser ne prepozna.
     const clearedPatientFields = clearPatientFormValuesForNextPatient();
 
-    const parsed = parseOhbpText(text);
+    const parsed = parseDepartmentPatientText(text, { source: 'ohbp-paste' });
     const recognitionStatus = buildOhbpRecognitionStatus(parsed);
     setCollapsibleTextFieldExpanded('ohbpTherapy', false);
     setCollapsibleTextFieldExpanded('vitalSigns', false);
@@ -2592,6 +2689,128 @@ function normalizeOhbpFusedSectionLabels(value) {
       }
     } else {
       setStatus('Iz zalijepljenog OHBP nalaza nisu prepoznati podaci za automatsko popunjavanje.', true);
+    }
+  }
+
+  function setAmbulatoryParseStatus(message, kind = 'neutral') {
+    if (!els.ambulatoryParserStatus) return;
+    els.ambulatoryParserStatus.textContent = message || '';
+    els.ambulatoryParserStatus.classList.toggle('ok', kind === 'ok');
+    els.ambulatoryParserStatus.classList.toggle('warn', kind === 'warn');
+  }
+
+  function updateAmbulatoryParserPreview(parsed = {}) {
+    const labs = Array.isArray(parsed.followUpControlLabs) ? parsed.followUpControlLabs : [];
+    if (els.ambulatoryRecognizedControl) {
+      els.ambulatoryRecognizedControl.textContent = parsed.followUpControlDate
+        ? formatIsoDateToCroatian(parsed.followUpControlDate)
+        : '-';
+    }
+    if (els.ambulatoryRecognizedTests) {
+      els.ambulatoryRecognizedTests.textContent = labs.length ? labs.join(', ') : '-';
+    }
+    if (els.ambulatoryRecognizedDiagnosis) {
+      els.ambulatoryRecognizedDiagnosis.textContent = parsed.diagnosis || '-';
+    }
+  }
+
+  function applyAmbulatoryText(rawText) {
+    const text = normalizeLineBreaks(rawText).trim();
+    if (!text) {
+      setAmbulatoryParseStatus('Zalijepi ambulantni tekst ili kontrolni plan.', 'warn');
+      updateAmbulatoryParserPreview();
+      return;
+    }
+
+    if (!isOutpatientMode()) {
+      applyPatientMode(PATIENT_MODES.OUTPATIENT, { renderLists: false });
+    }
+
+    const currentAdmissionIso = parseCroatianDateToIso(els.admissionDate?.value || '') || '';
+    const parsed = parsePatientTextByMode(text, PATIENT_MODES.OUTPATIENT, {
+      source: 'ambulatory-paste',
+      admissionDate: currentAdmissionIso,
+      diagnosis: els.ambulatoryDiagnosis?.value || els.diagnosis?.value || ''
+    });
+    updateAmbulatoryParserPreview(parsed);
+
+    let changed = false;
+    if (parsed.fullName && els.fullName) {
+      els.fullName.value = parsed.fullName;
+      markAutofilled(els.fullName, true);
+      changed = true;
+    }
+    if (parsed.birthYear && els.birthYear) {
+      els.birthYear.value = parsed.birthYear;
+      markAutofilled(els.birthYear, true);
+      changed = true;
+    }
+    if (parsed.admissionDate && els.admissionDate) {
+      els.admissionDate.value = formatIsoDateToCroatian(parsed.admissionDate);
+      updateAdmissionDateInputValidity();
+      syncDatePickerFromText(els.admissionDate, els.admissionDatePicker);
+      markAutofilled(els.admissionDate, true);
+      changed = true;
+    }
+    if (parsed.diagnosis) {
+      if (els.ambulatoryDiagnosis) {
+        els.ambulatoryDiagnosis.value = parsed.diagnosis;
+        els.ambulatoryDiagnosis.removeAttribute('aria-invalid');
+      }
+      if (els.diagnosis) {
+        els.diagnosis.value = parsed.diagnosis;
+        markAutofilled(els.diagnosis, true);
+      }
+      changed = true;
+    } else if (els.ambulatoryDiagnosis) {
+      els.ambulatoryDiagnosis.setAttribute('aria-invalid', 'true');
+    }
+    if (parsed.allergies && els.allergies) {
+      els.allergies.value = parsed.allergies;
+      markAutofilled(els.allergies, true);
+      changed = true;
+    }
+    if (parsed.patientOrigin && els.patientOrigin) {
+      els.patientOrigin.value = parsed.patientOrigin;
+      markAutofilled(els.patientOrigin, true);
+      changed = true;
+    }
+    if (parsed.therapy && els.therapy && isClinicalSafetySafe(parsed, 'therapy')) {
+      els.therapy.value = parsed.therapy;
+      markAutofilled(els.therapy, true);
+      changed = true;
+    }
+    if (parsed.followUpControl && els.followUpControl) {
+      els.followUpControl.value = parsed.followUpControl;
+      markAutofilled(els.followUpControl, true);
+      setCollapsibleTextFieldExpanded('followUpControl', true);
+      changed = true;
+    }
+    if (parsed.followUpControlDate && els.followUpControlDate) {
+      els.followUpControlDate.value = formatIsoDateToCroatian(parsed.followUpControlDate);
+      syncDatePickerFromText(els.followUpControlDate, els.followUpControlDatePicker);
+      markAutofilled(els.followUpControlDate, true);
+      changed = true;
+    }
+
+    const hasDiagnosis = Boolean(parsed.diagnosis || els.ambulatoryDiagnosis?.value?.trim());
+    const hasControl = Boolean(parsed.followUpControlDate || parsed.followUpControl);
+    if (hasDiagnosis && hasControl) {
+      setAmbulatoryParseStatus('Ambulantni tekst je parsiran. Provjeri dijagnozu i kontrolu prije spremanja/ispisa.', 'ok');
+    } else if (hasDiagnosis) {
+      setAmbulatoryParseStatus('Dijagnoza je prepoznata. Kontrolu ili pretrage upiši ručno ako ih tekst nema.', 'warn');
+    } else {
+      setAmbulatoryParseStatus('Nije prepoznata ambulantna dijagnoza. Upiši je u polje Ambulantna dijagnoza.', 'warn');
+    }
+
+    if (changed) {
+      scheduleAutoResizeTextareas();
+      renderAll();
+      savePatientDraftNow({ quiet: true });
+      resetCurrentFirebasePatientContext();
+      scheduleFirebasePatientAutoSave({ force: true });
+      setStatus('Ambulantni unos je obrađen. Provjeri označena polja prije ispisa.', !hasDiagnosis);
+      if (hasDiagnosis) clearStatusSoon();
     }
   }
 

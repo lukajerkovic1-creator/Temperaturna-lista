@@ -797,6 +797,8 @@ function getTherapySuggestionPanel(targetId) {
   // v243: privremeno proširenje aktivnog tekstualnog okvira i Tab-navigacija samo kroz tekstualne okvire.
   const FOCUS_EXPANDING_TEXT_BOX_IDS = Object.freeze([
     'ohbpPasteBox',
+    'ambulatoryPasteBox',
+    'ambulatoryDiagnosis',
     'fullName',
     'birthYear',
     'admissionDate',
@@ -814,6 +816,9 @@ function getTherapySuggestionPanel(targetId) {
 
   const WORKFLOW_TAB_TARGET_SELECTORS = Object.freeze([
     '#ohbpPasteBox',
+    '#ambulatoryPasteBox',
+    '#ambulatoryDiagnosis',
+    '#ambulatoryParseBtn',
     '#fullName',
     '#birthYear',
     '#admissionDate',
@@ -915,7 +920,7 @@ function getTherapySuggestionPanel(targetId) {
     const computed = window.getComputedStyle(element);
     const cssMax = Number.parseFloat(computed.maxHeight);
     if (Number.isFinite(cssMax) && cssMax > 0) return cssMax;
-    return ['ohbpPasteBox', 'labRaw', 'radiologyRaw'].includes(element?.id) ? 520 : 420;
+    return ['ohbpPasteBox', 'ambulatoryPasteBox', 'labRaw', 'radiologyRaw'].includes(element?.id) ? 520 : 420;
   }
 
   function autoResizeTextarea(element) {
@@ -1127,6 +1132,35 @@ function getTherapySuggestionPanel(targetId) {
         const currentText = els.ohbpPasteBox.value;
         if (currentText.trim()) {
           applyOhbpText(currentText);
+        }
+      });
+    }
+    if (els.ambulatoryParseBtn) {
+      els.ambulatoryParseBtn.addEventListener('click', () => {
+        applyAmbulatoryText(els.ambulatoryPasteBox?.value || '');
+      });
+    }
+    if (els.ambulatoryPasteBox) {
+      els.ambulatoryPasteBox.addEventListener('input', () => {
+        scheduleAutoResizeTextarea(els.ambulatoryPasteBox);
+      });
+    }
+    if (els.ambulatoryDiagnosis) {
+      els.ambulatoryDiagnosis.addEventListener('input', () => {
+        scheduleAutoResizeTextarea(els.ambulatoryDiagnosis);
+        const diagnosis = els.ambulatoryDiagnosis.value.trim();
+        els.ambulatoryDiagnosis.toggleAttribute('aria-invalid', !diagnosis);
+        if (isOutpatientMode() && els.diagnosis) {
+          els.diagnosis.value = diagnosis;
+          markAutofilled(els.diagnosis, false);
+          updateAmbulatoryParserPreview({
+            diagnosis,
+            followUpControlDate: parseCroatianDateToIso(els.followUpControlDate?.value || '') || '',
+            followUpControlLabs: normalizeFollowUpControlLabList(els.followUpControl?.value || '')
+          });
+          renderAll();
+          schedulePatientDraftSave();
+          scheduleFirebasePatientAutoSave({ force: true });
         }
       });
     }

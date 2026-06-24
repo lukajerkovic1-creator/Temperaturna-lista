@@ -65,7 +65,7 @@
     </section>
 
     <div class="form-grid workflow-grid">
-      <section class="workflow-step workflow-step-primary" aria-labelledby="workflowStep1Title">
+      <section class="workflow-step workflow-step-primary patient-mode-panel patient-mode-panel-department" id="departmentParserPanel" aria-labelledby="workflowStep1Title">
         <div class="step-heading">
           <span class="step-badge" aria-hidden="true">1</span>
           <div>
@@ -79,6 +79,41 @@
           <div class="subtle">Kod novog OHBP nalaza prethodna klinička polja se brišu kako ne bi ostali podaci prethodnog pacijenta.</div>
           <div class="medical-safety-note" role="note">Automatski prepoznati podaci moraju se ručno provjeriti prije ispisa.</div>
           <div class="ohbp-parse-status" id="ohbpParseStatus" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section class="workflow-step workflow-step-primary patient-mode-panel patient-mode-panel-ambulatory hidden" id="ambulatoryParserPanel" aria-labelledby="ambulatoryParserTitle" aria-hidden="true">
+        <div class="step-heading">
+          <span class="step-badge" aria-hidden="true">1</span>
+          <div>
+            <h2 class="step-title" id="ambulatoryParserTitle">Ambulantni unos</h2>
+            <p class="step-description">Zalijepi ambulantni tekst ili kontrolni plan. Odjelni OHBP parser ostaje odvojen.</p>
+          </div>
+        </div>
+        <section class="ohbp-paste-panel ambulatory-paste-panel" id="ambulatoryPastePanel">
+          <label for="ambulatoryPasteBox">Ambulantni tekst / kontrolni plan</label>
+          <textarea id="ambulatoryPasteBox" spellcheck="false" placeholder="Dg: Rekurentni uroinfekt.&#10;Kontrola 29.6. kada će se ponoviti urin i urinokultura."></textarea>
+          <label for="ambulatoryDiagnosis">Ambulantna dijagnoza</label>
+          <textarea id="ambulatoryDiagnosis" spellcheck="false" placeholder="npr. Rekurentni uroinfekt"></textarea>
+          <div class="toolbar-row ambulatory-parser-actions">
+            <button id="ambulatoryParseBtn" type="button">Parsaj ambulantni tekst</button>
+          </div>
+          <div class="medical-safety-note" role="note">Ambulantna dijagnoza je obavezna. Automatski prepoznate kontrole i pretrage treba ručno provjeriti prije ispisa.</div>
+          <div class="ohbp-parse-status" id="ambulatoryParserStatus" aria-live="polite"></div>
+          <div class="ambulatory-parser-preview" id="ambulatoryParserPreview" aria-live="polite">
+            <div>
+              <span>Prepoznata kontrola</span>
+              <strong id="ambulatoryRecognizedControl">-</strong>
+            </div>
+            <div>
+              <span>Prepoznate pretrage</span>
+              <strong id="ambulatoryRecognizedTests">-</strong>
+            </div>
+            <div>
+              <span>Dijagnoza</span>
+              <strong id="ambulatoryRecognizedDiagnosis">-</strong>
+            </div>
+          </div>
         </section>
       </section>
 

@@ -628,6 +628,11 @@
     display: none !important;
   }
 
+  body.patient-mode-outpatient #departmentParserPanel,
+  body.patient-mode-ward #ambulatoryParserPanel {
+    display: none !important;
+  }
+
   .patient-top-actions {
     margin-top: 12px;
     display: grid;
@@ -3483,10 +3488,63 @@
     background: #fbfcfd;
   }
 
+  .ambulatory-paste-panel {
+    display: grid;
+    gap: 10px;
+    background: #f8fbff;
+    border-color: #bfd7f4;
+  }
+
+  .ambulatory-paste-panel label {
+    margin-top: 2px;
+  }
+
   .ohbp-paste-panel textarea {
     min-height: 140px;
     font-size: 13px;
     line-height: 1.35;
+  }
+
+  #ambulatoryDiagnosis {
+    min-height: 72px;
+  }
+
+  .ambulatory-parser-actions {
+    margin-top: 0;
+    justify-content: flex-start;
+  }
+
+  .ambulatory-parser-actions button {
+    min-height: 38px;
+  }
+
+  .ambulatory-parser-preview {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 10px;
+    border: 1px dashed #bad0e9;
+    border-radius: 10px;
+    background: #fff;
+  }
+
+  .ambulatory-parser-preview div {
+    display: grid;
+    gap: 2px;
+  }
+
+  .ambulatory-parser-preview span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+  }
+
+  .ambulatory-parser-preview strong {
+    color: #0f172a;
+    font-size: 13px;
+    line-height: 1.35;
+    white-space: pre-line;
   }
 
   .ohbp-paste-panel .subtle {

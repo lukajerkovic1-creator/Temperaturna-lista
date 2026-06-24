@@ -1421,10 +1421,14 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Smoke Firebase User.*Infektologija/i);
 
     await expect(page.locator('#patientModeWardBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#departmentParserPanel')).toBeVisible();
+    await expect(page.locator('#ambulatoryParserPanel')).toBeHidden();
     await expect(page.locator('[data-collapsible-field="therapy"]')).toBeVisible();
 
     await page.locator('#patientModeOutpatientBtn').click();
     await expect(page.locator('#patientModeOutpatientBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#departmentParserPanel')).toBeHidden();
+    await expect(page.locator('#ambulatoryParserPanel')).toBeVisible();
     await expect(page.locator('[data-collapsible-field="diagnosis"]')).toBeHidden();
     await expect(page.locator('[data-collapsible-field="therapy"]')).toBeVisible();
     await expect(page.locator('#therapyCsvStatus')).toBeVisible();
@@ -1525,6 +1529,50 @@ test.describe('GitHub Pages smoke test', () => {
     ]));
     expect(modeCounts.activeDocCount).toBe(1);
     expect(modeCounts.docModes).toEqual(['ward']);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('parses ambulatory control text with separate outpatient parser panel', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__temperatureListDrawnText = [];
+      const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...args) {
+        window.__temperatureListDrawnText.push(String(text));
+        return originalFillText.call(this, text, ...args);
+      };
+    });
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=ambulatory-parser-smoke&firebaseSmoke=1');
+
+    await expect(page.locator('#patientModeWardBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#departmentParserPanel')).toBeVisible();
+    await expect(page.locator('#ambulatoryParserPanel')).toBeHidden();
+
+    await page.locator('#patientModeOutpatientBtn').click();
+    await expect(page.locator('#patientModeOutpatientBtn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#departmentParserPanel')).toBeHidden();
+    await expect(page.locator('#ambulatoryParserPanel')).toBeVisible();
+
+    await page.locator('#admissionDate').fill('20.06.2026.');
+    await page.locator('#ambulatoryPasteBox').fill([
+      'Dg: Rekurentni uroinfekt.',
+      'Kontrola 29.6. kada ce se ponoviti urin i urinokultura.'
+    ].join('\n'));
+    await page.locator('#ambulatoryParseBtn').click();
+
+    await expect(page.locator('#ambulatoryParserStatus')).toContainText(/Ambulantni tekst je parsiran/i);
+    await expect(page.locator('#ambulatoryDiagnosis')).toHaveValue(/Rekurentni uroinfekt/i);
+    await expect(page.locator('#diagnosis')).toHaveValue(/Rekurentni uroinfekt/i);
+    await expect(page.locator('#followUpControlDate')).toHaveValue('29.06.2026.');
+    await expect(page.locator('#followUpControl')).toHaveValue(/Kontrola[\s\S]*urin[\s\S]*urinokultura/i);
+    await expect(page.locator('#ambulatoryRecognizedControl')).toContainText('29.06.2026.');
+    await expect(page.locator('#ambulatoryRecognizedTests')).toContainText(/urin/i);
+    await expect(page.locator('#ambulatoryRecognizedDiagnosis')).toContainText(/Rekurentni uroinfekt/i);
+    await page.waitForFunction(() => (window.__temperatureListDrawnText || []).some((text) => /uroinfekt/i.test(text)));
+    const drawnPreviewText = await page.evaluate(() => (window.__temperatureListDrawnText || []).join('\n'));
+    expect(drawnPreviewText).toMatch(/Rekurentni/i);
+    expect(drawnPreviewText).toMatch(/uroinfekt/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
