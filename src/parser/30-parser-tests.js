@@ -2566,6 +2566,12 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
     const formattedRadiology = formatRadiologyFindings(data.radiologyRaw || '');
     const microbiologySamples = getMicrobiologySamplesFromData(data);
     const followUpControlRenderParts = buildFollowUpControlRenderParts(data.followUpControl || '');
+    const followUpControlText = outpatient
+      ? buildOutpatientFollowUpControlText(data.followUpControl || '')
+      : followUpControlRenderParts.manualText;
+    const followUpControlLabBoxes = outpatient
+      ? ['', '', '', '']
+      : followUpControlRenderParts.labBoxes;
     const followUpControlDate = parseIsoDate(data.followUpControlDate || '');
     const followUpControlPage1DayIndex = findDateIndexInList(page1Dates, followUpControlDate);
     const followUpControlPage2DayIndex = findDateIndexInList(page2Dates, followUpControlDate);
@@ -2600,9 +2606,9 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
       ohbpTherapy: data.ohbpTherapy || '',
       vitalSigns: data.vitalSigns || '',
       followUpControlDate,
-      followUpControl: followUpControlRenderParts.manualText,
+      followUpControl: followUpControlText,
       followUpControlRaw: data.followUpControl || '',
-      followUpControlLabBoxes: followUpControlRenderParts.labBoxes,
+      followUpControlLabBoxes,
       microbiologySamples,
       followUpControlPage1DayIndex,
       followUpControlPage2DayIndex,
@@ -3492,6 +3498,27 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
       model.followUpControlLabBoxes.some((labText) => String(labText || '').trim());
   }
 
+  function buildOutpatientFollowUpControlText(value) {
+    const lines = getFollowUpControlLinesFromValue(value);
+    if (!lines.length) return '';
+    const output = ['KONTROLA'];
+    const seen = new Set(['kontrola']);
+    lines.forEach((line) => {
+      const normalized = normalizeFollowUpControlLabLabel(line);
+      if (!normalized || normalized === 'kontrola') return;
+      const display = normalized === 'urinokultura'
+        ? 'urinokultura'
+        : normalized === 'urin'
+          ? 'urin'
+          : line;
+      const key = normalizeFollowUpControlLabLabel(display);
+      if (seen.has(key)) return;
+      seen.add(key);
+      output.push(display);
+    });
+    return output.join('\n');
+  }
+
   function getFollowUpControlLabModel(model) {
     return {
       ...model,
@@ -3649,7 +3676,7 @@ ${ohbpTherapyPreviewText}`, resolvedOhbpTherapyField, { noWrap: false });
     }
     if (renderOptions.showFollowUpControl && model.followUpControl) {
       const field = resolveFollowUpControlField(layout, model, pageNumber);
-      if (field) drawTextBox(ctx, model.followUpControl, field, { noWrap: false });
+      if (field) drawTextBox(ctx, model.followUpControl, field, { noWrap: model.isOutpatient === true });
     }
 
     const dates = getRenderPageDates(model, pageNumber);

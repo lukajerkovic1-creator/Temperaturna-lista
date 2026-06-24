@@ -1554,7 +1554,7 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#departmentParserPanel')).toBeHidden();
     await expect(page.locator('#ambulatoryParserPanel')).toBeVisible();
 
-    await page.locator('#admissionDate').fill('20.06.2026.');
+    await page.locator('#admissionDate').fill('23.06.2026.');
     await page.locator('#ambulatoryPasteBox').fill([
       'Dg: Rekurentni uroinfekt.',
       'Kontrola 29.6. kada ce se ponoviti urin i urinokultura.'
@@ -1569,10 +1569,11 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#ambulatoryRecognizedControl')).toContainText('29.06.2026.');
     await expect(page.locator('#ambulatoryRecognizedTests')).toContainText(/urin/i);
     await expect(page.locator('#ambulatoryRecognizedDiagnosis')).toContainText(/Rekurentni uroinfekt/i);
-    await page.waitForFunction(() => (window.__temperatureListDrawnText || []).some((text) => /uroinfekt/i.test(text)));
+    await page.waitForFunction(() => (window.__temperatureListDrawnText || []).some((text) => /KONTROLA/i.test(text)));
     const drawnPreviewText = await page.evaluate(() => (window.__temperatureListDrawnText || []).join('\n'));
-    expect(drawnPreviewText).toMatch(/Rekurentni/i);
-    expect(drawnPreviewText).toMatch(/uroinfekt/i);
+    expect(drawnPreviewText).toMatch(/KONTROLA/i);
+    expect(drawnPreviewText).toMatch(/\burin\b/i);
+    expect(drawnPreviewText).toMatch(/urinokultura/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
