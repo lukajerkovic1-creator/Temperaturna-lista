@@ -443,6 +443,49 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('keeps inline LAB values out of the radiology field', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#ohbpPasteBox').fill([
+      'PSEUDO PACIJENT RADIOLOGIJA, rođen 01.01.1950, TESTNA 1, 47000 KARLOVAC',
+      'Datum nalaza: 13.06.2026.',
+      'Dg. Dyspnoea.',
+      'RTG: Na sumacijskoj snimci srca i pluća bez svježeg infiltrata.',
+      'LAB.E 3.19 [1e12]/L, Hb 104 g/L, Trc 274 [1e9]/L, CRP 274.4 mg/L',
+      'Dg. Uroinfectio. Insufficientia renalis acuta.',
+      'Th: FO 500 ml i.v.'
+    ].join('\n'));
+
+    await expect(page.locator('#radiologyRaw')).toHaveValue(/RTG: Na sumacijskoj snimci/i);
+    await expect(page.locator('#radiologyRaw')).not.toHaveValue(/LAB\.E|CRP 274\.4|Hb 104/i);
+    await expect(page.locator('#labRaw')).toHaveValue(/E 3\.19[\s\S]*Hb 104[\s\S]*CRP 274\.4/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('treats Alerigje typo as an allergy boundary instead of therapy text', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#ohbpPasteBox').fill([
+      'PSEUDO PACIJENT ALERGIJA, rođena 14.05.1945, TESTNA 2, 47000 KARLOVAC',
+      'Datum nalaza: 19.06.2026.',
+      'Dg. Dyspnoea.',
+      'Lijekovi: Eliquis 5 mg 1,0,1 tbl, Acipan 20 mg 1,0,0 tbl.',
+      'Alerigje na lijekove negira',
+      'Status: pri svijesti, afebrilna.',
+      'LAB: CRP 1.0 mg/L',
+      'Dg: Cor decomp.'
+    ].join('\n'));
+
+    await expect(page.locator('#therapy')).toHaveValue(/Eliquis[\s\S]*Acipan/i);
+    await expect(page.locator('#therapy')).not.toHaveValue(/Alerigje|Status|LAB/i);
+    await expect(page.locator('#allergies')).toHaveValue(/nema/i);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('shows downtime availability when the browser goes offline', async ({ page, context }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);

@@ -2404,9 +2404,13 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
     const boundary = String.raw`(?:\b(?:Lijekovi|Kronična\s+terapija|Dosadašnja\s+terapija|Redovita\s+terapija|Kućna\s+terapija|Th\.?\s+od\s+ku[ćc]e|Terapija|Th\.?|Iz\s+statusa|Status|Klinički\s+status|Pri\s+svijesti|RR\s*\d|cp\s*:|resp\.?\s*\d|spO2|Tax|Pulmo|Cor|EKG|LAB|Laboratorij|Laboratorijski|RTG|UZV|CT|MSCT|Dg\.?\s*(?:[:;/]|[-–—])|Završna\s+dijagnoza|Funkcije\s+i\s+navike|Osobna\s+anamneza|Dosadašnje\s+bolesti|Komorbiditeti|Liječnik|Lijecnik)\b|$)`;
     const patterns = [
       /\bAlergije\s+na\s+lijekove\s*:?\s*([\s\S]*?)(?=\b(?:FiN|FIN)\b)/i,
+      /\bAlerigje\s+na\s+lijekove\s*:?\s*([\s\S]*?)(?=\b(?:FiN|FIN)\b)/i,
       /\bAlergije\s*:?\s*([\s\S]*?)(?=\b(?:FiN|FIN)\b)/i,
+      /\bAlerigje\s*:?\s*([\s\S]*?)(?=\b(?:FiN|FIN)\b)/i,
       new RegExp('\\bAlergije\\s+na\\s+lijekove\\s*:?\\s*([\\s\\S]*?)(?=' + boundary + ')', 'i'),
+      new RegExp('\\bAlerigje\\s+na\\s+lijekove\\s*:?\\s*([\\s\\S]*?)(?=' + boundary + ')', 'i'),
       new RegExp('\\bAlergije\\s*:?\\s*([\\s\\S]*?)(?=' + boundary + ')', 'i'),
+      new RegExp('\\bAlerigje\\s*:?\\s*([\\s\\S]*?)(?=' + boundary + ')', 'i'),
       new RegExp('\\bAlergija\\s+na\\s+([^\\n.]{1,120})(?:[.\\n]|$)', 'i'),
       new RegExp('\\bAlergije\\s+na\\s+lijekove\\s+([^\\n.]{1,120})(?:[.\\n]|$)', 'i')
     ];

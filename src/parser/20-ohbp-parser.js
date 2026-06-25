@@ -6,7 +6,7 @@ function normalizeOhbpFusedSectionLabels(value) {
     return String(value || '')
       // OHBP/BIS kopiranje ponekad zalijepi naslov sekcije odmah iza prethodne rečenice
       // bez razmaka, npr. "nepoznatoLijekovi s liste iz doma:".
-      .replace(/([a-zčćžšđ])(?=(?:Lijekovi|Kronična\s+terapija|Dosadašnja\s+terapija|Redovita\s+terapija|Kućna\s+terapija|Alergije|AL\.?\s+na\s+lijekove|FIN|FiN|Iz\s+statusa|Status|EKG|LAB|RTG|MSCT|Dg\.?|Th\.?|Funkcije|Osobna|Sadašnja|Dosadašnje|Prema\s+dogovoru|Vraća\s+se|Vraca\s+se|Ad\s+[A-ZČĆŽŠĐa-zčćžšđ]+|Dg\s*\/|Th\s*\/|Liječnik|Lijecnik)\b)/gu, '$1 ');
+      .replace(/([a-zčćžšđ])(?=(?:Lijekovi|Kronična\s+terapija|Dosadašnja\s+terapija|Redovita\s+terapija|Kućna\s+terapija|Alergije|Alerigje|AL\.?\s+na\s+lijekove|FIN|FiN|Iz\s+statusa|Status|EKG|LAB|RTG|MSCT|Dg\.?|Th\.?|Funkcije|Osobna|Sadašnja|Dosadašnje|Prema\s+dogovoru|Vraća\s+se|Vraca\s+se|Ad\s+[A-ZČĆŽŠĐa-zčćžšđ]+|Dg\s*\/|Th\s*\/|Liječnik|Lijecnik)\b)/gu, '$1 ');
   }
 
   function compactOhbpText(value) {
@@ -322,10 +322,11 @@ function normalizeOhbpFusedSectionLabels(value) {
     });
     return bestIndex;
   }
-
+  const INLINE_LAB_SECTION_START_PATTERN = /\bLAB\.?\s*(?=(?:SE|PCT|PROKAL|Prokalcitonin|CRP|Erc|E|Hb|Htc|Trc|Lkc|L|NEUTRO|NEUT|NEU|GUK|UREJA|Urea|KREA|Kreatinin|Na|K|Cl|BIL|Bilirubin|AST|ALT|AP|GGT|CK|LDH|LD|Troponin|PV|INR|APTV|Fib|Fibrinogen|D[-–]?\s*dimeri)\b)/i;
 
   const LAB_SECTION_START_PATTERNS = Object.freeze([
     /\bLAB(?:ORATORIJ)?\b\.?\s*:\s*/i,
+    INLINE_LAB_SECTION_START_PATTERN,
     /\bLab(?:oratorij)?\b\.?\s*:\s*/i,
     /\bLaboratorij\s*:\s*/i,
     /\bLaboratorijski\s+nalaz\s*:\s*/i,
@@ -501,6 +502,7 @@ function normalizeOhbpFusedSectionLabels(value) {
   const RADIOLOGY_SECTION_END_PATTERNS = Object.freeze([
     /(?:^|\n|\s)-{5,}(?=\s|\n|$)/i,
     /\bLAB(?:ORATORIJ)?\b\.?\s*:/i,
+    INLINE_LAB_SECTION_START_PATTERN,
     /\bLaboratorij(?:ski\s+nalaz|ski\s+nalazi)?\s*:/i,
     /\bPretrage\s*:/i,
     /\bEKG\s*:/i,
@@ -603,6 +605,10 @@ function normalizeOhbpFusedSectionLabels(value) {
     /\bAlergije\s+na\s+lijekove\b/i,
     /\bAlergije\s*:/i,
     /\bAlergije\b/i,
+    /\bAlerigje\s+na\s+lijekove\s*:/i,
+    /\bAlerigje\s+na\s+lijekove\b/i,
+    /\bAlerigje\s*:/i,
+    /\bAlerigje\b/i,
     /\bAlergija\s+(?:na\s+lijekove|na\s+[^.\n]{1,120})\.?:?/i,
     /\bAL\.?\s+na\s+lijekove\b/i,
     /\bKomorbiditeti\s*:/i,
@@ -993,7 +999,7 @@ function normalizeOhbpFusedSectionLabels(value) {
     const textBeforeTherapy = source.slice(0, startMatch.index);
     const labelIsGenericTherapy = /\b(?:Th\.?|Terapija)\b/i.test(labelText) && !isExplicitFinalTherapyLabel;
     const shortTextAfterTherapyLabel = source.slice(startMatch.index + startMatch.length, Math.min(source.length, startMatch.index + startMatch.length + 900));
-    if (labelIsGenericTherapy && /\bAlergije(?:\s+na\s+lijekove)?\b[\s\S]{0,650}\b(?:Status|Pri\s+svijesti|EKG|LAB|Laboratorij|RTG|UZV|Dg\.?|Zavrsna\s+dijagnoza|Zavr[\u0161s]na\s+dijagnoza)\b/i.test(shortTextAfterTherapyLabel)) {
+    if (labelIsGenericTherapy && /\bAleri(?:gje|gije)(?:\s+na\s+lijekove)?\b[\s\S]{0,650}\b(?:Status|Pri\s+svijesti|EKG|LAB|Laboratorij|RTG|UZV|Dg\.?|Zavrsna\s+dijagnoza|Zavr[\u0161s]na\s+dijagnoza)\b/i.test(shortTextAfterTherapyLabel)) {
       return '';
     }
 
@@ -1539,7 +1545,7 @@ function normalizeOhbpFusedSectionLabels(value) {
   function isFinalIcdDiagnosisBoundaryLine(line) {
     const source = String(line || '').replace(/\s+/g, ' ').trim();
     if (!source) return false;
-    return /^(?:Zaklju[čc]ak|Plan|Preporuk|Th\.?\b|Terapija\b|Lijekovi\b|Alergije\b|Lije[čc]nik\b|Datum\b|Kontrola\b|U\s+slu[čc]aju|Otpu[šs]ta|Otklanja|Prepiur|Preporu[čc]a|Konzultiran|U\s+dogovoru|Prema\s+dogovoru|preuzet[ao]?\s+od|primljen[ao]?\b|prima\s+se\b|Ad\s+|LAB\b|EKG\b|RTG\b|UZV\b|MSCT\b|CT\b)/i.test(source);
+    return /^(?:Zaklju[čc]ak|Plan|Preporuk|Th\.?\b|Terapija\b|Lijekovi\b|Aleri(?:gje|gije)\b|Lije[čc]nik\b|Datum\b|Kontrola\b|U\s+slu[čc]aju|Otpu[šs]ta|Otklanja|Prepiur|Preporu[čc]a|Konzultiran|U\s+dogovoru|Prema\s+dogovoru|preuzet[ao]?\s+od|primljen[ao]?\b|prima\s+se\b|Ad\s+|LAB\b|EKG\b|RTG\b|UZV\b|MSCT\b|CT\b)/i.test(source);
   }
 
   function isSafeIcdDiagnosisContinuationLine(line) {
@@ -1853,7 +1859,7 @@ function normalizeOhbpFusedSectionLabels(value) {
     const ohbpTherapy = String(data.ohbpTherapy || '').trim();
     if (!ohbpTherapy) {
       safety.ohbpTherapy = makeClinicalSafety('empty');
-    } else if (ohbpTherapy.length > 1200 || /\b(?:Alergije|Osobna\s+anamneza|Dosada[Å¡s]nje\s+bolesti|Status|EKG|LAB|RTG|UZV|Dg\.?)\b/i.test(ohbpTherapy)) {
+    } else if (ohbpTherapy.length > 1200 || /\b(?:Aleri(?:gje|gije)|Osobna\s+anamneza|Dosada[Å¡s]nje\s+bolesti|Status|EKG|LAB|RTG|UZV|Dg\.?)\b/i.test(ohbpTherapy)) {
       safety.ohbpTherapy = makeClinicalSafety('blocked', 'OHBP terapija sadrži tekst iz druge sekcije', ohbpTherapy);
     } else {
       safety.ohbpTherapy = makeClinicalSafety('safe', '', ohbpTherapy);
@@ -2204,7 +2210,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       /\bOrdinirano\s*:/i,
       /\bTerapija\s*:/i,
       /\bLijekovi\s*:/i,
-      /\bAlergije(?:\s+na\s+lijekove)?\s*:?/i,
+      /\bAleri(?:gje|gije)(?:\s+na\s+lijekove)?\s*:?/i,
       /\bAL\.?\s+na\s+lijekove\s*:/i,
       /\bAL\.?\s*:/i,
       /\bFIN\s*:/i,
