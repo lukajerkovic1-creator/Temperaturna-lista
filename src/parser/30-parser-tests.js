@@ -1238,17 +1238,30 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
     return patientLabel;
   }
 
+  function getParserTestCaptureRawText() {
+    const outpatientRaw = normalizeLineBreaks(els.ambulatoryPasteBox?.value || '').trim();
+    const wardRaw = normalizeLineBreaks(els.ohbpPasteBox?.value || state.ohbpLastParsedText || '').trim();
+    return isOutpatientMode() ? (outpatientRaw || wardRaw) : (wardRaw || outpatientRaw);
+  }
+
+  function parseParserTestCaptureRawText(raw, mode = getCurrentPatientMode()) {
+    if (!String(raw || '').trim()) return {};
+    return parsePatientTextByMode(raw, mode, { source: 'ctrl-alt-p-capture' });
+  }
+
   function buildParserTestCaptureCase(issueNote) {
     const capturedAt = new Date();
     const currentData = getFormData();
-    const raw = normalizeLineBreaks(els.ohbpPasteBox?.value || state.ohbpLastParsedText || '').trim();
-    const parsedAtCapture = raw ? parseOhbpText(raw) : {};
+    const parserMode = getCurrentPatientMode();
+    const raw = getParserTestCaptureRawText();
+    const parsedAtCapture = parseParserTestCaptureRawText(raw, parserMode);
 
     return sanitizeParserTestCaseForStorage({
       id: buildParserTestCaptureId(capturedAt),
       schema: 'temperaturna-lista-parser-test-case-v1',
       appVersion: APP_VERSION,
       source: 'ctrl-alt-p',
+      parserMode,
       capturedAt: capturedAt.toISOString(),
       scenario: buildParserTestCaptureScenario(currentData, issueNote),
       patientLabel: buildFirebasePatientLabel(currentData),
@@ -1260,6 +1273,21 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
       parsedAtCapture,
       parserWarningsAtCapture: getParserTestWarnings(parsedAtCapture)
     });
+  }
+
+  function downloadParserTestCaptureCase(testCase) {
+    const normalized = sanitizeParserTestCaseForStorage(testCase);
+    const payload = {
+      ...buildParserTestCaptureStoragePayload([normalized]),
+      schema: 'temperaturna-lista-parser-test-capture-download-v1',
+      source: 'ctrl-alt-p',
+      issueNote: normalized.note || '',
+      caseId: normalized.id || '',
+      case: normalized
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const safeId = String(normalized.id || parserRegressionTimestampForFile()).replace(/[^a-z0-9_-]+/gi, '_');
+    downloadBlob(`krivo_parsiran_nalaz_${safeId}.json`, blob);
   }
 
   function buildParserTestCaptureStoragePayload(cases) {
@@ -1388,7 +1416,7 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
     }
 
     const currentData = getFormData();
-    const raw = normalizeLineBreaks(els.ohbpPasteBox?.value || state.ohbpLastParsedText || '').trim();
+    const raw = getParserTestCaptureRawText();
     if (!raw && !isPatientDataDifferentFromEmpty(currentData)) {
       setStatus('Nema OHBP teksta ni podataka pacijenta za spremanje parser testa.', true);
       return;
@@ -1408,6 +1436,7 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
     try {
       const testCase = buildParserTestCaptureCase(issueNote);
       const localResult = saveParserTestCaptureLocally(testCase);
+      downloadParserTestCaptureCase(testCase);
       let firebaseResult = { saved: false, message: 'Nema Firebase prijave.' };
       if (state.firebasePatients.user) {
         try {
@@ -1421,14 +1450,14 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
 
       const rawWarning = testCase.rawMissing ? ' Nema izvornog OHBP teksta; slučaj je spremljen kao bilješka s trenutnim poljima.' : '';
       if (firebaseResult.saved && localResult.saved) {
-        setStatus(`Parser test spremljen privremeno u ovoj sesiji i u Firebase kolekciju "${FIREBASE_PARSER_TEST_CASES_COLLECTION}". Testova u sesiji: ${localResult.count}.${rawWarning}`);
+        setStatus(`Parser test spremljen privremeno u ovoj sesiji, preuzet kao lokalni JSON i u Firebase kolekciju "${FIREBASE_PARSER_TEST_CASES_COLLECTION}". Testova u sesiji: ${localResult.count}.${rawWarning}`);
       } else if (localResult.saved) {
         const firebaseNote = state.firebasePatients.user ? ` Firebase nije uspio: ${firebaseResult.message}` : ' Firebase zapis čeka prijavu.';
-        setStatus(`Parser test spremljen privremeno u ovoj sesiji. Testova u sesiji: ${localResult.count}.${firebaseNote}${rawWarning}`, Boolean(state.firebasePatients.user && !firebaseResult.saved));
+        setStatus(`Parser test spremljen privremeno u ovoj sesiji i preuzet kao lokalni JSON. Testova u sesiji: ${localResult.count}.${firebaseNote}${rawWarning}`, Boolean(state.firebasePatients.user && !firebaseResult.saved));
       } else if (firebaseResult.saved) {
-        setStatus(`Parser test spremljen u Firebase. Trajna lokalna pohrana parser testova je isključena. Firebase kolekcija: "${FIREBASE_PARSER_TEST_CASES_COLLECTION}".${rawWarning}`);
+        setStatus(`Parser test spremljen u Firebase i preuzet kao lokalni JSON. Trajna lokalna pohrana parser testova je isključena. Firebase kolekcija: "${FIREBASE_PARSER_TEST_CASES_COLLECTION}".${rawWarning}`);
       } else {
-        setStatus(`Parser test nije spremljen u Firebase. ${firebaseResult.message || 'Trajna lokalna pohrana parser testova je isključena.'}`, true);
+        setStatus(`Parser test preuzet je kao lokalni JSON, ali nije spremljen u Firebase. ${firebaseResult.message || 'Trajna lokalna pohrana parser testova je isključena.'}`, true);
       }
     } finally {
       state.parserTestCapture.saving = false;

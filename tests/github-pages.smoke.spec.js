@@ -2181,7 +2181,12 @@ test.describe('GitHub Pages smoke test', () => {
       await dialog.dismiss();
     });
 
+    const downloadPromise = page.waitForEvent('download');
     await page.keyboard.press('Control+Alt+P');
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    expect(download.suggestedFilename()).toMatch(/^krivo_parsiran_nalaz_.*\.json$/);
+    const downloadedPayload = JSON.parse(fs.readFileSync(downloadPath, 'utf8'));
 
     await expect.poll(async () => page.evaluate(() => {
       const cases = window.TemperaturnaListaParserTests?.exportLocal?.() || [];
@@ -2198,10 +2203,15 @@ test.describe('GitHub Pages smoke test', () => {
     expect(capture.expected.admissionDate).toBe('2026-01-01');
     expect(capture.currentData.fullName).toBe('TEST PACIJENT');
     expect(capture.currentData.birthYear).toBe('1970');
+    expect(downloadedPayload.schema).toBe('temperaturna-lista-parser-test-capture-download-v1');
+    expect(downloadedPayload.issueNote).toContain('Krivo parsira terapiju');
+    expect(downloadedPayload.case.note).toContain('Krivo parsira terapiju');
+    expect(downloadedPayload.case.raw).toContain('TEST PACIJENT');
+    expect(JSON.stringify(downloadedPayload)).not.toContain('Test Testic');
     expect(capture.privacyStatus).toMatch(/anonymized|synthetic/);
     expect(capture.sanitizerVersion).toBe('parser-test-sanitizer-v1');
     expect(capture.parserWarningsAtCapture).toEqual(expect.any(Array));
-    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen privremeno u ovoj sesiji/i);
+    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen privremeno.*lokalni JSON/i);
     await expect.poll(async () => page.evaluate((key) => localStorage.getItem(key), PARSER_TEST_STORAGE_KEY)).toBeNull();
 
     browserSignals.assertCleanBrowserSignals();
