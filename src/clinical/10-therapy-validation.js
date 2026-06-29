@@ -5533,42 +5533,19 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       return;
     }
 
-    let savedToFirebase = false;
-    if (state.firebasePatients.user) {
-      const wantsFirebaseSave = window.confirm(
-        'Spremiti trenutnog pacijenta u Firebase prije novog unosa?\n\nU redu = spremi i otvori novi unos.\nOdustani = otvori novi unos bez Firebase spremanja.'
-      );
-      if (wantsFirebaseSave) {
-        const saved = await saveCurrentPatientToFirebase({
-          automatic: true,
-          force: true,
-          saveTrigger: 'new-entry',
-          statusLabel: 'Firebase spremanje prije novog unosa'
-        });
-        if (!saved) {
-          const saveErrorMessage = state.firebasePatients.lastSaveErrorMessage || 'Firebase spremanje nije uspjelo.';
-          const continueWithoutSave = window.confirm(`${saveErrorMessage}\n\nSvejedno otvoriti novi unos i obrisati podatke iz obrasca?`);
-          if (!continueWithoutSave) {
-            setStatus('Novi unos je odgođen; podaci pacijenta ostali su u obrascu.');
-            return;
-          }
-        } else {
-          savedToFirebase = true;
-        }
-      }
-    } else {
-      const continueWithoutFirebase = window.confirm('Nisi prijavljen u Firebase, pa se trenutni pacijent ne može spremiti tamo. Otvoriti novi unos bez Firebase spremanja?');
-      if (!continueWithoutFirebase) {
-        setStatus('Novi unos je odgođen; podaci pacijenta ostali su u obrascu.');
-        syncFirebaseLoginGateState('Prijavi se Google računom za Firebase spremanje pacijenata.');
-        return;
-      }
+    let localSaveRequested = false;
+    const wantsLocalSave = window.confirm(
+      'Spremiti trenutnog pacijenta kao lokalni JSON prije novog unosa?\n\nU redu = preuzmi JSON i otvori novi unos.\nOdustani = otvori novi unos bez spremanja.'
+    );
+    if (wantsLocalSave) {
+      localSaveRequested = true;
+      await savePatientData();
     }
 
     clearForm({
-      statusMessage: savedToFirebase
-        ? 'Novi unos je spreman. Prethodni pacijent je spremljen u Firebase.'
-        : 'Novi unos je spreman. Prethodni pacijent nije spremljen u Firebase.',
+      statusMessage: localSaveRequested
+        ? 'Novi unos je spreman. Prethodni pacijent je ponuđen za lokalno JSON spremanje.'
+        : 'Novi unos je spreman. Prethodni pacijent nije spremljen.',
       draftStatusMessage: 'Lokalni draft obrisan za novi unos.',
       focusFirstField: true
     });

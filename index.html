@@ -27,13 +27,13 @@
         <button id="patientModeOutpatientBtn" type="button" data-patient-mode="outpatient" aria-pressed="false">Ambulantni pacijent</button>
         <button id="patientModeWardBtn" type="button" data-patient-mode="ward" aria-pressed="true">Odjelni pacijent</button>
       </div>
-      <div class="patient-top-actions" aria-label="Brze radnje za Firebase pacijente">
-        <button id="openFirebasePatientDialogBtn" class="primary" type="button" disabled>Otvori pacijenta</button>
-        <button id="savePatientTopBtn" class="primary" type="button" disabled>Spremi pacijenta</button>
+      <div class="patient-top-actions" aria-label="Brze lokalne radnje za pacijente">
+        <button id="openFirebasePatientDialogBtn" class="primary" type="button">Otvori JSON</button>
+        <button id="savePatientTopBtn" class="primary" type="button">Spremi JSON</button>
         <button id="newPatientEntryBtn" class="secondary" type="button">Novi unos</button>
-        <div id="firebasePatientQuickStatus" class="patient-top-status" aria-live="polite">Firebase se povezuje...</div>
+        <div id="firebasePatientQuickStatus" class="patient-top-status" aria-live="polite">Online spremanje pacijenata je isključeno. Koristi se samo lokalni JSON.</div>
         <div id="patientSyncStatus" class="patient-sync-status" role="status" aria-live="polite" data-sync-state="empty">Sinkronizacija: nema unesenog pacijenta.</div>
-        <div id="appAvailabilityStatus" class="app-availability-status" role="status" aria-live="polite" data-network-status="online" data-firebase-status="unknown">Dostupnost: aplikacija je učitana, Firebase status se provjerava.</div>
+        <div id="appAvailabilityStatus" class="app-availability-status" role="status" aria-live="polite" data-network-status="online" data-firebase-status="disabled">Dostupnost: lokalna aplikacija je učitana. Firebase spremanje pacijenata je isključeno.</div>
       </div>
     </div>
 
@@ -460,9 +460,9 @@
                   <button id="loadDowntimeBackupBtn" class="secondary" type="button">Učitaj downtime backup</button>
                 </div>
               </div>
-              <div class="firebase-patient-panel" id="firebasePatientPanel">
+              <div class="firebase-patient-panel hidden" id="firebasePatientPanel">
                 <div class="firebase-patient-header">
-                  <span class="firebase-patient-title">Firebase pacijenti</span>
+                  <span class="firebase-patient-title">Online pacijenti su isključeni</span>
                   <span id="firebasePatientAuthStatus" class="firebase-patient-status">Nije povezano.</span>
                 </div>
                 <div class="advanced-toolbar-row">
@@ -470,10 +470,10 @@
                   <button id="firebasePatientSignOutBtn" class="secondary" type="button" disabled>Odjava</button>
                 </div>
                 <div class="advanced-toolbar-row">
-                  <button id="savePatientToFirebaseBtn" type="button" disabled>Spremi odmah u Firebase</button>
+                  <button id="savePatientToFirebaseBtn" type="button" disabled>Online spremanje isključeno</button>
                   <button id="refreshFirebasePatientsBtn" class="secondary" type="button" disabled>Osvježi popis</button>
                 </div>
-                <select id="firebasePatientSelect" class="firebase-patient-select" disabled aria-label="Spremljeni Firebase pacijenti">
+                <select id="firebasePatientSelect" class="firebase-patient-select" disabled aria-label="Online pacijenti su isključeni">
                   <option value="">Nema učitanih pacijenata</option>
                 </select>
                 <div class="advanced-toolbar-row">
@@ -566,7 +566,7 @@
           </div>
           <button id="firebasePatientDialogRefreshBtn" class="secondary firebase-patient-dialog-refresh" type="button" disabled>Osvježi</button>
         </div>
-        <div id="firebasePatientDialogList" class="firebase-patient-dialog-list" role="list" aria-label="Spremljeni Firebase pacijenti"></div>
+        <div id="firebasePatientDialogList" class="firebase-patient-dialog-list" role="list" aria-label="Online pacijenti su isključeni"></div>
         <div class="firebase-patient-dialog-actions">
           <div class="dialog-spacer"></div>
           <button id="firebasePatientDialogSignInBtn" class="primary" type="button">Prijava</button>
@@ -929,7 +929,7 @@ Primjer 3..."></textarea>
             <button id="downloadParserRegressionReportCsvBtn" type="button">Izvještaj CSV</button>
           </div>
           <div class="parser-test-summary" id="parserRegressionSummary" aria-live="polite">Nema učitanih regresijskih testova.</div>
-          <div class="parser-regression-meta">Ctrl + Alt + P sprema trenutnog pacijenta kao test parsera privremeno u ovoj sesiji i, ako si prijavljen, u Firebase kolekciju <code>parserTestCases</code>. Podržani format: niz objekata <code>{ id, scenario, raw, expected }</code> ili omotnica <code>{ cases: [...] }</code>. U <code>expected</code> možeš koristiti npr. <code>fullName</code>, <code>birthYear</code>, <code>admissionDate</code>, <code>diagnosisContains</code>, <code>therapyContains</code>, <code>ohbpTherapyContains</code>, <code>labRawContains</code>, <code>labRawNotContains</code>.</div>
+          <div class="parser-regression-meta">Ctrl + Alt + P sprema trenutnog pacijenta kao test parsera privremeno u ovoj sesiji i preuzima lokalni JSON. Online spremanje parser testova je isključeno. Podržani format: niz objekata <code>{ id, scenario, raw, expected }</code> ili omotnica <code>{ cases: [...] }</code>. U <code>expected</code> možeš koristiti npr. <code>fullName</code>, <code>birthYear</code>, <code>admissionDate</code>, <code>diagnosisContains</code>, <code>therapyContains</code>, <code>ohbpTherapyContains</code>, <code>labRawContains</code>, <code>labRawNotContains</code>.</div>
           <div class="parser-test-results" id="parserRegressionResults" role="region" aria-label="Rezultati regresijskog testa parsera"></div>
         </section>
       </div>

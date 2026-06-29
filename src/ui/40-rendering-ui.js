@@ -1186,7 +1186,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         scheduleFirebasePatientAutoSave({ force: true });
         const sourceText = options.fromDrop ? 'povlačenjem u aplikaciju' : 'iz JSON datoteke';
         if (validation.source === 'downtime-backup') {
-          setDowntimeBackupStatus(`Downtime backup učitan: ${file.name || 'JSON datoteka'}. Provjeri pacijenta prije spremanja u Firebase.`, 'warn');
+          setDowntimeBackupStatus(`Downtime backup učitan: ${file.name || 'JSON datoteka'}. Provjeri pacijenta prije lokalnog spremanja ili ispisa.`, 'warn');
           setStatus(`Podaci pacijenta vraćeni su iz downtime backupa: ${file.name || 'JSON datoteka'}.`);
         } else {
           setStatus(`Podaci pacijenta učitani su ${sourceText}: ${file.name || 'JSON datoteka'}.`);
@@ -1284,12 +1284,16 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function getAppAvailabilityTone(availability = state.appAvailability) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) return 'warn';
     if (availability.appShellStatus === 'degraded' || availability.firebaseStatus === 'unavailable') return 'error';
     if (availability.networkStatus === 'offline' || availability.firebaseStatus === 'unknown') return 'warn';
     return 'ok';
   }
 
   function getAppAvailabilityMessage(availability = state.appAvailability) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      return 'Dostupnost: lokalna aplikacija je učitana. Online spremanje pacijenata je isključeno; koristi se samo lokalni JSON.';
+    }
     const lastCheck = availability.lastSuccessfulFirebaseCheckAt
       ? ` Zadnja Firebase provjera: ${formatPatientDraftSavedAt(availability.lastSuccessfulFirebaseCheckAt)}.`
       : '';
@@ -1334,6 +1338,16 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function markFirebaseAvailabilityAvailable() {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      setAppAvailabilityState({
+        networkStatus: navigator.onLine === false ? 'offline' : 'online',
+        firebaseStatus: 'disabled',
+        appShellStatus: 'loaded',
+        lastSuccessfulFirebaseCheckAt: '',
+        lastError: ''
+      });
+      return;
+    }
     setAppAvailabilityState({
       networkStatus: navigator.onLine === false ? 'offline' : 'online',
       firebaseStatus: 'available',
@@ -1344,6 +1358,15 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function markFirebaseAvailabilityUnavailable(errorOrMessage = '') {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      setAppAvailabilityState({
+        networkStatus: navigator.onLine === false ? 'offline' : 'online',
+        firebaseStatus: 'disabled',
+        appShellStatus: 'loaded',
+        lastError: ''
+      });
+      return;
+    }
     const message = typeof errorOrMessage === 'string'
       ? errorOrMessage
       : getFirebaseAuthErrorMessage(errorOrMessage);
@@ -1356,6 +1379,15 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
   function handleNetworkAvailabilityChange() {
     const isOnline = navigator.onLine !== false;
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      setAppAvailabilityState({
+        networkStatus: isOnline ? 'online' : 'offline',
+        firebaseStatus: 'disabled',
+        appShellStatus: 'loaded',
+        lastError: ''
+      });
+      return;
+    }
     setAppAvailabilityState({
       networkStatus: isOnline ? 'online' : 'offline',
       firebaseStatus: isOnline ? state.appAvailability.firebaseStatus : 'unavailable',
@@ -1411,11 +1443,17 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function getPatientSyncStatusMessage(syncState = state.patientSyncState) {
     const savedAt = syncState.lastSavedAt ? formatPatientDraftSavedAt(syncState.lastSavedAt) : '';
     if (syncState.status === 'empty') return 'Sinkronizacija: nema unesenog pacijenta.';
-    if (syncState.status === 'saving') return 'Sinkronizacija: spremam pacijenta u Firebase...';
+    if (syncState.status === 'saving') return LOCAL_PATIENT_STORAGE_ONLY
+      ? 'Sinkronizacija: online spremanje je isključeno.'
+      : 'Sinkronizacija: spremam pacijenta u Firebase...';
     if (syncState.status === 'synced') return `Sinkronizacija: spremljeno u ${getPatientSyncTargetLabel(syncState.lastSaveTarget)}${savedAt ? ` (${savedAt})` : ''}.`;
     if (syncState.status === 'failed') return `Sinkronizacija: spremanje nije uspjelo${syncState.lastError ? ` — ${syncState.lastError}` : ''}.`;
-    if (syncState.status === 'offline') return 'Sinkronizacija: pacijent nije spremljen jer Firebase prijava ili klinički kontekst nisu dostupni.';
-    if (syncState.status === 'localOnly') return `Sinkronizacija: pacijent je spremljen samo lokalno u šifrirani oporavak${savedAt ? ` (${savedAt})` : ''}. Prije ispisa treba Firebase spremanje ili izričita potvrda.`;
+    if (syncState.status === 'offline') return LOCAL_PATIENT_STORAGE_ONLY
+      ? 'Sinkronizacija: online spremanje je isključeno; koristi lokalni JSON.'
+      : 'Sinkronizacija: pacijent nije spremljen jer Firebase prijava ili klinički kontekst nisu dostupni.';
+    if (syncState.status === 'localOnly') return LOCAL_PATIENT_STORAGE_ONLY
+      ? 'Sinkronizacija: online spremanje pacijenata je isključeno. Trajno spremi pacijenta kao lokalni JSON.'
+      : `Sinkronizacija: pacijent je spremljen samo lokalno u šifrirani oporavak${savedAt ? ` (${savedAt})` : ''}. Prije ispisa treba Firebase spremanje ili izričita potvrda.`;
     return 'Sinkronizacija: postoje nespremljene promjene.';
   }
 
@@ -2697,6 +2735,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   async function writePatientAuditEvent(eventType, options = {}) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) return false;
     const authContext = refreshFirebaseAuthContext();
     if (!state.firebasePatients.user || !authContext.hasValidClinicalContext) return false;
     try {
@@ -3040,6 +3079,48 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function updateFirebasePatientControls() {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      const hasData = isPatientDataDifferentFromEmpty(getFormData());
+      if (els.openFirebasePatientDialogBtn) {
+        els.openFirebasePatientDialogBtn.disabled = false;
+        els.openFirebasePatientDialogBtn.textContent = 'Otvori JSON';
+        els.openFirebasePatientDialogBtn.title = 'Učitaj lokalnu JSON datoteku pacijenta s računala.';
+      }
+      if (els.savePatientTopBtn) {
+        els.savePatientTopBtn.disabled = false;
+        els.savePatientTopBtn.textContent = 'Spremi JSON';
+        els.savePatientTopBtn.title = 'Spremi pacijenta samo kao lokalnu JSON datoteku.';
+      }
+      if (els.newPatientEntryBtn) els.newPatientEntryBtn.disabled = false;
+      if (els.firebasePatientPanel) els.firebasePatientPanel.classList.add('hidden');
+      if (els.firebaseUserPanel) els.firebaseUserPanel.classList.add('hidden');
+      if (els.firebaseLoginGate) {
+        els.firebaseLoginGate.classList.add('hidden');
+        els.firebaseLoginGate.setAttribute('aria-hidden', 'true');
+      }
+      [
+        els.firebasePatientSignInBtn,
+        els.firebasePatientSignOutBtn,
+        els.firebaseUserSwitchBtn,
+        els.firebaseUserNewBtn,
+        els.firebaseUserSignOutBtn,
+        els.firebaseUserMigrateLegacyPatientsBtn,
+        els.savePatientToFirebaseBtn,
+        els.refreshFirebasePatientsBtn,
+        els.firebasePatientSelect,
+        els.loadPatientFromFirebaseBtn,
+        els.deletePatientFromFirebaseBtn,
+        els.firebaseLoginGateSignInBtn,
+        els.firebaseLoginGateNewUserBtn,
+        els.firebaseRegisterSubmitBtn,
+        els.firebasePatientDialogSignInBtn,
+        els.firebasePatientDialogRefreshBtn
+      ].filter(Boolean).forEach((element) => { element.disabled = true; });
+      setFirebasePatientStatus('Online spremanje pacijenata je isključeno. Koristi se samo lokalni JSON.', 'warn');
+      renderFirebaseUserPanel();
+      return;
+    }
+
     const hasClient = Boolean(state.firebasePatients.client);
     const hasUser = Boolean(state.firebasePatients.user);
     const hasProfile = isFirebaseUserProfileComplete(state.firebasePatients.userProfile);
@@ -3878,6 +3959,21 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   async function initFirebasePatients() {
     if (!els.firebasePatientAuthStatus || state.firebasePatients.initialized) return;
     state.firebasePatients.initialized = true;
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      state.firebasePatients.authResolved = true;
+      state.firebasePatients.user = null;
+      state.firebasePatients.userProfile = null;
+      state.firebasePatients.records = [];
+      resetCurrentFirebasePatientContext();
+      hideFirebaseLoginGate();
+      setFirebasePatientStatus('Online spremanje pacijenata je isključeno. Koristi se samo lokalni JSON.', 'warn');
+      if (els.appAvailabilityStatus) {
+        els.appAvailabilityStatus.dataset.firebaseStatus = 'disabled';
+        els.appAvailabilityStatus.textContent = 'Dostupnost: lokalna aplikacija je učitana. Firebase spremanje pacijenata je isključeno.';
+      }
+      updateFirebasePatientControls();
+      return;
+    }
     mountFirebaseLoginGateOnBody();
     setFirebasePatientStatus('Povezivanje...');
     updateFirebasePatientControls();
@@ -3908,7 +4004,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         }
       });
     } catch (error) {
-      console.warn('Firebase pacijenti nisu dostupni.', error);
+      console.warn('Online pacijenti nisu dostupni.', error);
       const message = getFirebaseAuthErrorMessage(error);
       markFirebaseAvailabilityUnavailable(message);
       state.firebasePatients.authResolved = true;
@@ -3918,7 +4014,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       }
       showFirebaseLoginGate(message);
       setFirebaseLoginGateStatus(message, true);
-      setStatus(`Firebase pacijenti nisu dostupni: ${message}`, true);
+      setStatus(`Online pacijenti nisu dostupni: ${message}`, true);
       updateFirebasePatientControls();
     }
   }
@@ -4038,7 +4134,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       setStatus('Prvo dovrši korisnički profil za Firebase.', true);
       fillFirebaseRegistrationFormFromProfile(state.firebasePatients.userProfile || buildProfileSeedFromFirebaseUser(state.firebasePatients.user), { force: false });
       setFirebaseRegistrationMode(true, { focus: false });
-      showFirebaseLoginGate('Dovrši korisnički profil prije rada s Firebase pacijentima.');
+      showFirebaseLoginGate('Dovrši korisnički profil prije rada s online pacijentima.');
       return false;
     }
     if (!authContext.hasValidClinicalContext) {
@@ -4053,6 +4149,25 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   async function saveCurrentPatientToFirebase(options = {}) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      const data = getFormData();
+      if (!isPatientDataDifferentFromEmpty(data)) {
+        resetPatientSyncState('empty', { data });
+        return false;
+      }
+      markPatientSyncDirty({
+        data,
+        status: 'localOnly',
+        lastSaveTarget: 'none',
+        lastError: '',
+        currentPatientDocId: ''
+      });
+      setFirebasePatientStatus('Online spremanje pacijenata je isključeno. Koristi se lokalni JSON.', 'warn');
+      if (!options.automatic) {
+        setStatus('Online spremanje pacijenta je isključeno. Klikni “Spremi JSON” za lokalnu datoteku.');
+      }
+      return false;
+    }
     const automatic = Boolean(options.automatic);
     const fromPrint = Boolean(options.fromPrint);
     const automaticStatusLabel = String(options.statusLabel || (fromPrint ? 'Firebase spremanje prije ispisa' : 'Firebase auto-save'));
@@ -4371,7 +4486,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         const duplicateSuffix = archivedModeDuplicates.length
           ? ` Arhiviran je ${archivedModeDuplicates.length} duplikat iz prethodnog moda.`
           : '';
-        setStatus(`Pacijent je ${saveVerb} Firebase kolekciju "${FIREBASE_PATIENTS_COLLECTION}".${duplicateSuffix} Automatsko arhiviranje: nakon ${RETENTION_POLICY.patientDays} dana.`);
+        setStatus(`Pacijent je ${saveVerb} online kolekciju "${FIREBASE_PATIENTS_COLLECTION}".${duplicateSuffix} Automatsko arhiviranje: nakon ${RETENTION_POLICY.patientDays} dana.`);
       }
       return true;
     } catch (error) {
@@ -4412,6 +4527,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function scheduleFirebasePatientAutoSave(options = {}) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) return;
     if (state.firebasePatients.suppressAutoSave) return;
     window.clearTimeout(state.firebasePatients.autoSaveTimer);
     state.firebasePatients.autoSaveTimer = null;
@@ -4433,6 +4549,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   async function runFirebasePatientAutoSave(options = {}) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) return;
     if (state.firebasePatients.suppressAutoSave) return;
     if (state.firebasePatients.autoSaveInFlight) {
       state.firebasePatients.autoSavePending = true;
@@ -4447,6 +4564,26 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   async function saveCurrentPatientToFirebaseBeforePrint() {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      if (!isPatientDataDifferentFromEmpty(getFormData())) {
+        resetPatientSyncState('empty');
+        return { attempted: false, saved: false, reason: 'empty', localOnly: true };
+      }
+      markPatientSyncDirty({
+        data: getFormData(),
+        status: 'localOnly',
+        lastSaveTarget: 'none',
+        lastError: '',
+        currentPatientDocId: ''
+      });
+      return {
+        attempted: false,
+        saved: false,
+        reason: 'local-json-only',
+        localOnly: true,
+        message: 'Online spremanje pacijenata je isključeno; koristi se lokalni JSON.'
+      };
+    }
     if (!isPatientDataDifferentFromEmpty(getFormData())) {
       resetPatientSyncState('empty');
       return { attempted: false, saved: false, reason: 'empty' };
@@ -4487,12 +4624,14 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function shouldConfirmPrintWithoutFirebaseSave(saveResult) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) return false;
     if (!isPatientDataDifferentFromEmpty(getFormData())) return false;
     if (saveResult?.saved && isCurrentPatientSyncedForPrint()) return false;
     return !isCurrentPatientSyncedForPrint();
   }
 
   async function confirmPrintWithoutFirebaseSave(saveResult) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) return true;
     if (!shouldConfirmPrintWithoutFirebaseSave(saveResult)) return true;
     const detail = String(saveResult?.message || state.patientSyncState.lastError || 'Pacijent nije spremljen u Firebase.').trim();
     const syncMessage = getPatientSyncStatusMessage();
@@ -4505,6 +4644,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function getPrintStatusAfterFirebaseSave(saveResult) {
+    if (LOCAL_PATIENT_STORAGE_ONLY || saveResult?.localOnly) {
+      return 'Otvoren je dijalog za ispis. Pacijenta spremi lokalno kao JSON datoteku.';
+    }
     if (saveResult?.saved) {
       return 'Pacijent je spremljen u Firebase i otvoren je dijalog za ispis.';
     }

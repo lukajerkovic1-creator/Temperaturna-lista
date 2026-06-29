@@ -1191,8 +1191,20 @@ function getTherapySuggestionPanel(targetId) {
     if (els.clearPatientDraftBtn) els.clearPatientDraftBtn.addEventListener('click', () => clearPatientDraft());
     if (els.patientModeOutpatientBtn) els.patientModeOutpatientBtn.addEventListener('click', () => changePatientMode(PATIENT_MODES.OUTPATIENT));
     if (els.patientModeWardBtn) els.patientModeWardBtn.addEventListener('click', () => changePatientMode(PATIENT_MODES.WARD));
-    if (els.openFirebasePatientDialogBtn) els.openFirebasePatientDialogBtn.addEventListener('click', showFirebasePatientDialog);
-    if (els.savePatientTopBtn) els.savePatientTopBtn.addEventListener('click', () => saveCurrentPatientToFirebase());
+    if (els.openFirebasePatientDialogBtn) els.openFirebasePatientDialogBtn.addEventListener('click', () => {
+      if (LOCAL_PATIENT_STORAGE_ONLY) {
+        els.loadDataInput?.click();
+        return;
+      }
+      showFirebasePatientDialog();
+    });
+    if (els.savePatientTopBtn) els.savePatientTopBtn.addEventListener('click', () => {
+      if (LOCAL_PATIENT_STORAGE_ONLY) {
+        void savePatientData();
+        return;
+      }
+      saveCurrentPatientToFirebase();
+    });
     if (els.newPatientEntryBtn) els.newPatientEntryBtn.addEventListener('click', startNewPatientEntry);
     if (els.firebasePatientSignInBtn) els.firebasePatientSignInBtn.addEventListener('click', signInFirebasePatients);
     if (els.firebasePatientSignOutBtn) els.firebasePatientSignOutBtn.addEventListener('click', signOutFirebasePatients);

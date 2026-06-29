@@ -1363,6 +1363,9 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
   }
 
   async function saveParserTestCaptureToFirebase(testCase) {
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      return { saved: false, message: 'Online spremanje parser testova je isključeno; koristi se lokalni JSON.' };
+    }
     testCase = sanitizeParserTestCaseForStorage(testCase);
     const authContext = refreshFirebaseAuthContext();
     if (!state.firebasePatients.user || !authContext.hasValidClinicalContext) {
@@ -1450,14 +1453,14 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
 
       const rawWarning = testCase.rawMissing ? ' Nema izvornog OHBP teksta; slučaj je spremljen kao bilješka s trenutnim poljima.' : '';
       if (firebaseResult.saved && localResult.saved) {
-        setStatus(`Parser test spremljen privremeno u ovoj sesiji, preuzet kao lokalni JSON i u Firebase kolekciju "${FIREBASE_PARSER_TEST_CASES_COLLECTION}". Testova u sesiji: ${localResult.count}.${rawWarning}`);
+        setStatus(`Parser test spremljen privremeno u ovoj sesiji i preuzet kao lokalni JSON. Testova u sesiji: ${localResult.count}.${rawWarning}`);
       } else if (localResult.saved) {
-        const firebaseNote = state.firebasePatients.user ? ` Firebase nije uspio: ${firebaseResult.message}` : ' Firebase zapis čeka prijavu.';
-        setStatus(`Parser test spremljen privremeno u ovoj sesiji i preuzet kao lokalni JSON. Testova u sesiji: ${localResult.count}.${firebaseNote}${rawWarning}`, Boolean(state.firebasePatients.user && !firebaseResult.saved));
+        const firebaseNote = LOCAL_PATIENT_STORAGE_ONLY ? ' Online spremanje parser testova je iskljuceno.' : (state.firebasePatients.user ? ` Online zapis nije uspio: ${firebaseResult.message}` : ' Online zapis ceka prijavu.');
+        setStatus(`Parser test spremljen privremeno u ovoj sesiji i preuzet kao lokalni JSON. Testova u sesiji: ${localResult.count}.${firebaseNote}${rawWarning}`, Boolean(!LOCAL_PATIENT_STORAGE_ONLY && state.firebasePatients.user && !firebaseResult.saved));
       } else if (firebaseResult.saved) {
-        setStatus(`Parser test spremljen u Firebase i preuzet kao lokalni JSON. Trajna lokalna pohrana parser testova je isključena. Firebase kolekcija: "${FIREBASE_PARSER_TEST_CASES_COLLECTION}".${rawWarning}`);
+        setStatus(`Parser test preuzet je kao lokalni JSON.${rawWarning}`);
       } else {
-        setStatus(`Parser test preuzet je kao lokalni JSON, ali nije spremljen u Firebase. ${firebaseResult.message || 'Trajna lokalna pohrana parser testova je isključena.'}`, true);
+        setStatus(`Parser test preuzet je kao lokalni JSON. ${firebaseResult.message || 'Online spremanje parser testova je iskljuceno.'}`, Boolean(!LOCAL_PATIENT_STORAGE_ONLY));
       }
     } finally {
       state.parserTestCapture.saving = false;
