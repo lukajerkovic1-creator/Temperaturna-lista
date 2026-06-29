@@ -1061,7 +1061,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function normalizeTherapySuggestionText(value) {
-    return removeDuplicatedTherapyTrailingStrength(collapseDuplicateTherapyPresentationPhrases(value));
+    return normalizeClinicalTherapyText(removeDuplicatedTherapyTrailingStrength(collapseDuplicateTherapyPresentationPhrases(value)));
   }
 
   // ============================================================
@@ -1216,7 +1216,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function recordTherapyAutocompleteSelection(item, options = {}) {
-    const line = String(item?.line || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+    const line = normalizeClinicalTherapyText(String(item?.line || '').replace(/\s+/g, ' ').trim()).slice(0, 180);
     const key = findExistingTherapyAutocompleteUsageKeyForLine(line) || normalizeTherapyAutocompleteUsageKey(line);
     if (!key) return;
     const usage = state.therapyAutocomplete.usage || {};
@@ -1235,10 +1235,10 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function getRememberableTherapyAutocompleteLine(textarea = els.therapy) {
     if (!textarea) return '';
     const ctx = getTherapyAutocompleteCurrentLine(textarea);
-    return String(ctx.fullLine || '')
+    return normalizeClinicalTherapyText(String(ctx.fullLine || '')
       .replace(THERAPY_BULLET_PREFIX_RE, '')
       .replace(/\s+/g, ' ')
-      .trim()
+      .trim())
       .slice(0, 180);
   }
 
@@ -1331,10 +1331,10 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function buildSaveCustomTherapyAutocompleteSuggestion(ctx, existingSuggestions) {
-    const line = String(ctx?.fullLine || '')
+    const line = normalizeClinicalTherapyText(String(ctx?.fullLine || '')
       .replace(THERAPY_BULLET_PREFIX_RE, '')
       .replace(/\s+/g, ' ')
-      .trim()
+      .trim())
       .slice(0, 180);
     if (!isRememberableTherapyAutocompleteLine(line)) return null;
     if (!/\s/.test(line) || line.length < 8) return null;
@@ -4725,11 +4725,11 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patientMode: getCurrentPatientMode(),
       fullName: els.fullName.value.trim(),
       birthYear: els.birthYear.value.trim(),
-      diagnosis: normalizeLineBreaks(els.diagnosis.value),
+      diagnosis: normalizeClinicalDiagnosisText(els.diagnosis.value),
       allergies: normalizeLineBreaks(els.allergies?.value || ''),
       patientOrigin: normalizeLineBreaks(els.patientOrigin?.value || ''),
-      therapy: normalizeLineBreaks(els.therapy.value),
-      ohbpTherapy: normalizeLineBreaks(els.ohbpTherapy.value),
+      therapy: normalizeClinicalTherapyText(els.therapy.value),
+      ohbpTherapy: normalizeClinicalTherapyText(els.ohbpTherapy.value),
       vitalSigns: normalizeLineBreaks(els.vitalSigns?.value || ''),
       followUpControlDate: normalizeAdmissionDateInput(els.followUpControlDate?.value || ''),
       followUpControl: normalizeLineBreaks(els.followUpControl?.value || ''),
@@ -4811,15 +4811,15 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
     els.birthYear.value = data.birthYear || '';
-    els.diagnosis.value = data.diagnosis || '';
+    els.diagnosis.value = normalizeClinicalDiagnosisText(data.diagnosis || '');
     if (els.ambulatoryDiagnosis) els.ambulatoryDiagnosis.value = data.diagnosis || '';
     if (els.ambulatoryPasteBox && !isPatientDataDifferentFromEmpty(data)) els.ambulatoryPasteBox.value = '';
-    if (typeof updateAmbulatoryParserPreview === 'function') updateAmbulatoryParserPreview({ diagnosis: data.diagnosis || '' });
+    if (typeof updateAmbulatoryParserPreview === 'function') updateAmbulatoryParserPreview({ diagnosis: els.diagnosis.value || '' });
     if (typeof setAmbulatoryParseStatus === 'function') setAmbulatoryParseStatus('');
     if (els.allergies) els.allergies.value = data.allergies || '';
     if (els.patientOrigin) els.patientOrigin.value = data.patientOrigin || '';
-    els.therapy.value = data.therapy || '';
-    els.ohbpTherapy.value = data.ohbpTherapy || '';
+    els.therapy.value = normalizeClinicalTherapyText(data.therapy || '');
+    els.ohbpTherapy.value = normalizeClinicalTherapyText(data.ohbpTherapy || '');
     if (els.vitalSigns) els.vitalSigns.value = data.vitalSigns || '';
     if (els.followUpControlDate) els.followUpControlDate.value = formatIsoDateToCroatian(data.followUpControlDate || '');
     if (els.followUpControl) els.followUpControl.value = data.followUpControl || '';
@@ -5291,7 +5291,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
 
   function insertMedicationSuggestion(suggestion) {
     if (!suggestion || !els.therapy) return false;
-    const line = typeof suggestion === 'string' ? suggestion : suggestion.line;
+    const line = normalizeClinicalTherapyText(typeof suggestion === 'string' ? suggestion : suggestion.line);
     if (!line) return false;
     els.therapy.value = [normalizeLineBreaks(els.therapy.value || '').trim(), line].filter(Boolean).join('\n');
     els.therapy.dispatchEvent(new Event('input', { bubbles: true }));

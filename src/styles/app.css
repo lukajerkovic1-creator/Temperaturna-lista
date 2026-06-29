@@ -23,6 +23,14 @@
     --autofill-border: #4a9b6f;
     --autofill-bg: #f0f8f3;
     --autofill-label: #2d7a52;
+    --mode-ward: #215f9a;
+    --mode-ward-soft: rgba(33, 95, 154, .16);
+    --mode-outpatient: #0f766e;
+    --mode-outpatient-soft: rgba(15, 118, 110, .18);
+    --patient-mode-active: var(--mode-ward);
+    --patient-mode-active-soft: var(--mode-ward-soft);
+    --preview-mode-border: var(--mode-ward);
+    --preview-mode-ring: var(--mode-ward-soft);
   }
 
   * { box-sizing: border-box; }
@@ -32,6 +40,13 @@
     font-family: Arial, Helvetica, sans-serif;
     color: var(--text);
     background: var(--app-bg);
+  }
+
+  body.patient-mode-outpatient {
+    --patient-mode-active: var(--mode-outpatient);
+    --patient-mode-active-soft: var(--mode-outpatient-soft);
+    --preview-mode-border: var(--mode-outpatient);
+    --preview-mode-ring: var(--mode-outpatient-soft);
   }
 
   .app {
@@ -612,13 +627,13 @@
   }
 
   .patient-mode-toggle button.is-active {
-    background: #215f9a;
+    background: var(--patient-mode-active);
     color: #ffffff;
-    box-shadow: 0 8px 18px rgba(33, 95, 154, .25);
+    box-shadow: 0 8px 18px var(--patient-mode-active-soft);
   }
 
   .patient-mode-toggle button.is-active:focus {
-    outline-color: #93c5fd;
+    outline-color: var(--patient-mode-active);
   }
 
   body.patient-mode-outpatient [data-collapsible-field="diagnosis"],
@@ -3395,6 +3410,19 @@
     backdrop-filter: blur(6px);
   }
 
+  .preview-title-left {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 260px;
+  }
+
+  .patient-mode-toggle-preview {
+    width: min(100%, 420px);
+    margin-top: 0;
+  }
+
   .preview-page-controls {
     display: inline-flex;
     align-items: center;
@@ -3606,14 +3634,15 @@
 
   .page-card {
     background: #fff;
-    border: 1px solid var(--border);
+    border: 2px solid var(--preview-mode-border);
     border-radius: 12px;
     padding: 12px;
+    box-shadow: 0 0 0 3px var(--preview-mode-ring);
   }
 
   .page-card.is-preview-selected {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    border-color: var(--preview-mode-border);
+    box-shadow: 0 0 0 4px var(--preview-mode-ring);
   }
 
   .page-card h2 {
@@ -4467,6 +4496,11 @@
     .preview-title-row {
       align-items: flex-start;
       flex-wrap: wrap;
+    }
+    .preview-title-left,
+    .patient-mode-toggle-preview {
+      width: 100%;
+      min-width: 0;
     }
     .page-card {
       padding: 8px;

@@ -1102,6 +1102,24 @@ function getTherapySuggestionPanel(targetId) {
         syncDatePickerFromText(els.followUpControlDate, els.followUpControlDatePicker);
       });
     }
+    if (els.diagnosis) {
+      els.diagnosis.addEventListener('blur', () => {
+        const next = normalizeClinicalDiagnosisText(els.diagnosis.value);
+        if (next !== els.diagnosis.value) {
+          els.diagnosis.value = next;
+          els.diagnosis.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+    }
+    [els.therapy, els.ohbpTherapy].filter(Boolean).forEach((field) => {
+      field.addEventListener('blur', () => {
+        const next = normalizeClinicalTherapyText(field.value);
+        if (next !== field.value) {
+          field.value = next;
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+    });
     wireDatePicker(els.admissionDate, els.admissionDatePicker);
     wireDatePicker(els.followUpControlDate, els.followUpControlDatePicker);
 

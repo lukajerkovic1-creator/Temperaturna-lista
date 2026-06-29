@@ -23,10 +23,6 @@
     <div>
       <h1>Generator temperaturne liste</h1>
       <div class="subtle drop-json-hint">Možete povući JSON datoteku pacijenta izravno na aplikaciju za automatsko učitavanje podataka.</div>
-      <div class="patient-mode-toggle" role="group" aria-label="Vrsta pacijenta">
-        <button id="patientModeOutpatientBtn" type="button" data-patient-mode="outpatient" aria-pressed="false">Ambulantni pacijent</button>
-        <button id="patientModeWardBtn" type="button" data-patient-mode="ward" aria-pressed="true">Odjelni pacijent</button>
-      </div>
       <div class="patient-top-actions" aria-label="Brze lokalne radnje za pacijente">
         <button id="openFirebasePatientDialogBtn" class="primary" type="button">Otvori JSON</button>
         <button id="savePatientTopBtn" class="primary" type="button">Spremi JSON</button>
@@ -604,8 +600,14 @@
 
   <section class="panel preview-panel">
     <div class="preview-title-row">
-      <div>
-        <strong>Živi pregled</strong>
+      <div class="preview-title-left">
+        <div class="patient-mode-toggle patient-mode-toggle-preview" role="group" aria-label="Vrsta pacijenta">
+          <button id="patientModeOutpatientBtn" type="button" data-patient-mode="outpatient" aria-pressed="false">Ambulantni pacijent</button>
+          <button id="patientModeWardBtn" type="button" data-patient-mode="ward" aria-pressed="true">Odjelni pacijent</button>
+        </div>
+        <div>
+          <strong>Živi pregled</strong>
+        </div>
         <div class="mobile-workflow-note">A4 pregled na mobitelu služi za brzu provjeru. Za konačno podešavanje i ispis koristi tablet ili desktop.</div>
       </div>
       <div class="preview-page-controls" id="previewPageControls" aria-label="Odabir para stranica za pregled i ispis">

@@ -2637,7 +2637,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       changed = true;
     }
     if (parsed.diagnosis && isClinicalSafetySafe(parsed, 'diagnosis')) {
-      els.diagnosis.value = parsed.diagnosis;
+      els.diagnosis.value = normalizeClinicalDiagnosisText(parsed.diagnosis);
       markAutofilled(els.diagnosis, true);
       changed = true;
     }
@@ -2652,12 +2652,12 @@ function normalizeOhbpFusedSectionLabels(value) {
       changed = true;
     }
     if (parsed.therapy && isClinicalSafetySafe(parsed, 'therapy')) {
-      els.therapy.value = parsed.therapy;
+      els.therapy.value = normalizeClinicalTherapyText(parsed.therapy);
       markAutofilled(els.therapy, true);
       changed = true;
     }
     if (parsed.ohbpTherapy && isClinicalSafetySafe(parsed, 'ohbpTherapy')) {
-      els.ohbpTherapy.value = parsed.ohbpTherapy;
+      els.ohbpTherapy.value = normalizeClinicalTherapyText(parsed.ohbpTherapy);
       markAutofilled(els.ohbpTherapy, true);
       setCollapsibleTextFieldExpanded('ohbpTherapy', true);
       changed = true;
@@ -2780,12 +2780,13 @@ function normalizeOhbpFusedSectionLabels(value) {
       changed = true;
     }
     if (parsed.diagnosis) {
+      const diagnosis = normalizeClinicalDiagnosisText(parsed.diagnosis);
       if (els.ambulatoryDiagnosis) {
-        els.ambulatoryDiagnosis.value = parsed.diagnosis;
+        els.ambulatoryDiagnosis.value = diagnosis;
         els.ambulatoryDiagnosis.removeAttribute('aria-invalid');
       }
       if (els.diagnosis) {
-        els.diagnosis.value = parsed.diagnosis;
+        els.diagnosis.value = diagnosis;
         markAutofilled(els.diagnosis, true);
       }
       changed = true;
@@ -2803,7 +2804,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       changed = true;
     }
     if (parsed.therapy && els.therapy && isClinicalSafetySafe(parsed, 'therapy')) {
-      els.therapy.value = parsed.therapy;
+      els.therapy.value = normalizeClinicalTherapyText(parsed.therapy);
       markAutofilled(els.therapy, true);
       changed = true;
     }

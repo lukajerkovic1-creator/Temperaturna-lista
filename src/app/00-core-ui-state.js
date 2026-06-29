@@ -3118,6 +3118,25 @@
     return therapyNormalizeText(value || '').slice(0, 180);
   }
 
+  function capitalizeClinicalTextItem(value) {
+    const text = String(value || '');
+    return text.replace(/[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/u, (letter) => letter.toLocaleUpperCase('hr-HR'));
+  }
+
+  function normalizeClinicalTherapyText(value) {
+    return normalizeLineBreaks(value || '')
+      .split('\n')
+      .map((line) => capitalizeClinicalTextItem(line))
+      .join('\n');
+  }
+
+  function normalizeClinicalDiagnosisText(value) {
+    return normalizeLineBreaks(value || '')
+      .split('\n')
+      .map((line) => line.split(/([,;]\s*)/).map((part) => /^[,;]\s*$/.test(part) ? part : capitalizeClinicalTextItem(part)).join(''))
+      .join('\n');
+  }
+
   function normalizeTherapyAutocompleteUsageRecord(key, value) {
     const rawLine = typeof value === 'object' && value ? value.line : key;
     const cleanKey = normalizeTherapyAutocompleteUsageKey(rawLine || key);
@@ -3127,7 +3146,7 @@
     return {
       key: cleanKey,
       record: {
-        line: String(rawLine || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+        line: normalizeClinicalTherapyText(String(rawLine || '').replace(/\s+/g, ' ').trim()).slice(0, 180),
         count,
         lastUsedAt,
         source: typeof value === 'object' && value?.source === 'custom' ? 'custom' : ''
@@ -3171,10 +3190,10 @@
   }
 
   function normalizeDiagnosisAutocompleteLine(value) {
-    return String(value || '')
+    return normalizeClinicalDiagnosisText(String(value || '')
       .replace(DIAGNOSIS_AUTOCOMPLETE_PREFIX_RE, '')
       .replace(/\s+/g, ' ')
-      .trim()
+      .trim())
       .slice(0, 220);
   }
 
