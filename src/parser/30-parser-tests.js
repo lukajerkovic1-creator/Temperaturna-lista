@@ -3,6 +3,29 @@
   // Source module; tools/build-offline-html.js inlines modules for offline use.
   // ============================================================
 const BUILT_IN_PARSER_TEST_CASES = Object.freeze([
+`logo OPCA BOLNICA KARLOVAC
+Centar za hitnu medicinu - OHBP
+Odjel objedinjenog hitnog bolnickog prijama
+
+Datum: 30.6.2026
+
+Nalaz hitne
+Protokol broj: 2026044000
+
+TESTIC DRAGICA, rođena 20.05.1940, umirovljenik TESTNA ADRESA 4, 47000 KARLOVAC
+
+Dijagnoza: R07.4 - Bol u prsistu, nespecificirano
+Datum nalaza: 27.06.2026
+
+Podaci sa trijaze
+Objektivna procjena: SpO2 99 Respirac. 16 Puls 78 RR 160/100 Temp 36,2
+
+Pregled pacijenta
+Lijekovi: Controloc 40 mg 1x1.
+Alergije na lijekove: negira.
+Dg cor decomp
+Th: Fursemid 2 amp. Ad internist.`,
+
 `PSEUDO PACIJENT ANA, rođena 12.03.1984, administrativni djelatnik, TESTNA 1, 47000 KARLOVAC
 
 Dijagnoza: N10 - Akutni pijelonefritis

@@ -197,6 +197,12 @@ function normalizeOhbpFusedSectionLabels(value) {
       if (resolved) return resolved;
     }
 
+    const bornLineMatch = rawText.match(/(?:^|\n)\s*(?:\d{3,}\s+)?([^\n\r,]{2,140}?)\s*,?\s+ro(?:\u0111|Ä‘|d|dj|\?|\uFFFD)en[ao]?\s*:?\s*\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+\d{4}/iu);
+    if (bornLineMatch) {
+      const resolved = resolveOhbpPersonNameCandidate(bornLineMatch[1]);
+      if (resolved) return resolved;
+    }
+
     return { fullName: '', nameOrderWarning: '', nameValidationWarning: '' };
   }
 
