@@ -1,0 +1,67 @@
+name: GitHub Pages smoke test
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke test deployed GitHub Pages app
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.deployment_status.state == 'success' &&
+        github.event.deployment.environment == 'github-pages'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve GitHub Pages URL
+        id: pages-url
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url || '' }}
+        run: |
+          pages_url="${DEPLOYMENT_URL:-https://lukajerkovic1-creator.github.io/Temperaturna-lista/}"
+          if [[ "$pages_url" != */ ]]; then
+            pages_url="${pages_url}/"
+          fi
+          echo "base_url=$pages_url" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke tests against GitHub Pages
+        env:
+          BASE_URL: ${{ steps.pages-url.outputs.base_url }}
+        run: npm run test:smoke
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore

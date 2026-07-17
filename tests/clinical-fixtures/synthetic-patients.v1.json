@@ -1,0 +1,375 @@
+{
+  "schema": "temperaturna-lista-clinical-fixtures-v1",
+  "privacy": {
+    "status": "synthetic",
+    "rules": [
+      "No real patient names",
+      "No OIB or MBO",
+      "No phone numbers",
+      "No e-mail addresses",
+      "No copied clinical text"
+    ]
+  },
+  "requiredCoverage": [
+    "pneumonia-standard",
+    "sepsis",
+    "pyelonephritis",
+    "cellulitis-erysipelas",
+    "catheter-related-infection",
+    "diarrhea-c-difficile",
+    "respiratory-isolation",
+    "beta-lactam-allergy",
+    "renal-insufficiency-dose-check",
+    "antimicrobial-review-date",
+    "microbiology-antibiogram",
+    "invalid-values-validation",
+    "conflict-resolution",
+    "downtime-print-without-sync"
+  ],
+  "patients": [
+    {
+      "id": "pneumonia-standard",
+      "title": "Standardni prijem s pneumonijom",
+      "coverage": ["pneumonia-standard", "antimicrobial-review-date"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT PNEUMONIJA",
+        "birthYear": "1970",
+        "admissionDate": "01.01.2030.",
+        "patientOrigin": "TEST dom zdravlja",
+        "diagnosis": "Pneumonija desno. Febrilitet.",
+        "allergies": "nema",
+        "therapy": "ceftriakson 2 g i.v. 1,0,0, review 03.01.2030.",
+        "vitalSigns": "T 38.4, RR 135/85, puls 96, SpO2 93%",
+        "labRaw": "CRP 145, L 13.2, eGFR 82",
+        "microbiology": {
+          "microHemocultures": true
+        }
+      },
+      "expected": {
+        "conditionContains": ["Pneumonija"],
+        "medicationContains": ["ceftriakson"],
+        "labAnalytes": ["CRP", "L", "eGFR"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "sepsis",
+      "title": "Sepsa s potrebom intenzivnog pracenja",
+      "coverage": ["sepsis"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT SEPSA",
+        "birthYear": "1964",
+        "admissionDate": "02.01.2030.",
+        "patientOrigin": "TEST hitni prijem",
+        "diagnosis": "Sepsa, vjerojatno respiratorni fokus.",
+        "allergies": "nema",
+        "therapy": "piperacilin/tazobaktam 4,5 g i.v. 1,1,1, review 04.01.2030.",
+        "vitalSigns": "T 39.1, RR 95/55, puls 118, SpO2 91%",
+        "labRaw": "CRP 220, L 19.1, kreatinin 138, eGFR 52",
+        "microbiology": {
+          "microHemocultures": true,
+          "microUrineCulture": true
+        }
+      },
+      "expected": {
+        "conditionContains": ["Sepsa"],
+        "medicationContains": ["piperacilin"],
+        "labAnalytes": ["CRP", "kreatinin", "eGFR"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "pyelonephritis",
+      "title": "Uroinfekt / pijelonefritis",
+      "coverage": ["pyelonephritis"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT UROINFEKT",
+        "birthYear": "1982",
+        "admissionDate": "03.01.2030.",
+        "patientOrigin": "TEST ambulanta",
+        "diagnosis": "Akutni pijelonefritis.",
+        "allergies": "nema",
+        "therapy": "ceftriakson 2 g i.v. 1,0,0, review 05.01.2030.",
+        "vitalSigns": "T 38.7, RR 128/76, puls 104, SpO2 97%",
+        "labRaw": "CRP 160, L 14.4, kreatinin 88, urin Lkc mnogo",
+        "microbiology": {
+          "microUrineCulture": true
+        }
+      },
+      "expected": {
+        "conditionContains": ["pijelonefritis"],
+        "medicationContains": ["ceftriakson"],
+        "labAnalytes": ["CRP", "L", "kreatinin"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "cellulitis-erysipelas",
+      "title": "Celulitis / erizipel",
+      "coverage": ["cellulitis-erysipelas"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT ERIZIPEL",
+        "birthYear": "1958",
+        "admissionDate": "04.01.2030.",
+        "patientOrigin": "TEST uputnica",
+        "diagnosis": "Erizipel lijeve potkoljenice.",
+        "allergies": "nema",
+        "therapy": "cefuroksim 1,5 g i.v. 1,1,1, review 06.01.2030.",
+        "vitalSigns": "T 37.9, RR 142/82, puls 88, SpO2 96%",
+        "labRaw": "CRP 98, L 11.1, GUK 7.2"
+      },
+      "expected": {
+        "conditionContains": ["Erizipel"],
+        "medicationContains": ["cefuroksim"],
+        "labAnalytes": ["CRP", "L", "GUK"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "catheter-related-infection",
+      "title": "Infekcija povezana s kateterom",
+      "coverage": ["catheter-related-infection", "microbiology-antibiogram"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT KATETER",
+        "birthYear": "1948",
+        "admissionDate": "05.01.2030.",
+        "patientOrigin": "TEST premjestaj",
+        "diagnosis": "Sumnja na infekciju povezanu s venskim kateterom.",
+        "allergies": "nema",
+        "therapy": "vankomicin 1 g i.v. 1,1,0, review 07.01.2030.",
+        "vitalSigns": "T 38.2, RR 118/72, puls 102, SpO2 95%",
+        "labRaw": "CRP 175, L 15.7, eGFR 70",
+        "microbiology": {
+          "microHemocultures": true
+        }
+      },
+      "expected": {
+        "conditionContains": ["kateterom"],
+        "medicationContains": ["vankomicin"],
+        "labAnalytes": ["CRP", "L", "eGFR"],
+        "microbiologyCountAtLeast": 1,
+        "validationOk": true
+      }
+    },
+    {
+      "id": "diarrhea-c-difficile",
+      "title": "Proljev / sumnja na C. difficile",
+      "coverage": ["diarrhea-c-difficile"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT PROLJEV",
+        "birthYear": "1976",
+        "admissionDate": "06.01.2030.",
+        "patientOrigin": "TEST kontrola",
+        "diagnosis": "Akutni proljev, sumnja na Clostridioides difficile.",
+        "allergies": "nema",
+        "therapy": "metronidazol 500 mg p.o. 1,1,1, review 08.01.2030.",
+        "vitalSigns": "T 37.6, RR 124/70, puls 92, SpO2 98%",
+        "labRaw": "CRP 65, L 10.3, K 3.4",
+        "microbiology": {
+          "microStoolCdiff": true,
+          "microStoolBacteriology": true,
+          "microStoolVirology": true
+        }
+      },
+      "expected": {
+        "conditionContains": ["proljev"],
+        "medicationContains": ["metronidazol"],
+        "labAnalytes": ["CRP", "L", "K"],
+        "microbiologyCountAtLeast": 3,
+        "validationOk": true
+      }
+    },
+    {
+      "id": "respiratory-isolation",
+      "title": "Izolacija zbog respiratorne infekcije",
+      "coverage": ["respiratory-isolation"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT IZOLACIJA",
+        "birthYear": "1991",
+        "admissionDate": "07.01.2030.",
+        "patientOrigin": "TEST izolacijska ambulanta",
+        "diagnosis": "Respiratorna infekcija, kapljicna izolacija.",
+        "allergies": "nema",
+        "therapy": "azitromicin 500 mg p.o. 1,0,0, review 09.01.2030.",
+        "vitalSigns": "T 38.0, RR 122/74, puls 90, SpO2 94%",
+        "labRaw": "CRP 72, L 8.8"
+      },
+      "expected": {
+        "conditionContains": ["Respiratorna"],
+        "medicationContains": ["azitromicin"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "beta-lactam-allergy",
+      "title": "Alergija i terapijski safety warning",
+      "coverage": ["beta-lactam-allergy"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT ALERGIJA",
+        "birthYear": "1969",
+        "admissionDate": "08.01.2030.",
+        "patientOrigin": "TEST dnevna bolnica",
+        "diagnosis": "Pneumonija.",
+        "allergies": "ceftriakson",
+        "therapy": "ceftriakson 2 g i.v. 1,0,0",
+        "vitalSigns": "T 38.5, RR 130/76, puls 99, SpO2 95%",
+        "labRaw": "CRP 134, L 12.2"
+      },
+      "expected": {
+        "conditionContains": ["Pneumonija"],
+        "medicationContains": ["ceftriakson"],
+        "safetyTypes": ["allergy-match", "ams-review"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "renal-insufficiency-dose-check",
+      "title": "Bubrezna insuficijencija i renal warning",
+      "coverage": ["renal-insufficiency-dose-check"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT BUBREG",
+        "birthYear": "1942",
+        "admissionDate": "09.01.2030.",
+        "patientOrigin": "TEST interni prijem",
+        "diagnosis": "Uroinfekt. Kronicna bubrezna bolest.",
+        "allergies": "nema",
+        "therapy": "levofloksacin 500 mg p.o. 1,0,0",
+        "vitalSigns": "T 37.8, RR 138/82, puls 84, SpO2 96%",
+        "labRaw": "eGFR 42, kreatinin 156, CRP 88"
+      },
+      "expected": {
+        "conditionContains": ["Uroinfekt"],
+        "medicationContains": ["levofloksacin"],
+        "labAnalytes": ["eGFR", "kreatinin", "CRP"],
+        "safetyTypes": ["renal", "ams-review"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "antimicrobial-review-date",
+      "title": "Antimikrobna terapija s review datumom",
+      "coverage": ["antimicrobial-review-date"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT REVIEW",
+        "birthYear": "1988",
+        "admissionDate": "10.01.2030.",
+        "patientOrigin": "TEST ambulantni nalaz",
+        "diagnosis": "Atipicna pneumonija.",
+        "allergies": "nema",
+        "therapy": "doksiciklin 100 mg p.o. 1,0,1, review 12.01.2030.",
+        "vitalSigns": "T 37.5, RR 116/70, puls 78, SpO2 98%",
+        "labRaw": "CRP 44, L 7.8"
+      },
+      "expected": {
+        "conditionContains": ["pneumonija"],
+        "medicationContains": ["doksiciklin"],
+        "safetyTypesNot": ["ams-review"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "duplicate-medication",
+      "title": "Duplikat terapije",
+      "coverage": ["microbiology-antibiogram"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT DUPLIKAT",
+        "birthYear": "1974",
+        "admissionDate": "11.01.2030.",
+        "patientOrigin": "TEST odjel",
+        "diagnosis": "Bakterijemija, antibiogram u tijeku.",
+        "allergies": "nema",
+        "therapy": "ceftriakson 2 g i.v. 1,0,0\nceftriakson 2 g i.v. 1,0,0",
+        "vitalSigns": "T 38.3, RR 126/78, puls 93, SpO2 97%",
+        "labRaw": "CRP 132, L 12.7",
+        "microbiology": {
+          "microHemocultures": true
+        }
+      },
+      "expected": {
+        "conditionContains": ["Bakterijemija"],
+        "medicationContains": ["ceftriakson"],
+        "safetyTypes": ["duplicate", "ams-review"],
+        "microbiologyCountAtLeast": 1,
+        "validationOk": true
+      }
+    },
+    {
+      "id": "invalid-values-validation",
+      "title": "Nemoguce vrijednosti za validation engine",
+      "coverage": ["invalid-values-validation"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT VALIDACIJA",
+        "birthYear": "1961",
+        "admissionDate": "12.01.2030.",
+        "patientOrigin": "TEST validacija",
+        "diagnosis": "Test nemogucih vrijednosti.",
+        "allergies": "nema",
+        "therapy": "pantoprazol 40 mg p.o. 1,0,0",
+        "vitalSigns": "T 49, RR 80/90, puls 300, SpO2 42%",
+        "labRaw": "CRP -5, L 8.4"
+      },
+      "expected": {
+        "conditionContains": ["Test"],
+        "validationOk": false,
+        "validationFields": ["vitalSigns[0].temperatureC", "vitalSigns[0].heartRatePerMin", "vitalSigns[0].spo2Percent"]
+      }
+    },
+    {
+      "id": "conflict-resolution",
+      "title": "Sintetski zapis za konflikt dva korisnika",
+      "coverage": ["conflict-resolution"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT KONFLIKT",
+        "birthYear": "1955",
+        "admissionDate": "13.01.2030.",
+        "patientOrigin": "TEST konflikt workflow",
+        "diagnosis": "Stabilan bolesnik za test optimistic concurrency.",
+        "allergies": "nema",
+        "therapy": "amlodipin 5 mg 1,0,0 tbl",
+        "vitalSigns": "T 36.8, RR 128/78, puls 72, SpO2 98%",
+        "labRaw": "CRP 12, L 6.1"
+      },
+      "expected": {
+        "conditionContains": ["optimistic concurrency"],
+        "medicationContains": ["amlodipin"],
+        "validationOk": true
+      }
+    },
+    {
+      "id": "downtime-print-without-sync",
+      "title": "Downtime / print bez sinkronizacije",
+      "coverage": ["downtime-print-without-sync"],
+      "mode": "ward",
+      "input": {
+        "fullName": "TEST PACIJENT DOWNTIME",
+        "birthYear": "1990",
+        "admissionDate": "14.01.2030.",
+        "patientOrigin": "TEST downtime workflow",
+        "diagnosis": "Sintetski scenarij rada bez sinkronizacije.",
+        "allergies": "nema",
+        "therapy": "paracetamol 1 g p.o. pp",
+        "vitalSigns": "T 37.2, RR 120/75, puls 80, SpO2 99%",
+        "labRaw": "CRP 18, L 7.0"
+      },
+      "expected": {
+        "conditionContains": ["sinkronizacije"],
+        "medicationContains": ["paracetamol"],
+        "validationOk": true
+      }
+    }
+  ]
+}
+
