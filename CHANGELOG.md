@@ -39,6 +39,7 @@ versioning such as `v0.1.0`.
 - Missing patient or encounter numbers no longer block an otherwise valid print, and all missing clinical data remains listed in the explicit pre-print warning.
 - All pre-print validation findings are now warnings rather than hard stops. Missing or unconfirmed clinical data, text overflow and service/admin mode are collected in one dialog that always offers `Svejedno ispiši`; cancelling leaves the form unchanged for correction.
 - Removed the technical metadata row above every printed temperature-list page. The form image now uses the complete A4 landscape page without an added patient/version/build/sync line.
+- GitHub Pages deployment now uses the official artifact-based Actions workflow instead of the intermittently stuck legacy branch builder.
 
 ### Fixed
 
