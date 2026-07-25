@@ -39,11 +39,14 @@ const buildHashInputs = [
   'tools/build-bootstrap.js',
   'tools/lib/build-metadata.js'
 ];
+const binaryBuildHashExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const buildSha = calculateBuildSha({
   version: appVersion,
   entries: buildHashInputs.map(relativePath => ({
     path: relativePath,
-    content: fs.readFileSync(path.join(root, relativePath))
+    content: binaryBuildHashExtensions.has(path.extname(relativePath).toLowerCase())
+      ? fs.readFileSync(path.join(root, relativePath))
+      : fs.readFileSync(path.join(root, relativePath), 'utf8')
   }))
 });
 

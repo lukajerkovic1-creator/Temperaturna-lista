@@ -9,7 +9,7 @@
   // VERZIJA APLIKACIJE — jedini izvor istine
   // ============================================================
   const APP_VERSION = '0.4.0';
-  const APP_BUILD_SHA = '2027e8f81f0c';
+  const APP_BUILD_SHA = 'd7b3caf9222d';
   const PARSER_VERSION = 'temperaturna-lista-parser-v2';
   const PARSER_PROVENANCE_SCHEMA = 'temperaturna-lista-parser-provenance-v1';
   window.__TEMPERATURNA_LISTA_BUILD_SHA__ = APP_BUILD_SHA;
