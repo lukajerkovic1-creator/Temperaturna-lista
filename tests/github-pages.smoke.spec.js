@@ -1636,11 +1636,12 @@ test.describe('GitHub Pages smoke test', () => {
     await dialog.locator('[data-print-confirm-action="proceed"]').click();
 
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
-    const metadata = await page.locator('#print-frame').evaluate((iframe) => (
-      iframe.contentDocument?.querySelector('.print-page-meta')?.textContent || ''
-    ));
-    expect(metadata).toContain('ID: NEDOSTAJE');
-    expect(metadata).toContain('Pacijent: Bez Broja Testic');
+    const printFrameContent = await page.locator('#print-frame').evaluate((iframe) => ({
+      metadataCount: iframe.contentDocument?.querySelectorAll('.print-page-meta').length || 0,
+      imageCount: iframe.contentDocument?.querySelectorAll('.page img').length || 0
+    }));
+    expect(printFrameContent.metadataCount).toBe(0);
+    expect(printFrameContent.imageCount).toBeGreaterThan(0);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -3421,18 +3422,11 @@ test.describe('GitHub Pages smoke test', () => {
       const win = frame?.contentWindow || null;
       const pageNode = doc?.querySelector('.page') || null;
       const imageNode = doc?.querySelector('.page img') || null;
-      const metadataNodes = Array.from(doc?.querySelectorAll('.print-page-meta') || []);
       const pageStyle = pageNode && win ? win.getComputedStyle(pageNode) : null;
       const imageStyle = imageNode && win ? win.getComputedStyle(imageNode) : null;
       return {
         styleText: Array.from(doc?.querySelectorAll('style') || []).map(style => style.textContent || '').join('\n'),
-        metadataText: Array.from(doc?.querySelectorAll('.print-page-meta') || []).map(node => node.textContent || '').join('\n'),
-        metadataOverflow: metadataNodes.map(node => ({
-          clientWidth: node.clientWidth,
-          scrollWidth: node.scrollWidth,
-          clientHeight: node.clientHeight,
-          scrollHeight: node.scrollHeight
-        })),
+        metadataCount: doc?.querySelectorAll('.print-page-meta').length || 0,
         pageCount: doc?.querySelectorAll('.page').length || 0,
         pageWidthPx: pageStyle ? Number.parseFloat(pageStyle.width) : 0,
         pageHeightPx: pageStyle ? Number.parseFloat(pageStyle.height) : 0,
@@ -3446,21 +3440,7 @@ test.describe('GitHub Pages smoke test', () => {
     expect(printFrameLayout.pageCount).toBe(2);
     expect(printFrameLayout.styleText).toContain('size: A4 landscape');
     expect(printFrameLayout.styleText).toContain('object-fit: contain');
-    expect(printFrameLayout.metadataText).toContain('ID: MBO-PAIR-001');
-    expect(printFrameLayout.metadataText).toContain('Encounter: ENC-PAIR-001');
-    expect(printFrameLayout.metadataText).toContain('Korisnik: Testni Operater');
-    expect(printFrameLayout.metadataText).not.toContain('Korisnik: NEDOSTAJE');
-    expect(printFrameLayout.metadataOverflow.length).toBe(2);
-    for (const dimensions of printFrameLayout.metadataOverflow) {
-      expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
-      expect(dimensions.scrollHeight).toBeLessThanOrEqual(dimensions.clientHeight + 1);
-    }
-    expect(printFrameLayout.metadataText).toContain('Stranica 3/4');
-    expect(printFrameLayout.metadataText).toContain('Stranica 4/4');
-    expect(printFrameLayout.metadataText).not.toContain('Stranica 1/2');
-    expect(printFrameLayout.metadataText).toContain(`Verzija: ${PACKAGE_VERSION}`);
-    const runtimeBuildSha = await page.evaluate(() => window.__TEMPERATURNA_LISTA_BUILD_SHA__ || '');
-    expect(printFrameLayout.metadataText).toContain(`Build: ${runtimeBuildSha}`);
+    expect(printFrameLayout.metadataCount).toBe(0);
     expect(printFrameLayout.imageNaturalWidth).toBeGreaterThan(3000);
     expect(printFrameLayout.imageNaturalHeight).toBeGreaterThan(2000);
     expect(printFrameLayout.pageWidthPx).toBeGreaterThan(1000);

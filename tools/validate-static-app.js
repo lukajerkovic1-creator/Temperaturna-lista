@@ -156,7 +156,7 @@ assert(bootstrap.includes('temperaturna-lista-parser-provenance-v1'), 'Productio
 assert(bootstrap.includes('function getUnconfirmedCriticalParserProvenanceIssues('), 'Production bootstrap must include the parser provenance print hard-stop.');
 assert(bootstrap.includes('function getClinicalOperatorName()'), 'Production bootstrap must resolve the explicit session operator.');
 assert(bootstrap.includes("issues.push('ime i prezime operatera ispisa')"), 'Production print must hard-stop when the session operator is missing.');
-assert(bootstrap.includes("`Korisnik: ${userLabel || 'NEDOSTAJE'}`"), 'Every print page must carry the explicit session operator identity.');
+assert(!bootstrap.includes('print-page-meta'), 'Printed pages must not include a technical metadata row above the temperature-list form.');
 assert(bootstrap.includes('parserProvenance: serializeCurrentParserProvenance()'), 'ClinicalRecordV1 must retain parser provenance metadata.');
 assert(bootstrap.includes("const FHIR_VERSION = '4.0.1';"), 'Production bootstrap must declare the experimental FHIR R4 version.');
 assert(bootstrap.includes("resourceType: 'Provenance'"), 'Production FHIR export must include Provenance.');

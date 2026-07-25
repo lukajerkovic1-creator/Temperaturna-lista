@@ -2,33 +2,6 @@
   // MODULE: 50-print-layout.js
   // Source module; tools/build-bootstrap.js assembles the browser runtime.
   // ============================================================
-  function buildPrintPageMetadata(pageIndex, pageCount) {
-    const data = getFormData();
-    const syncState = state.patientSyncState || {};
-    const availability = state.appAvailability || {};
-    const userLabel = typeof getClinicalOperatorName === 'function' ? getClinicalOperatorName() : '';
-    const buildSha = APP_BUILD_SHA;
-    const markers = [
-      LOCAL_PATIENT_STORAGE_ONLY ? 'ONLINE PHI OFF' : '',
-      availability.networkStatus === 'offline' ? 'OFFLINE' : '',
-      isFirebasePatientsSmokeMode() ? 'TEST/QA' : ''
-    ].filter(Boolean).join(' / ') || 'standard';
-    const roomBed = [data.room ? `Soba ${data.room}` : '', data.bed ? `Krevet ${data.bed}` : ''].filter(Boolean).join(', ');
-    return [
-      `Pacijent: ${data.fullName || 'NEDOSTAJE'} (${data.birthYear || 'godiste?'})`,
-      `ID: ${data.patientIdentifier || 'NEDOSTAJE'}`,
-      `Encounter: ${data.encounterId || data.admissionDate || 'NEDOSTAJE'}`,
-      roomBed || 'Soba/krevet: nije upisano',
-      `Stranica ${pageIndex}/${pageCount}`,
-      `Vrijeme: ${new Date().toLocaleString('hr-HR')}`,
-      `Korisnik: ${userLabel || 'NEDOSTAJE'}`,
-      `Verzija: ${APP_VERSION}`,
-      `Build: ${buildSha}`,
-      `Sync: ${syncState.status || 'unknown'} / ${syncState.lastSaveTarget || 'none'}`,
-      markers
-    ].map(escapeHtml).join(' | ');
-  }
-
 async function printCanvasPages(canvases, documentTitle) {
     const printPages = canvases.map((canvas, index) => ({
       src: canvas.toDataURL('image/png'),
@@ -91,26 +64,10 @@ async function printCanvasPages(canvases, documentTitle) {
     height: auto;
     min-height: 0;
     max-width: 100%;
-    max-height: calc(210mm - 13mm);
-    flex: 1 1 auto;
+    max-height: 210mm;
+    flex: 0 1 auto;
     object-fit: contain;
     object-position: center center;
-  }
-  .print-page-meta {
-    position: static;
-    width: calc(100% - 8mm);
-    flex: 0 0 auto;
-    box-sizing: border-box;
-    margin: 2mm 4mm 1mm;
-    padding: 1.2mm 2mm;
-    border: 0.25mm solid #111;
-    background: rgba(255, 255, 255, 0.92);
-    color: #111;
-    font: 7pt/1.25 Arial, sans-serif;
-    letter-spacing: 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: normal;
   }
   @media print {
     html,
@@ -122,7 +79,7 @@ async function printCanvasPages(canvases, documentTitle) {
 </style>
 </head>
 <body>
-  ${printPages.map(page => `<div class="page"><div class="print-page-meta">${buildPrintPageMetadata(page.pageNumber, page.documentPageCount)}</div><img src="${page.src}" alt="Stranica ${page.pageNumber}"></div>`).join('')}
+  ${printPages.map(page => `<div class="page"><img src="${page.src}" alt="Stranica ${page.pageNumber}"></div>`).join('')}
 </body>
 </html>`;
 

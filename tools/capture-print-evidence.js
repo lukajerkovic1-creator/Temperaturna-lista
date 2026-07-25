@@ -65,35 +65,13 @@ async function fillSyntheticRecord(page) {
     }
     await page.waitForFunction(() => {
       const frame = document.querySelector('#print-frame');
-      return Boolean(frame?.contentDocument?.querySelector('.print-page-meta'));
+      return Boolean(frame?.contentDocument?.querySelector('.page img'));
     });
 
     const printHtml = await printFrame.evaluate((frame) => frame.contentDocument.documentElement.outerHTML);
-    const metadata = await printFrame.evaluate((frame) => (
-      Array.from(frame.contentDocument.querySelectorAll('.print-page-meta'))
-        .map((node) => node.textContent || '')
-        .join('\n')
-    ));
-    const metadataOverflow = await printFrame.evaluate((frame) => (
-      Array.from(frame.contentDocument.querySelectorAll('.print-page-meta')).map((node) => ({
-        clientWidth: node.clientWidth,
-        scrollWidth: node.scrollWidth,
-        clientHeight: node.clientHeight,
-        scrollHeight: node.scrollHeight
-      }))
-    ));
-    for (const required of [
-      'Pacijent: TESTIC ISPIS (1970)',
-      'ID: TEST-MBO-EVIDENCE-001',
-      'Encounter: TEST-ENC-EVIDENCE-001',
-      'Korisnik: TESTNI OPERATER DOKAZ',
-      'ONLINE PHI OFF',
-      'TEST/QA'
-    ]) {
-      if (!metadata.includes(required)) throw new Error(`Print evidence is missing metadata: ${required}`);
-    }
-    if (metadataOverflow.some((item) => item.scrollWidth > item.clientWidth + 1 || item.scrollHeight > item.clientHeight + 1)) {
-      throw new Error(`Print metadata overflow detected: ${JSON.stringify(metadataOverflow)}`);
+    const metadataCount = await printFrame.evaluate((frame) => frame.contentDocument.querySelectorAll('.print-page-meta').length);
+    if (metadataCount !== 0) {
+      throw new Error(`Printed pages unexpectedly contain ${metadataCount} technical metadata rows.`);
     }
 
     const printPage = await context.newPage();

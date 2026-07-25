@@ -22,12 +22,12 @@ versioning such as `v0.1.0`.
 - Deterministic parser fuzz/property coverage for synthetic OHBP records: harmless formatting mutations must preserve critical fields, and bounded random input must never throw or return an invalid result shape. The parser test API exists only in the localhost QA bundle.
 - Experimental FHIR R4 4.0.1 profile manifest, resource-level profile tags, export `Provenance`, internal-reference validation and positive/negative synthetic fixture checks. Documentation explicitly states that this is not an official HL7 or hospital profile validation.
 - Fingerprinted static asset boundary for the application icon, blank form background and local medication database, including file-signature, load-order, decoded-byte and size-budget validation.
-- Required session-only print operator identity. It is stamped on every printed page, binds final clinical/parser confirmations to a named operator, and is never saved to JSON, browser storage, or a network service.
+- Required session-only print operator identity. It binds final clinical/parser confirmations to a named operator and is never saved to JSON, browser storage, or a network service.
 - A pre-print identifier warning that lists unavailable MBO/MRN and encounter/protocol numbers and requires an explicit `Nastavi bez broja` confirmation.
 
 ### Changed
 
-- Application version now comes from `package.json` (`0.4.0`), and the build injects one deterministic 12-character source fingerprint into the production and QA artifacts. The same version/build identity is shown in the UI and print metadata and carried by local JSON, encrypted recovery, local operational audit and ClinicalRecordV1 metadata.
+- Application version now comes from `package.json` (`0.4.0`), and the build injects one deterministic 12-character source fingerprint into the production and QA artifacts. The same version/build identity is shown in the UI and carried by local JSON, encrypted recovery, local operational audit and ClinicalRecordV1 metadata.
 - The generated browser bootstrap is split into a clinical production bundle and an explicit localhost QA bundle. Admin/calibration, parser-test capture, speech recognition and FHIR clipboard implementation code exists only in the QA artifact.
 - Medication lines without a recognizable dose or route are critical validation findings. Common oral dosage forms such as tablets and capsules imply the oral route for validation purposes.
 - Local JSON-only availability status now explicitly identifies offline operation and instructs the user to save patient data manually to JSON; Firebase patient storage remains identified as disabled rather than unavailable.
@@ -36,8 +36,9 @@ versioning such as `v0.1.0`.
 - The separate downtime backup workflow now asks for a passphrase in a password dialog and uses identity-free filenames. Regular user-requested local patient JSON save/open remains unchanged.
 - `index.html` is now a small application shell rather than a duplicated single-file payload. Images and the local medication alias dataset load from `assets/`, while their bytes remain part of the deterministic build SHA.
 - Production persistence is now strictly manual local JSON file download/upload. The former optional encrypted browser patient draft remains available only in the synthetic localhost QA artifact.
-- Missing patient or encounter numbers no longer block an otherwise valid print. Print metadata still marks a missing patient identifier as `NEDOSTAJE`, and all missing clinical data remains listed in the explicit pre-print warning.
+- Missing patient or encounter numbers no longer block an otherwise valid print, and all missing clinical data remains listed in the explicit pre-print warning.
 - All pre-print validation findings are now warnings rather than hard stops. Missing or unconfirmed clinical data, text overflow and service/admin mode are collected in one dialog that always offers `Svejedno ispiši`; cancelling leaves the form unchanged for correction.
+- Removed the technical metadata row above every printed temperature-list page. The form image now uses the complete A4 landscape page without an added patient/version/build/sync line.
 
 ### Fixed
 
@@ -46,8 +47,7 @@ versioning such as `v0.1.0`.
 - Restored the complete reviewed medication dataset after detecting that the former inline Base64 array had lost 439 chunks. The application now loads all 10,257 medication aliases and the smoke test asserts that full count.
 - Resolved blank-form and print asset URLs from the document base URL so local preview, GitHub Pages and the print iframe do not emit missing-resource errors.
 - Build metadata injection no longer rewrites the runtime build-global name into invalid JavaScript. Static validation now syntax-parses both generated bundles before a build can pass.
-- Continuation-page print metadata now preserves the actual document sequence. Printing the active pair 3-4 labels the pages `Stranica 3/4` and `Stranica 4/4` instead of renumbering the selected pair as 1/2 and 2/2.
-- Print audit metadata now occupies a bounded flow layout above the form image, wraps safely, and proportionally fits the complete list instead of clipping the right edge or covering clinical content.
+- Continuation-page selection still preserves the actual document sequence internally while printing only the active page pair.
 - Regular local JSON export, successful restore and rejected restore now add bounded non-PHI operational audit events; filenames, patient identifiers and clinical text are deliberately excluded.
 - OHBP parser now continues past overly broad leading text and correctly recognizes patient names from synthetic lines such as `TESTIC PARSERICA, rođena ...`, while keeping protocol and MBOO identifiers.
 
