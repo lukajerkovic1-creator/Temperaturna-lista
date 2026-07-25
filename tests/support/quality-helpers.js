@@ -71,7 +71,7 @@ async function openApp(page, path = './') {
   const browserSignals = await installConsoleAndNetworkGuards(page);
   const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `App response should be OK, got ${response?.status()}`).toBe(true);
-  await expect(page).toHaveTitle(/Temperaturna lista.*v\d+/);
+  await expect(page).toHaveTitle(/Temperaturna lista.*\d+\.\d+\.\d+/);
   await expect(page.locator('h1', { hasText: 'Generator temperaturne liste' })).toBeVisible();
   await expect(page.locator('#page1Title')).toBeVisible();
   return browserSignals;

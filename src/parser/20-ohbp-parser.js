@@ -2402,10 +2402,303 @@ function normalizeOhbpFusedSectionLabels(value) {
     return assessClinicalParseSafety(data);
   }
 
+  const PARSER_PROVENANCE_FIELDS = Object.freeze({
+    fullName: Object.freeze({ label: 'Ime i prezime', group: 'identityEncounter', critical: true }),
+    birthYear: Object.freeze({ label: 'Godište', group: 'identityEncounter', critical: true }),
+    patientIdentifier: Object.freeze({ label: 'MBO/MRN', group: 'identityEncounter', critical: true }),
+    encounterId: Object.freeze({ label: 'Encounter/protokol', group: 'identityEncounter', critical: true }),
+    admissionDate: Object.freeze({ label: 'Datum prijema', group: 'identityEncounter', critical: true }),
+    allergies: Object.freeze({ label: 'Alergije', group: 'allergyStatus', critical: true }),
+    diagnosis: Object.freeze({ label: 'Dijagnoza', group: 'criticalFields', critical: true }),
+    therapy: Object.freeze({ label: 'Kronična terapija', group: 'criticalFields', critical: true }),
+    ohbpTherapy: Object.freeze({ label: 'Terapija u OHBP-u', group: 'criticalFields', critical: true }),
+    vitalSigns: Object.freeze({ label: 'Vitalni znakovi', group: 'criticalFields', critical: true }),
+    followUpControlDate: Object.freeze({ label: 'Datum kontrole', group: 'criticalFields', critical: true }),
+    followUpControl: Object.freeze({ label: 'Plan kontrole', group: 'criticalFields', critical: true }),
+    labRaw: Object.freeze({ label: 'Laboratorij', group: 'criticalFields', critical: false }),
+    radiologyRaw: Object.freeze({ label: 'Radiologija', group: 'criticalFields', critical: false })
+  });
+
+  const PARSER_PROVENANCE_SOURCE_PATTERNS = Object.freeze({
+    fullName: /\b(?:rođen[ai]?|rodjen[ai]?|pacijent(?:ica)?)\b/i,
+    birthYear: /\b(?:rođen[ai]?|rodjen[ai]?|godište)\b/i,
+    patientIdentifier: /\b(?:MBOO?|MRN|matični\s+broj|broj\s+osiguranika)\b/i,
+    encounterId: /\b(?:protokol\s+broj|broj\s+nalaza|encounter)\b/i,
+    admissionDate: /\b(?:datum\s+(?:prijema|nalaza)|vrijeme\s+početka)\b/i,
+    allergies: /\b(?:alergije|alergija|alergič)\b/i,
+    diagnosis: /\b(?:dijagnoza|Dg\.?)(?:\s|:)/i,
+    therapy: /\b(?:lijekovi|kronična\s+terapija|redovna\s+terapija)\b/i,
+    ohbpTherapy: /\b(?:Th\.?|terapija)\s*:/i,
+    vitalSigns: /\b(?:SpO\s*2|Puls|Respirac|RR|Temp)\b/i,
+    followUpControlDate: /\bKontrola\b/i,
+    followUpControl: /\bKontrola\b/i,
+    labRaw: /\b(?:laboratorij|LAB|CRP|KKS)\b/i,
+    radiologyRaw: /\b(?:RTG|UZV|CT|MR)\b/i
+  });
+
+  function hashParserProvenanceValue(value) {
+    const text = String(value || '');
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return `parser-v1-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  }
+
+  function normalizeParserProvenanceValue(value) {
+    return normalizeLineBreaks(value || '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n+/g, '\n')
+      .trim();
+  }
+
+  function findParserSourceExcerpt(rawText, fieldName, parsedValue) {
+    const lines = normalizeLineBreaks(rawText || '')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (!lines.length) return '';
+
+    const firstParsedLine = normalizeParserProvenanceValue(parsedValue).split('\n')[0] || '';
+    const normalizedNeedle = therapyNormalizeText(firstParsedLine).slice(0, 48);
+    if (normalizedNeedle.length >= 4) {
+      const exact = lines.find((line) => therapyNormalizeText(line).includes(normalizedNeedle));
+      if (exact) return exact.slice(0, 240);
+    }
+
+    const sourcePattern = PARSER_PROVENANCE_SOURCE_PATTERNS[fieldName];
+    const labelledIndex = sourcePattern ? lines.findIndex((line) => sourcePattern.test(line)) : -1;
+    if (labelledIndex >= 0) {
+      return lines[labelledIndex].slice(0, 240);
+    }
+
+    return lines[0].slice(0, 240);
+  }
+
+  function getParserFieldConfidence(parsed, fieldName, sourceExcerpt, parsedValue) {
+    const safetyStatus = parsed?.clinicalSafety?.[fieldName]?.status || '';
+    if (safetyStatus === 'blocked') return 0.2;
+    if (safetyStatus === 'uncertain') return 0.55;
+    if (safetyStatus === 'safe') return 0.92;
+
+    const parsedNeedle = therapyNormalizeText(normalizeParserProvenanceValue(parsedValue).split('\n')[0] || '').slice(0, 32);
+    const sourceText = therapyNormalizeText(sourceExcerpt);
+    if (parsedNeedle.length >= 4 && sourceText.includes(parsedNeedle)) return 0.94;
+    if (PARSER_PROVENANCE_SOURCE_PATTERNS[fieldName]?.test(sourceExcerpt)) return 0.86;
+    return 0.62;
+  }
+
+  function getParserProvenanceActor() {
+    return typeof getClinicalOperatorName === 'function' ? getClinicalOperatorName() : '';
+  }
+
+  function createEmptyParserProvenance() {
+    return {
+      schema: PARSER_PROVENANCE_SCHEMA,
+      parserVersion: PARSER_VERSION,
+      parserMode: '',
+      source: '',
+      parsedAt: '',
+      sourceTextHash: '',
+      fields: {}
+    };
+  }
+
+  function clearCurrentParserProvenance(options = {}) {
+    state.parserProvenance = createEmptyParserProvenance();
+    if (options.render !== false) renderParserProvenance();
+  }
+
+  function setCurrentParserProvenance(parsed, rawText, appliedFields = [], options = {}) {
+    const parsedAt = new Date().toISOString();
+    const fields = {};
+    [...new Set(appliedFields)].forEach((fieldName) => {
+      const config = PARSER_PROVENANCE_FIELDS[fieldName];
+      const parsedValue = normalizeParserProvenanceValue(parsed?.[fieldName]);
+      if (!config || !parsedValue) return;
+      const sourceExcerpt = findParserSourceExcerpt(rawText, fieldName, parsedValue);
+      fields[fieldName] = {
+        field: fieldName,
+        label: config.label,
+        group: config.group,
+        critical: config.critical,
+        sourceExcerpt,
+        confidence: getParserFieldConfidence(parsed, fieldName, sourceExcerpt, parsedValue),
+        valueHash: hashParserProvenanceValue(parsedValue),
+        status: 'unconfirmed',
+        confirmed: false,
+        confirmedAt: '',
+        confirmedBy: ''
+      };
+    });
+    state.parserProvenance = {
+      schema: PARSER_PROVENANCE_SCHEMA,
+      parserVersion: PARSER_VERSION,
+      parserMode: String(parsed?.parserMode || options.parserMode || ''),
+      source: String(parsed?.parserSource || options.source || ''),
+      parsedAt,
+      sourceTextHash: hashParserProvenanceValue(normalizeParserProvenanceValue(rawText)),
+      fields
+    };
+    if (els.parserProvenancePanel && Object.keys(fields).length) {
+      els.parserProvenancePanel.open = true;
+    }
+    resetClinicalPrintReview({ render: false });
+    renderParserProvenance();
+  }
+
+  function getAppliedParserFieldNames(parsed, data = getFormData()) {
+    return Object.keys(PARSER_PROVENANCE_FIELDS).filter((fieldName) => {
+      const parsedValue = normalizeParserProvenanceValue(parsed?.[fieldName]);
+      const currentValue = getCurrentParserFieldValue(fieldName, data);
+      if (!parsedValue || !currentValue) return false;
+      if (Object.prototype.hasOwnProperty.call(parsed?.clinicalSafety || {}, fieldName)) {
+        return isClinicalSafetySafe(parsed, fieldName);
+      }
+      return true;
+    });
+  }
+
+  function setParserProvenanceGroupConfirmation(group, confirmed, options = {}) {
+    const provenance = state.parserProvenance;
+    if (!provenance?.fields) return;
+    const confirmedAt = confirmed ? new Date().toISOString() : '';
+    const confirmedBy = confirmed ? getParserProvenanceActor() : '';
+    Object.values(provenance.fields).forEach((entry) => {
+      if (entry.group !== group) return;
+      entry.confirmed = Boolean(confirmed);
+      entry.confirmedAt = confirmedAt;
+      entry.confirmedBy = confirmedBy;
+      entry.status = confirmed ? 'confirmed' : String(options.reason || 'unconfirmed');
+    });
+    renderParserProvenance();
+  }
+
+  function getCurrentParserFieldValue(fieldName, data = getFormData()) {
+    return normalizeParserProvenanceValue(data?.[fieldName]);
+  }
+
+  function getUnconfirmedCriticalParserProvenanceIssues(data = getFormData()) {
+    const fields = Object.values(state.parserProvenance?.fields || {});
+    return fields
+      .filter((entry) => entry.critical && getCurrentParserFieldValue(entry.field, data))
+      .filter((entry) => {
+        const currentHash = hashParserProvenanceValue(getCurrentParserFieldValue(entry.field, data));
+        return !entry.confirmed || entry.valueHash !== currentHash;
+      })
+      .map((entry) => `nepotvrđeno parsirano polje: ${entry.label}`);
+  }
+
+  function serializeCurrentParserProvenance() {
+    const provenance = state.parserProvenance;
+    if (!provenance?.parsedAt || !Object.keys(provenance.fields || {}).length) return null;
+    return {
+      schema: PARSER_PROVENANCE_SCHEMA,
+      parserVersion: String(provenance.parserVersion || PARSER_VERSION),
+      parserMode: String(provenance.parserMode || ''),
+      source: String(provenance.source || ''),
+      parsedAt: String(provenance.parsedAt || ''),
+      sourceTextHash: String(provenance.sourceTextHash || ''),
+      fields: Object.fromEntries(Object.entries(provenance.fields).map(([key, entry]) => [key, {
+        field: key,
+        label: String(entry.label || PARSER_PROVENANCE_FIELDS[key]?.label || key),
+        group: String(entry.group || PARSER_PROVENANCE_FIELDS[key]?.group || 'criticalFields'),
+        critical: Boolean(entry.critical),
+        sourceExcerpt: String(entry.sourceExcerpt || '').slice(0, 240),
+        confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
+        valueHash: String(entry.valueHash || ''),
+        status: 'unconfirmed',
+        confirmed: false,
+        confirmedAt: '',
+        confirmedBy: ''
+      }]))
+    };
+  }
+
+  function sanitizeParserProvenanceForRestore(candidate) {
+    if (!candidate || candidate.schema !== PARSER_PROVENANCE_SCHEMA || typeof candidate.fields !== 'object' || Array.isArray(candidate.fields)) return null;
+    const restored = createEmptyParserProvenance();
+    restored.parserVersion = String(candidate.parserVersion || '').slice(0, 80) || PARSER_VERSION;
+    restored.parserMode = String(candidate.parserMode || '').slice(0, 40);
+    restored.source = String(candidate.source || '').slice(0, 80);
+    restored.parsedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(candidate.parsedAt || '')) ? String(candidate.parsedAt).slice(0, 40) : '';
+    restored.sourceTextHash = String(candidate.sourceTextHash || '').slice(0, 80);
+    Object.entries(candidate.fields).slice(0, 20).forEach(([fieldName, entry]) => {
+      const config = PARSER_PROVENANCE_FIELDS[fieldName];
+      if (!config || !entry || typeof entry !== 'object') return;
+      restored.fields[fieldName] = {
+        field: fieldName,
+        label: config.label,
+        group: config.group,
+        critical: config.critical,
+        sourceExcerpt: String(entry.sourceExcerpt || '').replace(/[\r\n\t]+/g, ' ').slice(0, 240),
+        confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
+        valueHash: String(entry.valueHash || '').slice(0, 80),
+        status: 'unconfirmed',
+        confirmed: false,
+        confirmedAt: '',
+        confirmedBy: ''
+      };
+    });
+    return restored.parsedAt && Object.keys(restored.fields).length ? restored : null;
+  }
+
+  function restoreCurrentParserProvenance(candidate) {
+    state.parserProvenance = sanitizeParserProvenanceForRestore(candidate) || createEmptyParserProvenance();
+    if (els.parserProvenancePanel && Object.keys(state.parserProvenance.fields || {}).length) {
+      els.parserProvenancePanel.open = true;
+    }
+    renderParserProvenance();
+  }
+
+  function renderParserProvenance() {
+    if (!els.parserProvenancePanel || !els.parserProvenanceList || !els.parserProvenanceSummary) return;
+    const provenance = state.parserProvenance || createEmptyParserProvenance();
+    const fields = Object.values(provenance.fields || {});
+    els.parserProvenancePanel.classList.toggle('hidden', fields.length === 0);
+    els.parserProvenanceList.replaceChildren();
+    if (!fields.length) {
+      els.parserProvenanceSummary.textContent = 'Nema parsiranih polja.';
+      els.parserProvenanceSummary.dataset.state = 'empty';
+      return;
+    }
+
+    const unconfirmedCount = fields.filter((entry) => !entry.confirmed).length;
+    els.parserProvenanceSummary.textContent = unconfirmedCount
+      ? `${unconfirmedCount}/${fields.length} nepotvrđeno · ${provenance.parserVersion}`
+      : `${fields.length}/${fields.length} potvrđeno · ${provenance.parserVersion}`;
+    els.parserProvenanceSummary.dataset.state = unconfirmedCount ? 'pending' : 'confirmed';
+
+    fields.forEach((entry) => {
+      const item = document.createElement('li');
+      item.className = `parser-provenance-item${entry.confirmed ? ' confirmed' : ''}`;
+      item.dataset.field = entry.field;
+      item.dataset.confirmed = String(Boolean(entry.confirmed));
+
+      const field = document.createElement('span');
+      field.className = 'parser-provenance-field';
+      field.textContent = entry.label;
+      const meta = document.createElement('span');
+      meta.className = 'parser-provenance-meta';
+      const confidence = `${Math.round((Number(entry.confidence) || 0) * 100)}%`;
+      meta.textContent = entry.confirmed
+        ? `${confidence} · potvrđeno ${entry.confirmedBy || 'lokalni korisnik'} ${entry.confirmedAt ? formatPatientDraftSavedAt(entry.confirmedAt) : ''}`
+        : `${confidence} · nepotvrđeno`;
+      const excerpt = document.createElement('q');
+      excerpt.className = 'parser-provenance-excerpt';
+      excerpt.textContent = entry.sourceExcerpt || 'Izvorni isječak nije pouzdano lociran.';
+      item.append(field, meta, excerpt);
+      els.parserProvenanceList.append(item);
+    });
+  }
+
   function parseDepartmentPatientText(rawText, context = {}) {
     const data = parseOhbpText(rawText);
     data.patientMode = PATIENT_MODES.WARD;
     data.parserMode = 'department';
+    data.parserVersion = PARSER_VERSION;
+    data.parsedAt = new Date().toISOString();
     if (context?.source) data.parserSource = context.source;
     return data;
   }
@@ -2478,6 +2771,9 @@ function normalizeOhbpFusedSectionLabels(value) {
     const data = {
       patientMode: PATIENT_MODES.OUTPATIENT,
       parserMode: 'ambulatory',
+      parserVersion: PARSER_VERSION,
+      parsedAt: new Date().toISOString(),
+      parserSource: String(context?.source || ''),
       reportType: 'ambulatory-control'
     };
     ['fullName', 'birthYear', 'admissionDate', 'patientOrigin', 'allergies', 'therapy'].forEach((field) => {
@@ -2724,6 +3020,10 @@ function normalizeOhbpFusedSectionLabels(value) {
     setOhbpParseStatus(recognitionStatusWithWarnings.message, recognitionStatusWithWarnings.kind);
 
     if (changed) {
+      setCurrentParserProvenance(parsed, text, getAppliedParserFieldNames(parsed), {
+        parserMode: 'department',
+        source: 'ohbp-paste'
+      });
       scheduleAutoResizeTextareas();
       renderAll();
       savePatientDraftNow({ quiet: true });
@@ -2869,6 +3169,10 @@ function normalizeOhbpFusedSectionLabels(value) {
     }
 
     if (changed) {
+      setCurrentParserProvenance(parsed, text, getAppliedParserFieldNames(parsed), {
+        parserMode: 'ambulatory',
+        source: 'ambulatory-paste'
+      });
       scheduleAutoResizeTextareas();
       renderAll();
       savePatientDraftNow({ quiet: true });
@@ -2889,4 +3193,3 @@ function normalizeOhbpFusedSectionLabels(value) {
   }
 
 
-  

@@ -6,11 +6,48 @@ const {
 } = require('./support/quality-helpers');
 
 test.describe('Security smoke tests', () => {
+  test('fails closed for admin, parser capture, audio and FHIR clipboard in production mode', async ({ page }) => {
+    const browserSignals = await openAppWithoutFirebase(page);
+
+    const runtime = await page.evaluate(() => ({
+      mode: document.documentElement.dataset.runtimeMode,
+      bundle: document.querySelector('script[data-bundle]')?.dataset.bundle || '',
+      production: window.__TEMPERATURNA_LISTA_RUNTIME_POLICY__?.isProductionClinicalMode?.(),
+      parserApiType: typeof window.TemperaturnaListaParserTests,
+      loginTestHookType: typeof window.__TEMPERATURNA_LISTA_TEST_DISMISS_FIREBASE_LOGIN_GATE__,
+    }));
+    expect(runtime).toEqual({
+      mode: 'clinical-production',
+      bundle: 'production',
+      production: true,
+      parserApiType: 'undefined',
+      loginTestHookType: 'undefined',
+    });
+
+    await expect(page.locator('#adminToggleBtn')).toHaveCount(0);
+    await expect(page.locator('#parserTestPanel')).toHaveCount(0);
+    await expect(page.locator('#audioAdvancedSection')).toHaveCount(0);
+    await expect(page.locator('#copyFhirBundleBtn')).toHaveCount(0);
+
+    const statusBeforeShortcuts = await page.locator('#statusBar').textContent();
+    await page.keyboard.press('Control+Alt+A');
+    await expect(page.locator('#adminPanel')).toHaveCount(0);
+    await expect(page.locator('#appRoot')).not.toHaveClass(/admin-on/);
+    await expect(page.locator('#statusBar')).toHaveText(statusBeforeShortcuts || '');
+
+    await page.keyboard.press('Control+Alt+P');
+    await expect(page.locator('#statusBar')).toHaveText(statusBeforeShortcuts || '');
+    await expect(page.evaluate(() => typeof window.TemperaturnaListaParserTests)).resolves.toBe('undefined');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('escapes clinical text input and does not execute injected markup', async ({ page }) => {
     await page.addInitScript(() => {
       window.__xssProbe = 0;
     });
     const browserSignals = await openAppWithoutFirebase(page);
+    const initialInlineScriptCount = await page.locator('script:not([src])').count();
 
     const xssPayload = '\"><img src=x onerror="window.__xssProbe=1"><script>window.__xssProbe=2</script>';
     await page.locator('#fullName').fill(`Sigurnost Testic ${xssPayload}`);
@@ -21,7 +58,8 @@ test.describe('Security smoke tests', () => {
 
     await expect(page.locator('#fullName')).toHaveValue(/Sigurnost Testic/);
     await expect(page.locator('img[src="x"]')).toHaveCount(0);
-    await expect(page.locator('script:not([src])')).toHaveCount(0);
+    await expect(page.locator('script:not([src])')).toHaveCount(initialInlineScriptCount);
+    await expect(page.locator('script:not([src])').filter({ hasText: '__xssProbe=2' })).toHaveCount(0);
     await expect(page.evaluate(() => window.__xssProbe)).resolves.toBe(0);
 
     browserSignals.assertCleanBrowserSignals();

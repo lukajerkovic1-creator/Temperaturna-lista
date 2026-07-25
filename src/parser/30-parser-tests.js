@@ -1436,6 +1436,10 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
   }
 
   async function captureParserTestCaseFromShortcut() {
+    if (!isCapabilityEnabled('parserTestCapture')) {
+      setStatus('Parser test capture dostupan je samo u lokalnom QA načinu sa sintetičkim podacima.', true);
+      return false;
+    }
     if (state.parserTestCapture.saving) {
       setStatus('Parser test se već sprema. Pričekajte trenutak.', true);
       return;
@@ -1491,18 +1495,31 @@ Th: 500 mL FO + 1 g paracetamol i.v.`
   }
 
   function exposeParserTestCaptureHelpers() {
+    if (!isCapabilityEnabled('parserTestCapture')) {
+      delete document.documentElement.dataset.parserTestStorageKey;
+      delete document.documentElement.dataset.parserTestFirebaseCollection;
+      try {
+        delete window.TemperaturnaListaParserTests;
+      } catch (error) {
+        window.TemperaturnaListaParserTests = undefined;
+      }
+      return false;
+    }
     document.documentElement.dataset.parserTestStorageKey = STORAGE_KEYS.parserTestCaptures;
     document.documentElement.dataset.parserTestFirebaseCollection = FIREBASE_PARSER_TEST_CASES_COLLECTION;
     window.TemperaturnaListaParserTests = {
       appVersion: APP_VERSION,
       storageKey: STORAGE_KEYS.parserTestCaptures,
       firebaseCollection: FIREBASE_PARSER_TEST_CASES_COLLECTION,
+      parseByMode: (raw, mode = PATIENT_MODES.INPATIENT) => parsePatientTextByMode(raw, mode, { source: 'qa-parser-api' }),
+      buildGeneratedCases: (count = 300) => buildGeneratedParserRegressionCases(count),
       exportLocal: () => readParserTestCapturesFromStorage(),
       exportRegressionCases: () => getCapturedParserRegressionCases(),
       buildDownloadPayload: () => buildParserTestCaptureStoragePayload(readParserTestCapturesFromStorage()),
       sanitizeForStorage: sanitizeParserTestCaseForStorage,
       detectPrivacyRisks: detectParserTestPrivacyRisks
     };
+    return true;
   }
 
   function twoDigit(value) {
@@ -4042,7 +4059,7 @@ ${model.ohbpTherapy}`, ohbpField, { noWrap: false, overflowToleranceLines: 2 });
       return `${warning.label} na ${warning.pageLabel}${lineInfo}`;
     }).join('; ');
     const suffix = warnings.length > 3 ? ` Još ${warnings.length - 3} polja treba provjeriti.` : '';
-    return `Ispis je blokiran: jedan tekst je duži od podešenog okvira na listi. Provjerite: ${details}.${suffix} Skratite tekst ili povećajte okvir u admin načinu prije kliničkog ispisa.`;
+    return `Tekst prelazi podešeni okvir na listi. Provjerite: ${details}.${suffix} Možete se vratiti i skratiti tekst ili izričito nastaviti ispis unatoč upozorenju.`;
   }
 
   const CHRONIC_THERAPY_ADMISSION_WARNING = 'Kronična terapija je upisana, ali nije unesen ispravan datum prijema — terapija se neće prikazati na temperaturnoj listi.';
@@ -4188,4 +4205,3 @@ ${model.ohbpTherapy}`, ohbpField, { noWrap: false, overflowToleranceLines: 2 });
   }
 
 
-  

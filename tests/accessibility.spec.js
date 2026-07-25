@@ -8,14 +8,19 @@ const {
 } = require('./support/quality-helpers');
 
 test.describe('Accessibility smoke tests', () => {
-  test('startup gate and main form have no serious axe violations', async ({ page }) => {
+  test('production app and main form have no serious axe violations', async ({ page }) => {
     const browserSignals = await openApp(page);
 
-    const gateResults = await new AxeBuilder({ page })
-      .include('#firebaseLoginGate')
-      .withTags(['wcag2a', 'wcag2aa'])
-      .analyze();
-    expect(gateResults.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact))).toEqual([]);
+    const gate = page.locator('#firebaseLoginGate');
+    if (await gate.count()) {
+      const gateResults = await new AxeBuilder({ page })
+        .include('#firebaseLoginGate')
+        .withTags(['wcag2a', 'wcag2aa'])
+        .analyze();
+      expect(gateResults.violations.filter((violation) => ['critical', 'serious'].includes(violation.impact))).toEqual([]);
+    } else {
+      await expect(gate).toHaveCount(0);
+    }
 
     await closeFirebaseGateIfVisible(page);
     const formResults = await new AxeBuilder({ page })

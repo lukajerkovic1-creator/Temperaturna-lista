@@ -1,45 +1,47 @@
-# Lokalni draft pacijenta
+# Lokalna pohrana pacijenta
 
-## Default ponašanje
+> Sigurnosna tehnička bilješka. Ovaj dokument nije tvrdnja o GDPR ili produkcijskoj usklađenosti. Postupak moraju odobriti DPO, pravna služba i bolnička informatika.
 
-Lokalni auto-save pacijentnih podataka je isključen po defaultu. Aplikacija ne smije zapisivati ime pacijenta, datume, dijagnoze, terapiju, alergije, laboratorije ili drugi klinički tekst u čitljivom obliku u `localStorage`, `sessionStorage` ili IndexedDB.
+## Produkcijsko pravilo
 
-Firebase spremanje pacijenata ostaje primarni mehanizam spremanja.
+Produkcijska aplikacija ne sprema pacijenta u Firebase, drugi online servis, `localStorage`, `sessionStorage` ili IndexedDB. Ne postoji automatski browser draft ni opcija njegova uključivanja.
 
-Osobni prijedlozi dijagnoza i terapije, lokalne iznimke terapije te Ctrl+Alt+P parser test capture ne spremaju se više kao trajni cleartext u `localStorage`. Ti podaci mogu postojati samo privremeno u memoriji otvorene stranice, odnosno u Firebaseu kada je korisnik prijavljen i pravila to dopuštaju.
+Jedini dopušteni trajni zapis pacijenta je eksplicitni korisnički postupak:
 
-## Što se smije spremiti lokalno
+- **Spremi JSON** preuzima lokalnu JSON datoteku na računalo;
+- **Otvori JSON** učitava datoteku koju korisnik izričito odabere;
+- šifrirani downtime backup preuzima se kao zasebna datoteka s identitetski neutralnim nazivom.
 
-Ako korisnik izričito uključi šifrirani lokalni oporavak, u `localStorage` se sprema samo omotnica šifriranog drafta:
+GitHub Pages poslužuje samo statički aplikacijski kod i lokalnu bazu prijedloga lijekova. Pacijentni JSON nije dio repozitorija niti se šalje GitHubu.
 
-- verzija sheme,
-- `appVersion`,
-- `savedAt`,
-- `expiresAt`,
-- random `salt`,
-- random `iv`,
-- AES-GCM encrypted payload.
+## Podatci koji ne smiju u browser storage
 
-Passphrase i izvedeni ključ ne spremaju se u browser storage.
+U `localStorage`, `sessionStorage` i IndexedDB ne smiju se zapisivati:
 
-## Kako radi šifrirani oporavak
+- ime ili drugi identifikator pacijenta;
+- datum rođenja, prijema ili kontrole;
+- dijagnoza, alergija, terapija ili drugi klinički tekst;
+- laboratorij, mikrobiologija, vitalni znakovi ili radiološki nalaz;
+- parserov izvorni nalaz ili patient JSON payload.
 
-Korisnik mora ručno uključiti šifrirani oporavak i unijeti passphrase. Payload pacijenta šifrira se Web Crypto API-jem:
+Produkcijski startup briše oba povijesna ključa:
 
-- PBKDF2/SHA-256 izvodi ključ iz passphrasea i random salta,
-- AES-GCM šifrira payload,
-- za svaki zapis koristi se novi random salt i novi random IV,
-- draft vrijedi ograničeno vrijeme, trenutno 12 sati.
+- `temperaturna_lista_pacijent_autosave_v1`;
+- `temperaturna_lista_pacijent_sifrirani_draft_v2`.
 
-Nakon reloadanja stranice ključ više nije u memoriji i aplikacija traži passphrase prije vraćanja drafta. Pogrešna passphrase odbija vraćanje.
+Njihov sadržaj se nikad ne vraća niti migrira. Ovo je namjerno fail-closed ponašanje.
 
-## Legacy cleartext draft
+## Šifrirani downtime backup
 
-Stari ključ `temperaturna_lista_pacijent_autosave_v1` smatra se legacy cleartext draftom. Aplikacija ga ne vraća automatski. Ako ga pronađe, korisniku se nudi:
+Downtime backup je preuzeta datoteka, ne browser draft. Payload se prije downloada šifrira Web Crypto API-jem:
 
-- trajno brisanje lokalnog drafta,
-- jednokratno otvaranje i migracija u šifrirani draft nakon postavljanja passphrasea.
+- AES-GCM-256;
+- PBKDF2/SHA-256 derivacija ključa iz passphrasea;
+- nasumični salt i IV za svaki export;
+- passphrase i izvedeni ključ ne spremaju se.
 
-## Ograničenja browser-side enkripcije
+Browser-side enkripcija ne štiti podatke od kompromitiranog JavaScripta, zlonamjerne ekstenzije, snimke zaslona, neovlaštenog pristupa otključanom računalu ili pogrešnog rukovanja preuzetom datotekom. Lokaciju datoteka, rok čuvanja, backup medij i postupak brisanja mora definirati bolnica.
 
-Šifrirani lokalni recovery štiti od običnog čitanja browser storagea, ali nije zamjena za sigurni server-side sustav. Ako je stranica kompromitirana zlonamjernim JavaScriptom dok je passphrase unesena, napadač može pokušati čitati podatke iz memorije ili iz same forme. Zato je lokalni recovery opcionalan, kratkotrajan i isključen po defaultu.
+## Lokalni QA artefakt
+
+Odvojeni localhost QA bundle može sadržavati povijesne testove šifriranog drafta isključivo sa sintetičkim podatcima. QA bundle se ne učitava na GitHub Pages i zahtijeva localhost, `?qa=` te eksplicitnu pre-bootstrap testnu zastavicu. Statički build gate provjerava da production bundle nema storage adapter ni mogućnost zapisivanja patient drafta.

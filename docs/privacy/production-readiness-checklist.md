@@ -4,14 +4,14 @@ Status: working draft. This checklist blocks production use until reviewed and s
 
 ## Before Real Patient Use
 
-- Firebase project, domains, authentication provider, and Firestore rules are reviewed.
-- Firestore rules fail closed when user profile, organization, ward, or role is missing.
-- Authorized users and ward membership are managed through an approved process.
+- Production bundle contains no online patient-storage client and Firestore deny-all rules remain deployed.
+- Approved workstations, encrypted disks, local JSON folders, access control and secure deletion are documented.
+- Authorized users and departmental handling of local patient files are managed through an approved process.
 - Local draft recovery is encrypted and disabled by default.
 - Parser test capture stores only synthetic/anonymized cases.
-- Audit log and soft-delete behavior are enabled and tested.
-- Sync status and print confirmation behavior are tested.
-- Downtime backup location and restore procedure are approved.
+- Non-PHI operational audit and local revision handling are tested.
+- Local-save status and print confirmation behavior are tested.
+- Encrypted downtime backup location, passphrase transfer and restore procedure are approved.
 - Printer workflow and paper handling are documented.
 - Incident response procedure is documented.
 - A named clinical owner accepts known limitations.
@@ -19,4 +19,3 @@ Status: working draft. This checklist blocks production use until reviewed and s
 ## Not Yet A Compliance Claim
 
 Passing this checklist does not mean the application is GDPR-compliant. It only records that the listed technical and operational controls were reviewed.
-

@@ -1,5 +1,34 @@
 import type { ClinicalRecordV1, ISODateTimeString } from "./clinical-record";
 
+export type ParserProvenanceConfirmationStatus =
+  | "unconfirmed"
+  | "confirmed"
+  | "changed-after-parse";
+
+export interface ParserFieldProvenance {
+  field: string;
+  label: string;
+  group: "identityEncounter" | "allergyStatus" | "criticalFields";
+  critical: boolean;
+  sourceExcerpt: string;
+  confidence: number;
+  valueHash: string;
+  status: ParserProvenanceConfirmationStatus;
+  confirmed: boolean;
+  confirmedAt: ISODateTimeString | "";
+  confirmedBy: string;
+}
+
+export interface ParserProvenanceV1 {
+  schema: "temperaturna-lista-parser-provenance-v1";
+  parserVersion: string;
+  parserMode: "department" | "ambulatory" | "";
+  source: string;
+  parsedAt: ISODateTimeString;
+  sourceTextHash: string;
+  fields: Record<string, ParserFieldProvenance>;
+}
+
 export interface ParserResult {
   schema: "temperaturna-lista-parser-result-v1";
   clinicalRecord: ClinicalRecordV1;

@@ -38,23 +38,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint if configured
-        shell: bash
-        run: |
-          if node -e "process.exit(require('./package.json').scripts?.lint ? 0 : 1)"; then
-            npm run lint
-          else
-            echo "No lint script configured yet."
-          fi
+      - name: Lint
+        run: npm run lint
 
-      - name: Unit tests if configured
-        shell: bash
-        run: |
-          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            npm test
-          else
-            echo "No unit test script configured yet."
-          fi
+      - name: Unit tests
+        run: npm test
 
       - name: Build and validate static app
         run: npm run build
@@ -83,6 +71,11 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:8781/
         run: npm run test:smoke
+
+      - name: Parser fixture and fuzz tests
+        env:
+          BASE_URL: http://127.0.0.1:8781/
+        run: npm run test:parser
 
       - name: Security, accessibility, privacy and performance tests
         env:

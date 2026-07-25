@@ -7,45 +7,52 @@ Status: working draft. This procedure must be reviewed by hospital IT/security b
 The application shows a central availability status:
 
 - network status: online/offline;
-- Firebase status: available/unavailable/unknown;
+- online patient storage status: disabled;
 - app shell status: loaded/degraded;
-- last successful Firebase check;
 - last error.
 
-When the browser is offline or Firebase is unavailable, Firebase save/open actions are not considered safe sync. Local cleartext auto-save remains disabled. Optional local recovery remains encrypted and time-limited.
+Patient storage is local-JSON-only whether the browser is online or offline. Local cleartext auto-save remains disabled. Optional local recovery remains encrypted and time-limited.
 
 ## User Procedure During Downtime
 
 1. Continue editing only if clinically necessary.
-2. Do not assume the current patient is saved unless the sync indicator says it is saved in Firebase.
-3. If data must be preserved during downtime, use `Preuzmi downtime backup`.
-4. Store the backup only in an approved hospital location.
-5. When Firebase returns, restore the backup through the JSON import workflow, verify the patient, and save to Firebase.
-6. Delete the manual backup according to hospital policy after verified restore.
+2. Do not assume the current patient is saved until a local JSON download has completed.
+3. Use normal `Spremi JSON` for the regular local patient file.
+4. If a separate downtime copy is required, use `Preuzmi šifrirani backup`, set a unique passphrase of at least 12 characters, and keep the passphrase separately.
+5. Store files only in an approved hospital location and verify the patient after restore.
+6. Delete temporary files according to the approved retention policy.
 
 ## Backup JSON
 
-Downtime backup uses schema `temperaturna-lista-downtime-backup-v1`.
+Downtime backup uses schema `temperaturna-lista-encrypted-downtime-backup-v2`.
 
-It contains:
+Visible envelope metadata contains only:
 
 - app version;
 - exported timestamp;
-- retention policy snapshot;
-- availability status at export time;
-- limited auth context metadata;
-- current patient form data.
+- expiry timestamp;
+- AES-GCM and PBKDF2 parameters;
+- random salt and IV;
+- encrypted payload.
 
-It is not encrypted by the app. Treat the downloaded file as PHI/PII.
+Patient and clinical data are inside the AES-GCM encrypted payload. PBKDF2/SHA-256 derives the key from the passphrase; neither the passphrase nor key is stored. The filename contains no patient identity. A forgotten passphrase cannot be recovered.
 
 ## Restore
 
-The import workflow accepts downtime backup JSON only when the schema and authorized-use flags are present. Restore does not silently mark the patient as Firebase-synced. The user must verify and save to Firebase.
+Restore requires the correct passphrase and rejects expired, malformed, legacy cleartext, or tampered backup files. Restored data remain local and unsaved until the user explicitly downloads the regular patient JSON.
+
+## Local Operational Audit
+
+Successful regular JSON export, regular JSON restore, rejected JSON restore,
+encrypted downtime export/restore and print create a bounded local operational
+event. The event contains only event type, timestamp, app version/build,
+trigger and outcome. It never contains patient identity, filename, identifiers,
+diagnosis, therapy or other clinical text. This browser-local log is not an
+immutable institutional audit trail and must not be treated as one.
 
 ## Admin Notes
 
-- Test downtime by simulating browser offline mode and Firebase permission failures.
-- Confirm Firestore rules before enabling real deployment.
+- Test downtime by simulating browser offline mode and loss of the GitHub Pages connection after the app shell has loaded.
+- Keep Firestore rules fail-closed; patient storage must not be re-enabled from client code.
 - Confirm approved storage for backup files.
 - Confirm who may perform restore and who reviews audit events after downtime.
-

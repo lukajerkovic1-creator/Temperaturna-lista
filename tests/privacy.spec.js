@@ -8,10 +8,20 @@ const {
 } = require('./support/quality-helpers');
 
 const LEGACY_PATIENT_DRAFT_STORAGE_KEY = 'temperaturna_lista_pacijent_autosave_v1';
+const ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY = 'temperaturna_lista_pacijent_sifrirani_draft_v2';
+
+function isLocalBaseUrl(baseURL) {
+  try {
+    const hostname = new URL(baseURL).hostname;
+    return hostname === '127.0.0.1' || hostname === 'localhost';
+  } catch (error) {
+    return false;
+  }
+}
 
 test.describe('Privacy regression tests', () => {
-  test('legacy cleartext patient draft is not restored automatically', async ({ page }) => {
-    await page.addInitScript(({ legacyKey, gateKey }) => {
+  test('production purges legacy and encrypted browser patient drafts without restoring them', async ({ page }) => {
+    await page.addInitScript(({ legacyKey, encryptedKey, gateKey }) => {
       sessionStorage.setItem(gateKey, 'true');
       localStorage.setItem(legacyKey, JSON.stringify({
         fullName: 'Legacy Privacy Testic',
@@ -19,8 +29,15 @@ test.describe('Privacy regression tests', () => {
         diagnosis: 'Legacy cleartext dijagnoza.',
         therapy: 'Legacy cleartext terapija.',
       }));
+      localStorage.setItem(encryptedKey, JSON.stringify({
+        schema: 'temperaturna-lista-encrypted-patient-draft-v1',
+        payload: 'SyntheticEncryptedPayload',
+        savedAt: '2026-06-22T10:00:00.000Z',
+        expiresAt: '2099-06-22T22:00:00.000Z',
+      }));
     }, {
       legacyKey: LEGACY_PATIENT_DRAFT_STORAGE_KEY,
+      encryptedKey: ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY,
       gateKey: FIREBASE_LOGIN_GATE_SESSION_KEY,
     });
 
@@ -29,7 +46,19 @@ test.describe('Privacy regression tests', () => {
     await expect(page.locator('#fullName')).toHaveValue('');
     await expect(page.locator('#diagnosis')).toHaveValue('');
     await expect(page.locator('#therapy')).toHaveValue('');
-    await expect(page.locator('body')).toContainText(/lokalni draft|nekriptirani draft/i);
+    await expect(page.locator('#patientDraftStatusRow')).toHaveCount(0);
+    await expect(page.locator('#patientDraftControls')).toHaveCount(0);
+    const storedDrafts = await page.evaluate(([legacyKey, encryptedKey]) => ({
+      legacy: localStorage.getItem(legacyKey),
+      encrypted: localStorage.getItem(encryptedKey),
+    }), [LEGACY_PATIENT_DRAFT_STORAGE_KEY, ENCRYPTED_PATIENT_DRAFT_STORAGE_KEY]);
+    expect(storedDrafts).toEqual({ legacy: null, encrypted: null });
+    await expectBrowserStorageNotToContain(page, [
+      'Legacy Privacy Testic',
+      'Legacy cleartext dijagnoza',
+      'Legacy cleartext terapija',
+      'SyntheticEncryptedPayload',
+    ]);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -45,6 +74,7 @@ test.describe('Privacy regression tests', () => {
       therapy: 'ceftriakson 2 g i.v.',
       allergies: 'azitromicin',
     });
+    await page.locator('#printOperatorName').fill('Privacy Operater Testic');
     await page.waitForTimeout(500);
 
     await expectBrowserStorageNotToContain(page, [
@@ -53,13 +83,32 @@ test.describe('Privacy regression tests', () => {
       'ceftriakson 2 g',
       'azitromicin',
       '22.06.2026',
+      'Privacy Operater Testic',
+    ]);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#diagnosis')).toHaveValue('');
+    await expect(page.locator('#therapy')).toHaveValue('');
+    await expect(page.locator('#printOperatorName')).toHaveValue('');
+    await expectBrowserStorageNotToContain(page, [
+      'Privacy Regression Testic',
+      'Privacy regression pneumonija',
+      'ceftriakson 2 g',
+      'azitromicin',
+      '22.06.2026',
+      'Privacy Operater Testic',
     ]);
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('parser test capture stores sanitized text instead of obvious identifiers', async ({ page }) => {
-    const browserSignals = await openAppWithoutFirebase(page);
+  test('parser test capture stores sanitized text instead of obvious identifiers', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Parser capture is intentionally unavailable in the production runtime.');
+    await page.addInitScript(() => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
+    });
+    const browserSignals = await openAppWithoutFirebase(page, './?qa=privacy-parser-capture-local');
 
     await page.locator('#ohbpPasteBox').fill([
       'Pacijent: Ivan Horvat, 1974.',

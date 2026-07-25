@@ -1,5 +1,7 @@
 const fs = require('fs');
+const path = require('path');
 const { test, expect } = require('@playwright/test');
+const PACKAGE_VERSION = require('../package.json').version;
 
 const SAMPLE_OHBP_TEXT = [
   'Pacijent: TEST TESTIC, 1954.',
@@ -307,7 +309,7 @@ async function openApp(page, path = './') {
 
   const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `GitHub Pages response should be OK, got ${response?.status()}`).toBe(true);
-  await expect(page).toHaveTitle(/Temperaturna lista.*v\d+/);
+  await expect(page).toHaveTitle(/Temperaturna lista.*\d+\.\d+\.\d+/);
   await expect(page.locator('h1', { hasText: 'Generator temperaturne liste' })).toBeVisible();
   await expect(page.locator('#page1Title')).toBeVisible();
 
@@ -319,8 +321,20 @@ async function openApp(page, path = './') {
   };
 }
 
-async function fillClinicalPrintPrerequisites(page, overrides = {}) {
+async function confirmClinicalPrintReview(page, operatorName = 'Testni Operater') {
+  const operatorInput = page.locator('#printOperatorName');
+  if (!(await operatorInput.inputValue()).trim()) {
+    await operatorInput.fill(operatorName);
+  }
+  await page.locator('#confirmIdentityEncounter').check();
+  await page.locator('#confirmAllergyStatus').check();
+  await page.locator('#confirmCriticalFields').check();
+  await expect(page.locator('#clinicalPrintReviewStatus')).toHaveAttribute('data-review-state', 'confirmed');
+}
+
+async function fillClinicalPrintPrerequisites(page, overrides = {}, options = {}) {
   const values = {
+    operatorName: 'Testni Operater',
     fullName: 'Print Testic',
     birthYear: '1970',
     patientIdentifier: 'MBO-PRINT-001',
@@ -333,6 +347,7 @@ async function fillClinicalPrintPrerequisites(page, overrides = {}) {
     therapy: 'Ceftriakson 2 g i.v.',
     ...overrides
   };
+  await page.locator('#printOperatorName').fill(values.operatorName);
   await page.locator('#fullName').fill(values.fullName);
   await page.locator('#birthYear').fill(values.birthYear);
   await page.locator('#patientIdentifier').fill(values.patientIdentifier);
@@ -343,6 +358,9 @@ async function fillClinicalPrintPrerequisites(page, overrides = {}) {
   await page.locator('#diagnosis').fill(values.diagnosis);
   await page.locator('#allergies').fill(values.allergies);
   await page.locator('#therapy').fill(values.therapy);
+  if (options.confirmReview !== false) {
+    await confirmClinicalPrintReview(page);
+  }
   return values;
 }
 
@@ -423,16 +441,31 @@ async function scrollFieldOutOfAutocompleteView(page, selector) {
   await page.waitForTimeout(150);
 }
 
+function legacyFirebasePatientStorageTest(title, callback) {
+  test.skip(title, callback);
+}
+
 test.describe('GitHub Pages smoke test', () => {
-  test('loads the app without browser errors', async ({ page }) => {
+  test('loads the local JSON-only app without browser errors', async ({ page }) => {
     const browserSignals = await openApp(page);
 
-    await expect(page.locator('#firebaseLoginGate')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Dobro došli natrag/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Nastavi s Googleom/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Novi korisnik/i })).toBeVisible();
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await expect(page.locator('#openFirebasePatientDialogBtn')).toHaveText(/Otvori JSON/i);
+    await expect(page.locator('#savePatientTopBtn')).toHaveText(/Spremi JSON/i);
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/lokalni JSON/i);
+    await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-firebase-status', 'disabled');
+    await expect(page.locator('#firebaseLoginGate')).toHaveCount(0);
+    await expect(page.locator('#firebasePatientDialog')).toHaveCount(0);
+    await expect(page.locator('#firebaseUserPanel')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Nastavi bez Firebasea/i })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(/\bVite\b|Next\.js|Webpack|Unhandled Runtime Error/i);
+    const buildIdentity = await page.evaluate(() => ({
+      buildSha: window.__TEMPERATURNA_LISTA_BUILD_SHA__ || '',
+      versionText: document.getElementById('appVersionNote')?.textContent || ''
+    }));
+    expect(buildIdentity.buildSha).toMatch(/^[a-f0-9]{12}$/);
+    expect(buildIdentity.versionText).toContain(`Verzija: ${PACKAGE_VERSION}`);
+    expect(buildIdentity.versionText).toContain(`build ${buildIdentity.buildSha}`);
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -476,6 +509,112 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('saves a local patient JSON without contacting Firebase or another online storage service', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        configurable: true,
+        value: undefined
+      });
+    });
+    const onlineStorageRequests = [];
+    page.on('request', (request) => {
+      const url = request.url();
+      if (/firebase|firestore|googleapis\.com|gstatic\.com\/firebasejs/i.test(url)) {
+        onlineStorageRequests.push(url);
+      }
+    });
+    const browserSignals = await openApp(page);
+    await page.locator('#fullName').fill('Lokalni Json Testic');
+    await page.locator('#birthYear').fill('1978');
+    await page.locator('#admissionDate').fill('15.07.2026.');
+    await page.locator('#diagnosis').fill('Sintetska dijagnoza');
+    await page.locator('#allergies').fill('Nema poznatih alergija');
+    await page.locator('#therapy').fill('Sintetikin 500 mg p.o.');
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      await dialog.accept('TL_LOKALNI_JSON_TEST');
+    });
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#savePatientTopBtn').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.json$/i);
+    const downloadedPath = await download.path();
+    const downloadedPayload = JSON.parse(fs.readFileSync(downloadedPath, 'utf8'));
+    const runtimeBuildSha = await page.evaluate(() => window.__TEMPERATURNA_LISTA_BUILD_SHA__ || '');
+    expect(downloadedPayload.appVersion).toBe(PACKAGE_VERSION);
+    expect(downloadedPayload.buildSha).toBe(runtimeBuildSha);
+    expect(downloadedPayload.buildSha).toMatch(/^[a-f0-9]{12}$/);
+    await expect.poll(async () => page.evaluate(() => {
+      const events = JSON.parse(localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '[]');
+      return events.some((event) => event.eventType === 'patient.localJsonExport');
+    })).toBe(true);
+    const operationalAuditRaw = await page.evaluate(() => localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '');
+    expect(operationalAuditRaw).not.toContain('Lokalni Json Testic');
+    expect(operationalAuditRaw).not.toContain('Sintetska dijagnoza');
+    expect(operationalAuditRaw).not.toContain('Sintetikin 500 mg p.o.');
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'exported');
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-last-save-target', 'local-json');
+    await expect(page.locator('#patientSyncStatus')).toContainText(/aktualna verzija spremljena je u JSON.*Nema nespremljenih promjena/i);
+
+    await page.locator('#therapy').fill('Sintetikin 500 mg p.o. - izmijenjeno nakon izvoza');
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'dirty');
+    await expect(page.locator('#patientSyncStatus')).toContainText(/postoje nespremljene promjene/i);
+
+    expect(onlineStorageRequests).toEqual([]);
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('blocks unnamed local JSON exports and serializes duplicate save attempts', async ({ page }) => {
+    await page.addInitScript(() => {
+      let resolvePicker;
+      window.__LOCAL_JSON_SAVE_PICKER_CALLS__ = 0;
+      window.__RESOLVE_LOCAL_JSON_SAVE_PICKER__ = () => resolvePicker?.();
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        configurable: true,
+        value: async () => {
+          window.__LOCAL_JSON_SAVE_PICKER_CALLS__ += 1;
+          await new Promise((resolve) => { resolvePicker = resolve; });
+          return {
+            name: 'TL_DUPLICATE_SAVE_GUARD.json',
+            createWritable: async () => ({
+              write: async () => {},
+              close: async () => {}
+            })
+          };
+        }
+      });
+    });
+    const browserSignals = await openApp(page);
+
+    await page.locator('#diagnosis').fill('Sintetski nepotpuni zapis');
+    let unnamedWarning = '';
+    page.once('dialog', async (dialog) => {
+      unnamedWarning = dialog.message();
+      await dialog.dismiss();
+    });
+    await page.locator('#savePatientTopBtn').click();
+    await expect.poll(() => unnamedWarning).toMatch(/neće biti spremljen jer ime i prezime nisu uneseni/i);
+    expect(await page.evaluate(() => window.__LOCAL_JSON_SAVE_PICKER_CALLS__)).toBe(0);
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'dirty');
+
+    await page.locator('#fullName').fill('Dvostruki Izvoz Testic');
+    await page.locator('#savePatientTopBtn').click();
+    await expect(page.locator('#savePatientTopBtn')).toBeDisabled();
+    await expect(page.locator('#savePatientTopBtn')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#savePatientTopBtn')).toHaveText(/Spremam JSON/i);
+    await page.evaluate(() => document.getElementById('savePatientTopBtn')?.click());
+    expect(await page.evaluate(() => window.__LOCAL_JSON_SAVE_PICKER_CALLS__)).toBe(1);
+
+    await page.evaluate(() => window.__RESOLVE_LOCAL_JSON_SAVE_PICKER__());
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'exported');
+    await expect(page.locator('#savePatientTopBtn')).toBeEnabled();
+    await expect(page.locator('#savePatientTopBtn')).toHaveAttribute('aria-busy', 'false');
+    expect(await page.evaluate(() => window.__LOCAL_JSON_SAVE_PICKER_CALLS__)).toBe(1);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('parses OHBP patient name, protocol and MBOO identifiers', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
@@ -497,6 +636,143 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#birthYear')).toHaveValue('1970');
     await expect(page.locator('#patientIdentifier')).toHaveValue('999999999');
     await expect(page.locator('#encounterId')).toHaveValue('9900000001');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('records field-level parser provenance and warns before print after a parsed field changes', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#ohbpPasteBox').fill([
+      'Nalaz hitne',
+      'Protokol broj: TEST-ENC-20260716',
+      'TESTIĆ PROVENIJENCIJA, rođena 01.01.1970, TESTNA ULICA 4, 47000 TESTGRAD',
+      'MBOO: TEST-MBO-0001',
+      'Datum nalaza: 16.07.2026.',
+      'Dijagnoza: Sintetska pneumonija.',
+      'Lijekovi: Sintetikin 500 mg 1,0,0 tbl p.o.',
+      'Alergije na lijekove: negira.',
+      'Th: Testcef 2 g i.v.',
+      'RR 130/80 mmHg, Puls 82/min, SpO2 98%.'
+    ].join('\n'));
+
+    await expect(page.locator('#fullName')).toHaveValue(/Provenijencija Testić/i);
+    await expect(page.locator('#patientIdentifier')).toHaveValue('TEST-MBO-0001');
+    await expect(page.locator('#encounterId')).toHaveValue('TEST-ENC-20260716');
+    await expect(page.locator('#parserProvenancePanel')).toBeVisible();
+
+    const nameProvenance = page.locator('.parser-provenance-item[data-field="fullName"]');
+    const identifierProvenance = page.locator('.parser-provenance-item[data-field="patientIdentifier"]');
+    await expect(nameProvenance).toBeVisible();
+    await expect(nameProvenance.locator('.parser-provenance-excerpt')).toContainText(/TESTIĆ PROVENIJENCIJA/i);
+    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/\d+%.*nepotvrđeno/i);
+    await expect(identifierProvenance).toHaveAttribute('data-confirmed', 'false');
+    await expect(page.locator('#parserProvenanceSummary')).toContainText(/parser-v2/i);
+
+    await confirmClinicalPrintReview(page);
+    await expect(nameProvenance).toHaveAttribute('data-confirmed', 'true');
+    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/potvrđeno.*Testni Operater/i);
+    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'confirmed');
+
+    await page.locator('#fullName').fill('Izmijenjeni Testić');
+    await expect(page.locator('#confirmIdentityEncounter')).not.toBeChecked();
+    await expect(nameProvenance).toHaveAttribute('data-confirmed', 'false');
+    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'pending');
+
+    await page.locator('#printBtn').click();
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/nepotvrđeno parsirano polje: Ime i prezime/i);
+    await expect(warningDialog.locator('[data-print-confirm-action="proceed"]')).toHaveText('Svejedno ispiši');
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('persists parser provenance in local JSON but never persists its confirmation', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        configurable: true,
+        value: undefined
+      });
+    });
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#ohbpPasteBox').fill([
+      'Nalaz hitne',
+      'Protokol broj: TEST-JSON-ENC-01',
+      'JSON PROVENIJENCIJA, rođen 10.10.1970, TESTNA 1, 47000 TESTGRAD',
+      'MBOO: TEST-JSON-MBO-01',
+      'Datum nalaza: 16.07.2026.',
+      'Dijagnoza: Sintetski uroinfekt.',
+      'Lijekovi: Sintetikin 250 mg 1,0,1 tbl p.o.',
+      'Alergije na lijekove: nema.',
+      'Th: Testamicin 1 g i.v.'
+    ].join('\n'));
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toBeVisible();
+    await confirmClinicalPrintReview(page);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      await dialog.accept('TL_PARSER_PROVENANCE_TEST');
+    });
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#savePatientTopBtn').click();
+    const download = await downloadPromise;
+    const downloadedPath = await download.path();
+    expect(downloadedPath).toBeTruthy();
+    const savedJsonText = fs.readFileSync(downloadedPath, 'utf8');
+    const savedEnvelope = JSON.parse(savedJsonText);
+
+    expect(savedEnvelope.parserProvenance.schema).toBe('temperaturna-lista-parser-provenance-v1');
+    expect(savedEnvelope.parserProvenance.parserVersion).toBe('temperaturna-lista-parser-v2');
+    expect(savedEnvelope.parserProvenance.fields.fullName.sourceExcerpt).toMatch(/JSON PROVENIJENCIJA/i);
+    expect(savedEnvelope.parserProvenance.fields.fullName.confidence).toBeGreaterThan(0);
+    expect(savedEnvelope.parserProvenance.fields.fullName.confirmed).toBe(false);
+    expect(savedEnvelope.parserProvenance.fields.fullName.confirmedAt).toBe('');
+    expect(savedEnvelope.parserProvenance.fields.fullName.confirmedBy).toBe('');
+
+    await page.locator('#loadDataInput').setInputFiles({
+      name: 'TL_PARSER_PROVENANCE_TEST.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(savedJsonText, 'utf8')
+    });
+    await expect(page.locator('#statusBar')).toContainText(/Podaci pacijenta učitani su iz JSON datoteke/i);
+    await expect(page.locator('#fullName')).toHaveValue(/Provenijencija Json/i);
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toHaveAttribute('data-confirmed', 'false');
+    await expect(page.locator('#confirmIdentityEncounter')).not.toBeChecked();
+    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'pending');
+    await expect.poll(async () => page.evaluate(() => {
+      const events = JSON.parse(localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '[]');
+      return events.some((event) => event.eventType === 'patient.localJsonRestore');
+    })).toBe(true);
+    const restoreAuditRaw = await page.evaluate(() => localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '');
+    expect(restoreAuditRaw).not.toContain('JSON PROVENIJENCIJA');
+    expect(restoreAuditRaw).not.toContain('TEST-JSON-MBO-01');
+    expect(restoreAuditRaw).not.toContain('Sintetski uroinfekt');
+
+    await page.locator('#loadDataInput').setInputFiles({
+      name: 'TL_NEVALJANI_AUDIT_TEST.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({
+        version: 1,
+        data: {
+          fullName: 'NE SMIJE U AUDIT',
+          unexpectedClinicalField: 'TAJNI SINTETSKI SADRZAJ'
+        }
+      }), 'utf8')
+    });
+    await expect(page.locator('#statusBar')).toContainText(/JSON podataka pacijenta nije valjan:.*neočekivana polja/i);
+    await expect.poll(async () => page.evaluate(() => {
+      const events = JSON.parse(localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '[]');
+      return events.some((event) => event.eventType === 'patient.localJsonRestoreFailed');
+    })).toBe(true);
+    const failedRestoreAuditRaw = await page.evaluate(() => localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '');
+    expect(failedRestoreAuditRaw).not.toContain('NE SMIJE U AUDIT');
+    expect(failedRestoreAuditRaw).not.toContain('TAJNI SINTETSKI SADRZAJ');
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -553,14 +829,14 @@ test.describe('GitHub Pages smoke test', () => {
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
     await expect(page.locator('#appAvailabilityStatus')).toContainText(/offline na/i);
     await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-network-status', 'offline');
-    await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-firebase-status', 'unavailable');
+    await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-firebase-status', 'disabled');
 
     await context.setOffline(false);
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await expect(page.locator('#appAvailabilityStatus')).toHaveAttribute('data-network-status', 'online');
   });
 
-  test('exports and restores a downtime backup envelope without browser auto-storage', async ({ page }) => {
+  test('encrypts downtime backup, rejects a wrong passphrase and restores with the correct passphrase', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
 
@@ -573,8 +849,12 @@ test.describe('GitHub Pages smoke test', () => {
     await openDataAdminAdvanced(page);
     await expect(page.locator('#downloadDowntimeBackupBtn')).toBeEnabled();
 
-    const downloadPromise = page.waitForEvent('download');
     await page.locator('#downloadDowntimeBackupBtn').click();
+    await expect(page.locator('#securePassphraseDialog')).toBeVisible();
+    await page.locator('#securePassphraseInput').fill('Synthetic-Backup-2026!');
+    await page.locator('#securePassphraseConfirmInput').fill('Synthetic-Backup-2026!');
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#securePassphraseSubmitBtn').click();
     const download = await downloadPromise;
     const backupPath = await download.path();
     expect(backupPath).toBeTruthy();
@@ -582,23 +862,36 @@ test.describe('GitHub Pages smoke test', () => {
     const backupImportPath = `${backupPath}.json`;
     fs.copyFileSync(backupPath, backupImportPath);
 
-    expect(backup.schema).toBe('temperaturna-lista-downtime-backup-v1');
-    expect(backup.containsPatientData).toBe(true);
-    expect(backup.authorizedUseOnly).toBe(true);
-    expect(backup.retentionPolicy).toEqual({
-      patientDays: 90,
-      localDraftHours: 12,
-      parserTestDays: 30,
-      auditDays: 3650
-    });
-    expect(backup.availability).toHaveProperty('networkStatus');
-    expect(backup.data.fullName).toBe('Downtime Testic');
-    expect(backup.data.diagnosis).toBe('Downtime smoke dijagnoza.');
+    expect(download.suggestedFilename()).toMatch(/^TL_DOWNTIME_\d{8}_\d{6}_[a-f0-9]{8}\.json$/);
+    expect(download.suggestedFilename()).not.toContain('Testic');
+    expect(backup.schema).toBe('temperaturna-lista-encrypted-downtime-backup-v2');
+    expect(backup.version).toBe(2);
+    expect(backup.appVersion).toBe(PACKAGE_VERSION);
+    expect(backup.buildSha).toMatch(/^[a-f0-9]{12}$/);
+    expect(backup.cipher).toBe('AES-GCM-256');
+    expect(backup.kdf).toEqual({ name: 'PBKDF2', hash: 'SHA-256', iterations: 120000 });
+    expect(typeof backup.salt).toBe('string');
+    expect(typeof backup.iv).toBe('string');
+    expect(typeof backup.payload).toBe('string');
+    const rawBackup = fs.readFileSync(backupPath, 'utf8');
+    expect(rawBackup).not.toContain('Downtime Testic');
+    expect(rawBackup).not.toContain('Downtime smoke dijagnoza');
+    expect(rawBackup).not.toContain('Downtime smoke terapija');
 
     await page.locator('#fullName').fill('');
     await page.locator('#diagnosis').fill('');
     await page.locator('#therapy').fill('');
     await page.locator('#loadDataInput').setInputFiles(backupImportPath);
+    await expect(page.locator('#securePassphraseDialog')).toBeVisible();
+    await page.locator('#securePassphraseInput').fill('Wrong-Synthetic-2026!');
+    await page.locator('#securePassphraseSubmitBtn').click();
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#downtimeBackupStatus')).toContainText(/nije ispravna/i);
+
+    await page.locator('#loadDataInput').setInputFiles(backupImportPath);
+    await expect(page.locator('#securePassphraseDialog')).toBeVisible();
+    await page.locator('#securePassphraseInput').fill('Synthetic-Backup-2026!');
+    await page.locator('#securePassphraseSubmitBtn').click();
 
     await expect(page.locator('#fullName')).toHaveValue('Downtime Testic');
     await expect(page.locator('#diagnosis')).toHaveValue('Downtime smoke dijagnoza.');
@@ -610,11 +903,57 @@ test.describe('GitHub Pages smoke test', () => {
       'Downtime smoke dijagnoza',
       'Downtime smoke terapija'
     ]);
+    const operationalAudit = await page.evaluate(() => Object.entries(localStorage)
+      .find(([key]) => key.includes('operativni_audit'))?.[1] || '');
+    expect(operationalAudit).toContain('patient.backupExport');
+    expect(operationalAudit).toContain('patient.backupRestoreFailed');
+    expect(operationalAudit).toContain('patient.backupRestore');
+    expect(operationalAudit).toContain(backup.buildSha);
+    expect(operationalAudit).not.toContain('Downtime Testic');
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('registers a new Firebase user profile from the startup gate', async ({ page }) => {
+  test('refuses legacy cleartext and expired downtime backup files', async ({ page }, testInfo) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+    const legacyPath = testInfo.outputPath('legacy-cleartext-downtime.json');
+    const expiredPath = testInfo.outputPath('expired-encrypted-downtime.json');
+    fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+    fs.writeFileSync(legacyPath, JSON.stringify({
+      schema: 'temperaturna-lista-downtime-backup-v1',
+      version: 1,
+      containsPatientData: true,
+      authorizedUseOnly: true,
+      data: { fullName: 'Legacy Synthetic Testic', diagnosis: 'Legacy synthetic diagnosis' }
+    }), 'utf8');
+    fs.writeFileSync(expiredPath, JSON.stringify({
+      schema: 'temperaturna-lista-encrypted-downtime-backup-v2',
+      version: 2,
+      appVersion: 'synthetic-test',
+      exportedAt: '2025-01-01T00:00:00.000Z',
+      expiresAt: '2025-04-01T00:00:00.000Z',
+      cipher: 'AES-GCM-256',
+      kdf: { name: 'PBKDF2', hash: 'SHA-256', iterations: 120000 },
+      salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      iv: 'AAAAAAAAAAAAAAAA',
+      payload: 'AAAA'
+    }), 'utf8');
+
+    await page.locator('#loadDataInput').setInputFiles(legacyPath);
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#statusBar')).toContainText(/stari nešifrirani downtime backup nije dopušten/i);
+
+    await page.locator('#loadDataInput').setInputFiles(expiredPath);
+    await expect(page.locator('#securePassphraseDialog')).not.toBeVisible();
+    await expect(page.locator('#fullName')).toHaveValue('');
+    await expect(page.locator('#downtimeBackupStatus')).toContainText(/istekao/i);
+    await expectBrowserStorageNotToContain(page, ['Legacy Synthetic Testic', 'Legacy synthetic diagnosis']);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  legacyFirebasePatientStorageTest('registers a new Firebase user profile from the startup gate', async ({ page }) => {
     await installFirebaseSmokeClient(page, {
       noUserProfile: true,
       userEmail: 'novi.korisnik@gmail.com'
@@ -694,7 +1033,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('fails closed when Firebase profile has no valid clinical context', async ({ page }) => {
+  legacyFirebasePatientStorageTest('fails closed when Firebase profile has no valid clinical context', async ({ page }) => {
     await installFirebaseSmokeClient(page, { invalidClinicalContext: true });
     const browserSignals = await openApp(page, './?qa=firebase-clinical-context-fail-closed&firebaseSmoke=1');
 
@@ -712,7 +1051,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('keeps Firebase availability healthy when account switch popup is cancelled', async ({ page }) => {
+  legacyFirebasePatientStorageTest('keeps Firebase availability healthy when account switch popup is cancelled', async ({ page }) => {
     await installFirebaseSmokeClient(page, { popupClosedFailures: 1 });
     const browserSignals = await openApp(page, './?qa=firebase-popup-cancel-smoke&firebaseSmoke=1');
 
@@ -837,7 +1176,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('opens the searchable Firebase patient dialog from the top action', async ({ page }) => {
+  legacyFirebasePatientStorageTest('opens the searchable Firebase patient dialog from the top action', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-dialog-smoke&firebaseSmoke=1');
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
@@ -896,7 +1235,8 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#allergies').fill('Penicilin');
     await page.waitForTimeout(1200);
 
-    await expect(page.locator('#patientDraftStatus')).toContainText(/Lokalni auto-save pacijentnih podataka je isključen/i);
+    await expect(page.locator('#patientDraftStatusRow')).toHaveCount(0);
+    await expect(page.locator('#patientDraftControls')).toHaveCount(0);
     const patientDraftKeys = await page.evaluate(([legacyKey, encryptedKey]) => ({
       legacy: localStorage.getItem(legacyKey),
       encrypted: localStorage.getItem(encryptedKey)
@@ -916,6 +1256,7 @@ test.describe('GitHub Pages smoke test', () => {
 
   test('does not automatically restore the legacy cleartext patient draft', async ({ page }) => {
     await page.addInitScript(() => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
       localStorage.setItem('temperaturna_lista_pacijent_autosave_v1', JSON.stringify({
         version: 1,
         appVersion: 'legacy-local-draft',
@@ -945,6 +1286,9 @@ test.describe('GitHub Pages smoke test', () => {
   });
 
   test('encrypted local draft requires passphrase after reload and restores with the correct passphrase', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
+    });
     const browserSignals = await openApp(page, './?qa=encrypted-local-draft');
     await continueWithoutFirebase(page);
 
@@ -1016,6 +1360,9 @@ test.describe('GitHub Pages smoke test', () => {
   });
 
   test('expired encrypted local draft is removed instead of restored', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
+    });
     const browserSignals = await openApp(page, './?qa=encrypted-local-draft-expired');
     await continueWithoutFirebase(page);
 
@@ -1049,18 +1396,23 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('blocks admin dashboard for authenticated non-admin users', async ({ page }) => {
+  test('blocks admin dashboard for authenticated non-admin users', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Admin QA workflow is intentionally unavailable in the production runtime.');
     await installFirebaseSmokeClient(page, {
       userEmail: 'iva.korisnik@example.test',
       displayName: 'Iva Korisnik',
       firstName: 'Iva',
       lastName: 'Korisnik',
-      roles: ['clinician']
+      roles: ['clinician'],
+      enableQaHooks: true
     });
     const browserSignals = await openApp(page, './?qa=admin-access-block&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#dataAdminAdvancedSection')).toBeHidden();
+    await page.waitForFunction(() => (
+      window.__TEMPERATURNA_LISTA_ADMIN_CONTEXT__?.email === 'iva.korisnik@example.test'
+    ));
+    await expect(page.locator('#adminToggleBtn')).toBeHidden();
     await page.keyboard.press('Control+Alt+A');
     await expect(page.locator('#adminPanel')).toBeHidden();
     await expect(page.locator('#statusBar')).toContainText(/samo Luka Jerković|Admin dashboard je zaključan/i);
@@ -1068,17 +1420,22 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('opens admin dashboard only for Luka super admin and loads safe admin overview', async ({ page }) => {
+  test('opens admin dashboard only for Luka super admin and loads safe admin overview', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Admin QA workflow is intentionally unavailable in the production runtime.');
     await installFirebaseSmokeClient(page, {
       userEmail: 'luka.jerkovic1@gmail.com',
       displayName: 'Luka Jerković',
       firstName: 'Luka',
       lastName: 'Jerković',
-      roles: ['clinician', 'admin']
+      roles: ['clinician', 'admin'],
+      enableQaHooks: true
     });
     const browserSignals = await openApp(page, './?qa=admin-dashboard&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await page.waitForFunction(() => (
+      window.__TEMPERATURNA_LISTA_ADMIN_CONTEXT__?.email === 'luka.jerkovic1@gmail.com'
+    ));
     await page.evaluate(() => {
       const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
       client.__smokeDocs.set('userProfiles/ana-admin-test', {
@@ -1164,7 +1521,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('blocks printing while admin service mode is active', async ({ page, baseURL }) => {
+  test('warns but offers printing while admin service mode is active', async ({ page, baseURL }) => {
     test.skip(!isLocalBaseUrl(baseURL), 'Uses localhost-only QA hook for service-mode state.');
     await installFirebaseSmokeClient(page, {
       userEmail: 'luka.jerkovic1@gmail.com',
@@ -1181,20 +1538,18 @@ test.describe('GitHub Pages smoke test', () => {
     expect(adminEnabled).toBe(true);
     await expect(page.locator('#adminPanel')).toBeVisible();
 
-    let blockedPrintMessage = '';
-    page.once('dialog', async (dialog) => {
-      expect(dialog.type()).toBe('alert');
-      blockedPrintMessage = dialog.message();
-      await dialog.dismiss();
-    });
-
     await page.locator('#printBtn').click();
-    await expect.poll(() => blockedPrintMessage).toMatch(/Ispis je blokiran.*servisni\/admin/i);
-    await expect(page.locator('#statusBar')).toContainText(/Ispis je blokiran.*servisni\/admin/i);
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogTitle')).toHaveText('Upozorenja prije ispisa');
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/servisni\/admin način/i);
+    await expect(warningDialog.locator('[data-print-confirm-action="proceed"]')).toHaveText('Svejedno ispiši');
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect(page.locator('#statusBar')).toContainText(/Ispis je otkazan/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
-  test('blocks printing when text overflow warnings are present', async ({ page, baseURL }) => {
+  test('warns but offers printing when text overflow warnings are present', async ({ page, baseURL }) => {
     test.skip(!isLocalBaseUrl(baseURL), 'Uses localhost-only QA hook for overflow state.');
     await installFirebaseSmokeClient(page, { enableQaHooks: true });
     const browserSignals = await openApp(page, './?qa=print-overflow-hard-stop&firebaseSmoke=1');
@@ -1210,23 +1565,19 @@ test.describe('GitHub Pages smoke test', () => {
     ]));
     expect(warningCount).toBe(1);
 
-    let overflowAlert = '';
-    page.once('dialog', async (dialog) => {
-      expect(dialog.type()).toBe('alert');
-      overflowAlert = dialog.message();
-      await dialog.dismiss();
-    });
-
     await page.locator('#printBtn').click();
-    await expect.poll(() => overflowAlert).toMatch(/Ispis je blokiran.*Dijagnoza/i);
-    await expect(page.locator('#statusBar')).toContainText(/Ispis je blokiran.*Dijagnoza/i);
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogTitle')).toHaveText('Upozorenja prije ispisa');
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/Dijagnoza/i);
+    await expect(warningDialog.locator('[data-print-confirm-action="proceed"]')).toHaveText('Svejedno ispiši');
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
-    await expect(page.locator('#printConfirmDialog')).toBeHidden();
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('blocks printing when required clinical prerequisites are missing', async ({ page }) => {
+  test('warns but allows printing when required clinical prerequisites are missing', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=print-prerequisites&firebaseSmoke=1');
 
@@ -1236,33 +1587,174 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#admissionDate').fill('18.06.2026.');
     await page.locator('#diagnosis').fill('Test dijagnoza prije ispisa.');
 
-    let blockedPrintMessage = '';
-    page.once('dialog', async (dialog) => {
-      expect(dialog.type()).toBe('alert');
-      blockedPrintMessage = dialog.message();
-      await dialog.dismiss();
-    });
-
     await page.locator('#printBtn').click();
-    await expect.poll(() => blockedPrintMessage).toMatch(/Ispis je blokiran/i);
-    expect(blockedPrintMessage).toMatch(/alergijski status/i);
-    expect(blockedPrintMessage).toMatch(/terapija/i);
-    expect(blockedPrintMessage).toMatch(/MBO\/MRN|bolnicki broj/i);
-    expect(blockedPrintMessage).toMatch(/encounter|protokol/i);
-    await expect(page.locator('#statusBar')).toContainText(/Ispis je blokiran/i);
-    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
-    await expect(page.locator('#printConfirmDialog')).toBeHidden();
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogTitle')).toHaveText('Upozorenja prije ispisa');
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/alergijski status/i);
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/terapija/i);
+    await warningDialog.locator('[data-print-confirm-action="proceed"]').click();
+
+    await expect(warningDialog.locator('#printConfirmDialogTitle')).toHaveText('Nedostaju identifikacijski brojevi');
+    await warningDialog.locator('[data-print-confirm-action="proceed"]').click();
+    await expect(warningDialog.locator('#printConfirmDialogTitle')).toHaveText('Lista nije spremljena u lokalni JSON');
+    await warningDialog.locator('[data-print-confirm-action="proceed"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('saves admin print settings online when leaving admin mode', async ({ page }) => {
+  test('warns but allows printing when patient and encounter numbers are unavailable', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=print-without-identification-numbers&firebaseSmoke=1');
+
+    await fillClinicalPrintPrerequisites(page, {
+      fullName: 'Bez Broja Testic',
+      patientIdentifier: '',
+      encounterId: ''
+    });
+
+    await page.locator('#printBtn').click();
+    const dialog = page.locator('#printConfirmDialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('#printConfirmDialogTitle')).toHaveText('Nedostaju identifikacijski brojevi');
+    await expect(dialog.locator('#printConfirmDialogDescription')).toContainText(/MBO\/MRN|bolnicki broj/i);
+    await expect(dialog.locator('#printConfirmDialogDescription')).toContainText(/encounter|protokol/i);
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    await dialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('#statusBar')).toContainText(/Ispis je otkazan/i);
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    await page.locator('#printBtn').click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('#printConfirmDialogTitle')).toHaveText('Nedostaju identifikacijski brojevi');
+    await dialog.locator('[data-print-confirm-action="proceed"]').click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('#printConfirmDialogTitle')).toHaveText('Lista nije spremljena u lokalni JSON');
+    await dialog.locator('[data-print-confirm-action="proceed"]').click();
+
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
+    const metadata = await page.locator('#print-frame').evaluate((iframe) => (
+      iframe.contentDocument?.querySelector('.print-page-meta')?.textContent || ''
+    ));
+    expect(metadata).toContain('ID: NEDOSTAJE');
+    expect(metadata).toContain('Pacijent: Bez Broja Testic');
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('requires explicit final clinical confirmations before print', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=print-explicit-review&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await fillClinicalPrintPrerequisites(page, {
+      fullName: 'Explicit Review Testic',
+      patientIdentifier: 'MBO-REVIEW-001',
+      encounterId: 'ENC-REVIEW-001'
+    }, { confirmReview: false });
+
+    await expect(page.locator('#clinicalPrintReviewStatus')).toHaveAttribute('data-review-state', 'pending');
+    await page.locator('#printBtn').click();
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/izričita potvrda identiteta i encountera/i);
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/potvrda alergijskog statusa/i);
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/kritičnih parsiranih polja/i);
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('warns before print without a named session operator', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=print-operator-required&firebaseSmoke=1');
+
+    await fillClinicalPrintPrerequisites(page, {
+      operatorName: '',
+      fullName: 'Operator Required Testic',
+      patientIdentifier: 'MBO-OPERATOR-001',
+      encounterId: 'ENC-OPERATOR-001'
+    }, { confirmReview: false });
+
+    await page.locator('#confirmIdentityEncounter').click();
+    await expect(page.locator('#confirmIdentityEncounter')).not.toBeChecked();
+    await expect(page.locator('#statusBar')).toContainText(/operatera ispisa/i);
+    await expect(page.locator('#printOperatorName')).toBeFocused();
+
+    await page.locator('#printBtn').click();
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/ime i prezime operatera ispisa/i);
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('invalidates a clinical confirmation after critical data changes', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=print-review-invalidation&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await fillClinicalPrintPrerequisites(page, {
+      fullName: 'Review Invalidation Testic',
+      patientIdentifier: 'MBO-REVIEW-002',
+      encounterId: 'ENC-REVIEW-002'
+    });
+
+    await expect(page.locator('#confirmCriticalFields')).toBeChecked();
+    await page.locator('#diagnosis').fill('Izmijenjena sintetska dijagnoza.');
+    await expect(page.locator('#confirmCriticalFields')).not.toBeChecked();
+    await expect(page.locator('#confirmIdentityEncounter')).toBeChecked();
+    await expect(page.locator('#confirmAllergyStatus')).toBeChecked();
+    await expect(page.locator('#clinicalPrintReviewStatus')).toHaveAttribute('data-review-state', 'pending');
+
+    await page.locator('#printBtn').click();
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/terapije i kritičnih parsiranih polja/i);
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('warns before print when a medication has no recognizable dose or route', async ({ page }) => {
+    await installFirebaseSmokeClient(page);
+    const browserSignals = await openApp(page, './?qa=print-invalid-medication&firebaseSmoke=1');
+
+    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
+    await fillClinicalPrintPrerequisites(page, {
+      fullName: 'Medication Validation Testic',
+      patientIdentifier: 'MBO-REVIEW-003',
+      encounterId: 'ENC-REVIEW-003',
+      therapy: 'Sintetikin bez definirane doze'
+    });
+
+    await page.locator('#printBtn').click();
+    const warningDialog = page.locator('#printConfirmDialog');
+    await expect(warningDialog).toBeVisible();
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/nema prepoznatu dozu/i);
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/nema prepoznat put primjene/i);
+    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('saves admin print settings locally without an online write when leaving admin mode', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Admin QA workflow is intentionally unavailable in the production runtime.');
     await installFirebaseSmokeClient(page, {
       userEmail: 'luka.jerkovic1@gmail.com',
       displayName: 'Luka Jerković',
       firstName: 'Luka',
       lastName: 'Jerković',
-      roles: ['clinician', 'admin']
+      roles: ['clinician', 'admin'],
+      enableQaHooks: true
     });
     const browserSignals = await openApp(page, './?qa=admin-online-calibration-save&firebaseSmoke=1');
 
@@ -1285,25 +1777,25 @@ test.describe('GitHub Pages smoke test', () => {
     await closeDialog.locator('[data-admin-close-action="save"]').click();
     await expect(closeDialog).toBeHidden();
     await expect(page.locator('#adminPanel')).toBeHidden();
-    await expect(page.locator('#statusBar')).toContainText(/Postavke su spremljene online/i);
+    await expect(page.locator('#statusBar')).toContainText(/Postavke su spremljene lokalno/i);
 
-    const onlineConfigWrite = await page.evaluate(() => {
+    const result = await page.evaluate(() => {
       const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
-      return client.__smokeWrites
+      const onlineConfigWrite = client.__smokeWrites
         .filter(item => item.op === 'setDoc' && item.collection === 'appConfig' && item.id === 'printCalibration')
         .at(-1) || null;
+      const localCalibration = localStorage.getItem('temperaturna_lista_kalibracija_v10');
+      return { onlineConfigWrite, localCalibration };
     });
 
-    expect(onlineConfigWrite).toBeTruthy();
-    expect(onlineConfigWrite.payload.schema).toBe('temperaturna-lista-print-calibration-v1');
-    expect(onlineConfigWrite.payload.configId).toBe('printCalibration');
-    expect(onlineConfigWrite.payload.updatedByEmail).toBe('luka.jerkovic1@gmail.com');
-    expect(onlineConfigWrite.payload.calibration).toHaveProperty('page1Anchor1');
+    expect(result.onlineConfigWrite).toBeNull();
+    expect(result.localCalibration).toBeTruthy();
+    expect(JSON.parse(result.localCalibration).calibration).toHaveProperty('page1Anchor1');
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('saves patient data to Firebase through the smoke client', async ({ page }) => {
+  legacyFirebasePatientStorageTest('saves patient data to Firebase through the smoke client', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
@@ -1383,7 +1875,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('shows owned legacy Firebase patients and migrates them on save', async ({ page }) => {
+  legacyFirebasePatientStorageTest('shows owned legacy Firebase patients and migrates them on save', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-legacy-patient-migration-smoke&firebaseSmoke=1');
 
@@ -1452,7 +1944,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('bulk migrates legacy Firebase patients to the current ward profile', async ({ page }) => {
+  legacyFirebasePatientStorageTest('bulk migrates legacy Firebase patients to the current ward profile', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-legacy-bulk-migration-smoke&firebaseSmoke=1');
 
@@ -1552,7 +2044,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('super admin recovers orphan Firebase patients into Luka ward profile', async ({ page }) => {
+  legacyFirebasePatientStorageTest('super admin recovers orphan Firebase patients into Luka ward profile', async ({ page }) => {
     await installFirebaseSmokeClient(page, {
       userEmail: 'luka.jerkovic1@gmail.com',
       displayName: 'Luka Jerković',
@@ -1626,7 +2118,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('separates ambulatory and ward patient modes in the form and Firebase dialog', async ({ page }) => {
+  legacyFirebasePatientStorageTest('separates ambulatory and ward patient modes in the form and Firebase dialog', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=patient-mode-smoke&firebaseSmoke=1');
 
@@ -1791,7 +2283,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('starts a new top entry after offering Firebase save', async ({ page }) => {
+  legacyFirebasePatientStorageTest('starts a new top entry after offering Firebase save', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
@@ -1850,7 +2342,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('blocks Firebase save and warns before clearing unnamed patient', async ({ page }) => {
+  legacyFirebasePatientStorageTest('blocks Firebase save and warns before clearing unnamed patient', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=unnamed-patient-save-smoke&firebaseSmoke=1');
 
@@ -1896,7 +2388,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('updates an existing Firebase patient instead of creating a duplicate', async ({ page }) => {
+  legacyFirebasePatientStorageTest('updates an existing Firebase patient instead of creating a duplicate', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
@@ -1957,7 +2449,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('detects a remote Firebase update before saving over another user version', async ({ page }) => {
+  legacyFirebasePatientStorageTest('detects a remote Firebase update before saving over another user version', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-conflict-smoke&firebaseSmoke=1');
 
@@ -2040,7 +2532,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('renames, archives and restores Firebase patients from the open patient dialog', async ({ page }) => {
+  legacyFirebasePatientStorageTest('renames, archives and restores Firebase patients from the open patient dialog', async ({ page }) => {
     await installFirebaseSmokeClient(page, { roles: ['clinician', 'admin'] });
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
@@ -2157,7 +2649,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('keeps patient data and explains Firebase save failure before new entry', async ({ page }) => {
+  legacyFirebasePatientStorageTest('keeps patient data and explains Firebase save failure before new entry', async ({ page }) => {
     await installFirebaseSmokeClient(page, { failWritesWithPermissionDenied: true });
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
@@ -2197,12 +2689,13 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('opens print in local JSON-only mode without writing a Firebase patient', async ({ page }) => {
+  test('requires explicit confirmation before printing an unsaved local-only patient', async ({ page }) => {
     await installFirebaseSmokeClient(page);
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Online spremanje pacijenata je isklju/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toHaveCount(0);
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/Online spremanje pacijenata je isključeno.*lokalni JSON/i);
 
     await fillClinicalPrintPrerequisites(page, {
       fullName: 'Print Save Testic',
@@ -2219,30 +2712,55 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(printButton).toBeEnabled();
     await printButton.click();
 
-    await expect(page.locator('#statusBar')).toContainText(/Pacijenta spremi lokalno kao JSON datoteku/i);
+    const confirmDialog = page.locator('#printConfirmDialog');
+    await expect(confirmDialog).toBeVisible();
+    await expect(confirmDialog.locator('#printConfirmDialogTitle')).toHaveText(/Lista nije spremljena u lokalni JSON/i);
+    await expect(confirmDialog.locator('#printConfirmDialogDescription')).toContainText(/ispisati ovu nespremljenu lokalnu kopiju/i);
+    await confirmDialog.locator('[data-print-confirm-action="cancel"]').click();
+    await expect(confirmDialog).toBeHidden();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+    await expect(page.locator('#statusBar')).toContainText(/Ispis je otkazan.*nije spremljena u lokalni JSON/i);
+
+    await printButton.click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.locator('[data-print-confirm-action="proceed"]').click();
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
     await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'localOnly');
+    await expect(page.locator('#statusBar')).toContainText(/izričite potvrde nespremljene lokalne kopije/i);
 
     const result = await page.evaluate(() => {
       const events = window.__TEMPERATURNA_LISTA_SMOKE_EVENTS__ || [];
       const printIndex = events.findIndex(item => item.op === 'print');
       const patientWrites = events
         .filter(item => ['addDoc', 'setDoc'].includes(item.op) && item.collection === 'patients');
-      return { printIndex, patientWrites };
+      const auditEvents = JSON.parse(localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '[]');
+      return {
+        printIndex,
+        patientWrites,
+        hasUnsavedPrintAudit: auditEvents.some((event) => event.eventType === 'patient.printWithoutSync')
+      };
     });
 
     expect(result.printIndex).toBeGreaterThanOrEqual(0);
     expect(result.patientWrites).toHaveLength(0);
+    expect(result.hasUnsavedPrintAudit).toBe(true);
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('does not show Firebase failure confirmation in local JSON-only print mode', async ({ page }) => {
+  test('prints an unchanged locally exported JSON version without an unsaved-copy confirmation', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        configurable: true,
+        value: undefined
+      });
+    });
     await installFirebaseSmokeClient(page, { failPatientWritesWithPermissionDenied: true });
     const browserSignals = await openApp(page, './?qa=firebase-save-smoke&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Online spremanje pacijenata je isklju/i);
+    await expect(page.locator('#firebasePatientAuthStatus')).toHaveCount(0);
+    await expect(page.locator('#appAvailabilityStatus')).toContainText(/Online spremanje pacijenata je isključeno.*lokalni JSON/i);
 
     await fillClinicalPrintPrerequisites(page, {
       fullName: 'Print Failure Testic',
@@ -2254,14 +2772,24 @@ test.describe('GitHub Pages smoke test', () => {
       therapy: 'paracetamol 1 g p.o.'
     });
 
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('prompt');
+      await dialog.accept('TL_PRINT_EXPORTED_TEST');
+    });
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#savePatientTopBtn').click();
+    await downloadPromise;
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'exported');
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-last-save-target', 'local-json');
+
     const printButton = page.locator('#printBtn');
     await printButton.click();
 
     const confirmDialog = page.locator('#printConfirmDialog');
     await expect(confirmDialog).toBeHidden();
     await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
-    await expect(page.locator('#statusBar')).toContainText(/Pacijenta spremi lokalno kao JSON datoteku/i);
-    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'localOnly');
+    await expect(page.locator('#statusBar')).toContainText(/Aktualna verzija pacijenta spremljena je u lokalni JSON/i);
+    await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'exported');
     await expect(page.locator('#fullName')).toHaveValue('Print Failure Testic');
 
     const patientWrites = await page.evaluate(() => {
@@ -2273,8 +2801,12 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('captures a parser test case with Ctrl Alt P', async ({ page }) => {
-    const browserSignals = await openApp(page);
+  test('captures a parser test case with Ctrl Alt P', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Parser capture is intentionally unavailable in the production runtime.');
+    await page.addInitScript(() => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
+    });
+    const browserSignals = await openApp(page, './?qa=parser-capture-local');
     await continueWithoutFirebase(page);
     await page.evaluate((key) => localStorage.removeItem(key), PARSER_TEST_STORAGE_KEY);
 
@@ -2302,6 +2834,7 @@ test.describe('GitHub Pages smoke test', () => {
     const download = await downloadPromise;
     const downloadPath = await download.path();
     expect(download.suggestedFilename()).toMatch(/^krivo_parsiran_nalaz_.*\.json$/);
+    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen privremeno.*lokalni JSON/i);
     const downloadedPayload = JSON.parse(fs.readFileSync(downloadPath, 'utf8'));
 
     await expect.poll(async () => page.evaluate(() => {
@@ -2327,14 +2860,14 @@ test.describe('GitHub Pages smoke test', () => {
     expect(capture.privacyStatus).toMatch(/anonymized|synthetic/);
     expect(capture.sanitizerVersion).toBe('parser-test-sanitizer-v1');
     expect(capture.parserWarningsAtCapture).toEqual(expect.any(Array));
-    await expect(page.locator('#statusBar')).toContainText(/Parser test spremljen privremeno.*lokalni JSON/i);
     await expect.poll(async () => page.evaluate((key) => localStorage.getItem(key), PARSER_TEST_STORAGE_KEY)).toBeNull();
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('anonymizes risky parser test capture data before local or Firebase storage', async ({ page }) => {
-    await installFirebaseSmokeClient(page);
+  test('anonymizes risky parser capture locally and keeps Firebase parser storage disabled', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Parser capture is intentionally unavailable in the production runtime.');
+    await installFirebaseSmokeClient(page, { enableQaHooks: true });
     const browserSignals = await openApp(page, './?qa=parser-privacy-smoke&firebaseSmoke=1');
 
     await page.locator('#ohbpPasteBox').fill([
@@ -2374,15 +2907,17 @@ test.describe('GitHub Pages smoke test', () => {
         localCase,
         firebasePayload: firebaseWrite?.payload || null,
         serializedLocal: JSON.stringify(localCase),
-        serializedFirebase: JSON.stringify(firebaseWrite?.payload || {})
+        parserFirebaseWriteCount: client.__smokeWrites
+          .filter(item => item.op === 'addDoc' && item.collection === 'parserTestCases')
+          .length
       };
     });
 
     expect(saved.localCase.privacyStatus).toBe('anonymized');
     expect(saved.localCase.removedSensitiveFieldsCount).toBeGreaterThan(0);
-    expect(saved.firebasePayload.privacyStatus).toBe('anonymized');
-    expect(saved.firebasePayload.sanitizerVersion).toBe('parser-test-sanitizer-v1');
-    for (const serialized of [saved.serializedLocal, saved.serializedFirebase]) {
+    expect(saved.firebasePayload).toBeNull();
+    expect(saved.parserFirebaseWriteCount).toBe(0);
+    for (const serialized of [saved.serializedLocal]) {
       expect(serialized).not.toContain('Ivan Horvat');
       expect(serialized).not.toContain('12345678901');
       expect(serialized).not.toContain('ivan.horvat@example.com');
@@ -2481,7 +3016,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('builds ClinicalRecordV1, medication safety warnings and a basic FHIR Bundle', async ({ page }) => {
+  test('builds ClinicalRecordV1, medication safety warnings and an experimental profiled FHIR Bundle', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
 
@@ -2520,6 +3055,8 @@ test.describe('GitHub Pages smoke test', () => {
     });
 
     expect(result.record.schema).toBe('temperaturna-lista-clinical-record-v1');
+    expect(result.record.metadata.appVersion).toBe(PACKAGE_VERSION);
+    expect(result.record.metadata.buildSha).toMatch(/^[a-f0-9]{12}$/);
     expect(result.record.patient.fullName).toBe('Clinical Model Testic');
     expect(result.record.patient.patientIdentifiers[0].value).toBe('MBO-CLINICAL-001');
     expect(result.record.encounter.id).toBe('PROT-CLINICAL-001');
@@ -2634,7 +3171,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('loads and persists custom chronic therapy suggestions through the Firebase user profile', async ({ page }) => {
+  legacyFirebasePatientStorageTest('loads and persists custom chronic therapy suggestions through the Firebase user profile', async ({ page }) => {
     await installFirebaseSmokeClient(page, {
       personalAutocomplete: {
         schema: 'temperaturna-lista-personal-autocomplete-v1',
@@ -2876,17 +3413,26 @@ test.describe('GitHub Pages smoke test', () => {
     });
     expect(printEvent).toBeTruthy();
     expect(printEvent.pageCount).toBe(2);
+    expect(printEvent.pageNumbers).toEqual([3, 4]);
+    expect(printEvent.documentPageCount).toBe(4);
     const printFrameLayout = await page.evaluate(() => {
       const frame = document.querySelector('#print-frame');
       const doc = frame?.contentDocument || null;
       const win = frame?.contentWindow || null;
       const pageNode = doc?.querySelector('.page') || null;
       const imageNode = doc?.querySelector('.page img') || null;
+      const metadataNodes = Array.from(doc?.querySelectorAll('.print-page-meta') || []);
       const pageStyle = pageNode && win ? win.getComputedStyle(pageNode) : null;
       const imageStyle = imageNode && win ? win.getComputedStyle(imageNode) : null;
       return {
         styleText: Array.from(doc?.querySelectorAll('style') || []).map(style => style.textContent || '').join('\n'),
         metadataText: Array.from(doc?.querySelectorAll('.print-page-meta') || []).map(node => node.textContent || '').join('\n'),
+        metadataOverflow: metadataNodes.map(node => ({
+          clientWidth: node.clientWidth,
+          scrollWidth: node.scrollWidth,
+          clientHeight: node.clientHeight,
+          scrollHeight: node.scrollHeight
+        })),
         pageCount: doc?.querySelectorAll('.page').length || 0,
         pageWidthPx: pageStyle ? Number.parseFloat(pageStyle.width) : 0,
         pageHeightPx: pageStyle ? Number.parseFloat(pageStyle.height) : 0,
@@ -2902,7 +3448,19 @@ test.describe('GitHub Pages smoke test', () => {
     expect(printFrameLayout.styleText).toContain('object-fit: contain');
     expect(printFrameLayout.metadataText).toContain('ID: MBO-PAIR-001');
     expect(printFrameLayout.metadataText).toContain('Encounter: ENC-PAIR-001');
-    expect(printFrameLayout.metadataText).toContain('Stranica 1/2');
+    expect(printFrameLayout.metadataText).toContain('Korisnik: Testni Operater');
+    expect(printFrameLayout.metadataText).not.toContain('Korisnik: NEDOSTAJE');
+    expect(printFrameLayout.metadataOverflow.length).toBe(2);
+    for (const dimensions of printFrameLayout.metadataOverflow) {
+      expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+      expect(dimensions.scrollHeight).toBeLessThanOrEqual(dimensions.clientHeight + 1);
+    }
+    expect(printFrameLayout.metadataText).toContain('Stranica 3/4');
+    expect(printFrameLayout.metadataText).toContain('Stranica 4/4');
+    expect(printFrameLayout.metadataText).not.toContain('Stranica 1/2');
+    expect(printFrameLayout.metadataText).toContain(`Verzija: ${PACKAGE_VERSION}`);
+    const runtimeBuildSha = await page.evaluate(() => window.__TEMPERATURNA_LISTA_BUILD_SHA__ || '');
+    expect(printFrameLayout.metadataText).toContain(`Build: ${runtimeBuildSha}`);
     expect(printFrameLayout.imageNaturalWidth).toBeGreaterThan(3000);
     expect(printFrameLayout.imageNaturalHeight).toBeGreaterThan(2000);
     expect(printFrameLayout.pageWidthPx).toBeGreaterThan(1000);
@@ -2928,7 +3486,7 @@ test.describe('GitHub Pages smoke test', () => {
   test.describe('desktop-only checks', () => {
     test.skip(({ isMobile }) => isMobile, 'Keyboard focus trap is a desktop smoke check.');
 
-    test('keeps keyboard focus inside the Firebase login modal', async ({ page }) => {
+    legacyFirebasePatientStorageTest('keeps keyboard focus inside the Firebase login modal', async ({ page }) => {
       const browserSignals = await openApp(page);
       const gate = page.locator('#firebaseLoginGate');
       await expect(gate).toBeVisible();

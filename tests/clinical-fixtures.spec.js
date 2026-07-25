@@ -106,19 +106,46 @@ test.describe('Synthetic clinical fixture set', () => {
         const safety = window.TemperaturnaListaClinical.runMedicationSafetyChecks(record);
         const bundle = window.TemperaturnaListaClinical.clinicalRecordToFhirBundle(record);
         const bundleValidation = window.TemperaturnaListaClinical.validateBasicFhirBundle(bundle);
-        return { record, validation, safety, bundleValidation };
+        return {
+          record,
+          validation,
+          safety,
+          bundleValidation,
+          bundleSummary: {
+            profile: bundle.meta?.profile || [],
+            tags: bundle.meta?.tag || [],
+            resourceTypes: bundle.entry.map(entry => entry.resource.resourceType),
+            allResourcesProfiled: bundle.entry.every(entry => Array.isArray(entry.resource.meta?.profile) && entry.resource.meta.profile.length === 1),
+            provenanceTargetCount: bundle.entry.find(entry => entry.resource.resourceType === 'Provenance')?.resource?.target?.length || 0,
+            nonProvenanceCount: bundle.entry.filter(entry => entry.resource.resourceType !== 'Provenance').length
+          }
+        };
       });
 
       expect(result.record.schema, patient.id).toBe('temperaturna-lista-clinical-record-v1');
       expect(result.record.patient.fullName, patient.id).toBe(patient.input.fullName);
       expect(['form', 'current-form'], patient.id).toContain(result.record.metadata.source);
       expect(result.bundleValidation.ok, patient.id).toBe(true);
+      expect(result.bundleValidation.valid, patient.id).toBe(true);
+      expect(result.bundleValidation.fhirVersion, patient.id).toBe('4.0.1');
+      expect(result.bundleValidation.experimental, patient.id).toBe(true);
+      expect(result.bundleValidation.issues, patient.id).toEqual([]);
+      expect(result.bundleSummary.profile, patient.id).toContain('urn:temperaturna-lista:fhir:StructureDefinition:bundle-experimental-v1');
+      expect(result.bundleSummary.tags, patient.id).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'experimental' }),
+        expect.objectContaining({ code: '4.0.1' })
+      ]));
+      expect(result.bundleSummary.resourceTypes, patient.id).toContain('Provenance');
+      expect(result.bundleSummary.allResourcesProfiled, patient.id).toBe(true);
+      expect(result.bundleSummary.provenanceTargetCount, patient.id).toBe(result.bundleSummary.nonProvenanceCount);
 
       for (const fragment of patient.expected?.conditionContains || []) {
-        expect(JSON.stringify(result.record.conditions), patient.id).toContain(fragment);
+        expect(JSON.stringify(result.record.conditions).toLocaleLowerCase('hr'), patient.id)
+          .toContain(String(fragment).toLocaleLowerCase('hr'));
       }
       for (const fragment of patient.expected?.medicationContains || []) {
-        expect(JSON.stringify(result.record.medications), patient.id).toContain(fragment);
+        expect(JSON.stringify(result.record.medications).toLocaleLowerCase('hr'), patient.id)
+          .toContain(String(fragment).toLocaleLowerCase('hr'));
       }
       for (const analyte of patient.expected?.labAnalytes || []) {
         expect(result.record.labs.map((lab) => lab.analyte), patient.id).toEqual(expect.arrayContaining([analyte]));
@@ -142,6 +169,28 @@ test.describe('Synthetic clinical fixture set', () => {
       }
     }
 
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('FHIR validator rejects missing profiles, Provenance and unresolved references', async ({ page }, testInfo) => {
+    test.skip(/mobile/i.test(testInfo.project.name), 'FHIR negative fixture validation runs once on desktop.');
+    const browserSignals = await openAppWithoutFirebase(page);
+    await fillFixturePatient(page, fixtures.patients[0].input);
+    const result = await page.evaluate(() => {
+      const api = window.TemperaturnaListaClinical;
+      const bundle = api.clinicalRecordToFhirBundle(api.fromCurrentForm(), { timestamp: '2026-01-01T12:00:00.000Z' });
+      bundle.meta.profile = [];
+      bundle.entry = bundle.entry.filter(entry => entry.resource.resourceType !== 'Provenance');
+      const encounter = bundle.entry.find(entry => entry.resource.resourceType === 'Encounter');
+      encounter.resource.subject.reference = 'Patient/missing-patient';
+      return api.validateBasicFhirBundle(bundle);
+    });
+    expect(result.ok).toBe(false);
+    expect(result.issues.map(issue => issue.code)).toEqual(expect.arrayContaining([
+      'bundle-profile',
+      'provenance-required',
+      'unresolved-reference'
+    ]));
     browserSignals.assertCleanBrowserSignals();
   });
 });

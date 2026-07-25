@@ -9,9 +9,8 @@ Temperaturna lista is a browser application for preparing a temperature chart an
 The intended production deployment must define:
 
 - data controller and processor roles;
-- approved Firebase project and region;
-- authorized hospital departments and users;
-- role-based access rules;
+- approved local workstation and storage locations;
+- authorized hospital departments and users of downloaded files;
 - support and incident contacts;
 - backup and downtime procedure;
 - retention and deletion procedure.
@@ -19,7 +18,7 @@ The intended production deployment must define:
 ## Main Privacy Risks
 
 - Real patient data entered in a browser can be exposed if stored in cleartext browser storage.
-- Incorrect Firebase rules can expose records across users, departments, or organizations.
+- Accidental reintroduction of online patient storage can expose records outside the approved local workflow.
 - Manual JSON backups can leave the controlled hospital environment.
 - Parser regression cases can accidentally contain real clinical text.
 - Shared workstations can expose logged-in sessions.
@@ -29,17 +28,16 @@ The intended production deployment must define:
 
 - Local patient auto-save is disabled by default.
 - Optional local recovery uses encrypted storage with a user-provided passphrase.
-- Firebase patient records are scoped by organization, ward, roles, and clinical partition.
-- Patient delete is implemented as soft-delete/archive with audit events.
-- Print requires Firebase sync or explicit confirmation for a local unsynced copy.
-- Downtime backup files are explicit JSON exports and are not silently stored in browser storage.
+- Production patient storage is local-JSON-only; Firebase patient reads and writes are disabled in the bundle and Firestore rules are fail-closed.
+- Print requires explicit clinical confirmations and an explicit local-unsaved decision when applicable.
+- Downtime backup files use AES-GCM with a PBKDF2/SHA-256 passphrase-derived key and are not silently stored in browser storage.
+- Downtime backup filenames do not contain patient identity; legacy cleartext downtime backups are rejected.
 
 ## Required Review Before Real Use
 
-- Confirm Firebase Authentication provider, authorized domains, and session policy.
-- Confirm Firestore rules enforce organization, ward, role, soft-delete, parser-test, audit-log, and backup assumptions.
+- Confirm that Firestore deny-all rules remain deployed and online patient storage is not reintroduced.
+- Confirm workstation identity, access control, approved local folders, endpoint encryption, backup handling, and session policy.
 - Confirm workstation security, screen lock, browser profile, and shared device procedures.
 - Confirm retention requirements with hospital policy and local law.
 - Confirm that export/import workflows are allowed and define approved storage locations.
 - Confirm incident response: lost backup, wrong recipient, unauthorized access, failed sync, and printer error.
-

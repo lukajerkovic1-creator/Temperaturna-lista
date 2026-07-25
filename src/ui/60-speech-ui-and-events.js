@@ -444,6 +444,11 @@ function getTherapySuggestionPanel(targetId) {
     setStatus(`Vođeni unos terapije: prihvaćen je korak ${currentStep.label}. Sljedeći korak: ${nextStep.label}.`);
   }
   function startSpeechInput(targetId) {
+    if (!isCapabilityEnabled('therapySpeechInput')) {
+      setSpeechStatus(targetId, 'Audio unos terapije isključen je u produkcijskom kliničkom načinu.', 'warn');
+      setStatus('Audio unos terapije nije odobren u produkcijskom kliničkom načinu.', true);
+      return;
+    }
     const SpeechRecognition = getSpeechRecognitionConstructor();
     const textarea = getSpeechTargetTextarea(targetId);
     if (!SpeechRecognition || !textarea) {
@@ -558,6 +563,17 @@ function getTherapySuggestionPanel(targetId) {
   }
 
   function initSpeechInputControls() {
+    if (!isCapabilityEnabled('therapySpeechInput')) {
+      ['therapy', 'ohbpTherapy'].forEach((targetId) => {
+        const button = getSpeechButton(targetId);
+        if (!button) return;
+        button.disabled = true;
+        button.hidden = true;
+        button.setAttribute('aria-hidden', 'true');
+        button.setAttribute('data-production-disabled', 'true');
+      });
+      return;
+    }
     const supported = Boolean(getSpeechRecognitionConstructor());
     ['therapy', 'ohbpTherapy'].forEach((targetId) => {
       const button = getSpeechButton(targetId);
@@ -578,6 +594,7 @@ function getTherapySuggestionPanel(targetId) {
   }
 
   function onFormChanged() {
+    reconcileClinicalPrintReview(getFormData(), { render: true });
     updateDisplayToggleUi();
     renderAll();
     updatePatientSyncStateForCurrentForm();
@@ -702,6 +719,10 @@ function getTherapySuggestionPanel(targetId) {
     const isAdminShortcut = (event.ctrlKey || event.metaKey) && event.altKey && event.code === 'KeyA';
     if (isAdminShortcut) {
       event.preventDefault();
+      if (!isCapabilityEnabled('adminShortcut') || !isCapabilityEnabled('adminDashboard')) {
+        setStatus('Administratorski prečac isključen je u produkcijskom kliničkom načinu.', true);
+        return;
+      }
       toggleAdminMode();
       return;
     }
@@ -712,6 +733,10 @@ function getTherapySuggestionPanel(targetId) {
     if (isParserTestCaptureShortcut) {
       event.preventDefault();
       event.stopPropagation();
+      if (!isCapabilityEnabled('parserTestCapture')) {
+        setStatus('Ctrl+Alt+P parser capture dostupan je samo u lokalnom QA načinu sa sintetičkim podacima.', true);
+        return;
+      }
       captureParserTestCaseFromShortcut();
       return;
     }
@@ -1086,10 +1111,27 @@ function getTherapySuggestionPanel(targetId) {
   }
 
   function wireEvents() {
-    [els.fullName, els.birthYear, els.diagnosis, els.allergies, els.patientOrigin, els.therapy, els.ohbpTherapy, els.vitalSigns, els.followUpControlDate, els.followUpControl, els.microHemocultures, els.microUrineCulture, els.microStoolBacteriology, els.microStoolCdiff, els.microStoolVirology, els.labRaw, els.radiologyRaw, els.admissionDate, els.showTherapyMonday2, els.showDiagnosisOnList, els.showAllergiesOnList, els.showPatientOriginOnList, els.showTherapyOnList, els.showOhbpTherapyOnList, els.showVitalSignsOnList, els.showFollowUpControlOnList, els.showLabsOnList, els.showRadiologyOnList].filter(Boolean).forEach((element) => {
+    [els.fullName, els.birthYear, els.patientIdentifier, els.encounterId, els.patientRoom, els.patientBed, els.diagnosis, els.allergies, els.patientOrigin, els.therapy, els.ohbpTherapy, els.vitalSigns, els.followUpControlDate, els.followUpControl, els.microHemocultures, els.microUrineCulture, els.microStoolBacteriology, els.microStoolCdiff, els.microStoolVirology, els.labRaw, els.radiologyRaw, els.admissionDate, els.showTherapyMonday2, els.showDiagnosisOnList, els.showAllergiesOnList, els.showPatientOriginOnList, els.showTherapyOnList, els.showOhbpTherapyOnList, els.showVitalSignsOnList, els.showFollowUpControlOnList, els.showLabsOnList, els.showRadiologyOnList].filter(Boolean).forEach((element) => {
       const eventName = element.type === 'checkbox' ? 'change' : 'input';
       element.addEventListener(eventName, onFormChanged);
     });
+
+    [
+      [els.confirmIdentityEncounter, 'identityEncounter'],
+      [els.confirmAllergyStatus, 'allergyStatus'],
+      [els.confirmCriticalFields, 'criticalFields']
+    ].forEach(([checkbox, key]) => {
+      checkbox?.addEventListener('change', () => {
+        setClinicalPrintReviewConfirmation(key, checkbox.checked);
+      });
+    });
+
+    if (els.printOperatorName) {
+      els.printOperatorName.addEventListener('input', () => {
+        els.printOperatorName.setCustomValidity('');
+        reconcileClinicalPrintReview(getFormData(), { render: true });
+      });
+    }
 
     if (els.admissionDate) {
       els.admissionDate.addEventListener('input', updateAdmissionDateInputValidity);
@@ -1193,13 +1235,19 @@ function getTherapySuggestionPanel(targetId) {
       void restorePatientDraftFromStorage();
     });
     if (els.downloadPatientBackupBtn) els.downloadPatientBackupBtn.addEventListener('click', downloadPatientBackupData);
-    if (els.downloadDowntimeBackupBtn) els.downloadDowntimeBackupBtn.addEventListener('click', downloadDowntimeBackupData);
+    if (els.downloadDowntimeBackupBtn) els.downloadDowntimeBackupBtn.addEventListener('click', () => {
+      void downloadDowntimeBackupData();
+    });
     if (els.downloadFhirBundleBtn) els.downloadFhirBundleBtn.addEventListener('click', () => downloadFhirBundle());
     if (els.copyFhirBundleBtn) els.copyFhirBundleBtn.addEventListener('click', () => {
+      if (!isCapabilityEnabled('fhirClipboard')) {
+        setStatus('Kopiranje FHIR podataka u clipboard nije odobreno u produkcijskom kliničkom načinu.', true);
+        return;
+      }
       void copyFhirBundleToClipboard();
     });
     if (els.loadDowntimeBackupBtn) els.loadDowntimeBackupBtn.addEventListener('click', () => {
-      setDowntimeBackupStatus('Odaberi downtime backup JSON datoteku za ovlašteni restore.', 'warn');
+      setDowntimeBackupStatus('Odaberi šifrirani downtime backup; za restore će trebati passphrase.', 'warn');
       if (els.loadDataInput) {
         els.loadDataInput.click();
       } else {
@@ -1308,7 +1356,14 @@ function getTherapySuggestionPanel(targetId) {
     });
     initFirebasePatients();
     els.printBtn.addEventListener('click', printPages);
-    if (els.adminToggleBtn) els.adminToggleBtn.addEventListener('click', toggleAdminMode);
+    if (isCapabilityEnabled('adminDashboard')) {
+    if (els.adminToggleBtn) els.adminToggleBtn.addEventListener('click', () => {
+      if (!isCapabilityEnabled('adminDashboard')) {
+        setStatus('Admin dashboard dostupan je samo u lokalnom QA/servisnom načinu.', true);
+        return;
+      }
+      toggleAdminMode();
+    });
     if (els.adminCloseBtn) els.adminCloseBtn.addEventListener('click', closeAdminMode);
     if (els.adminRefreshDashboardBtn) els.adminRefreshDashboardBtn.addEventListener('click', () => refreshAdminDashboard());
     if (els.adminExportReportBtn) els.adminExportReportBtn.addEventListener('click', exportAdminDashboardReport);
@@ -1316,33 +1371,36 @@ function getTherapySuggestionPanel(targetId) {
       .filter(Boolean)
       .forEach((button) => button.addEventListener('click', explainLockedAdminServerAction));
     if (els.saveCalibrationEmbeddedBtn) els.saveCalibrationEmbeddedBtn.addEventListener('click', saveCalibrationInsideHtmlApp);
-    els.saveCalibrationBtn.addEventListener('click', () => { saveCalibrationToOnlineApp(); });
+    els.saveCalibrationBtn.addEventListener('click', () => { saveCalibrationToLocalApp(); });
     els.loadCalibrationBtn.addEventListener('click', () => els.loadCalibrationInput.click());
     els.resetCalibrationBtn.addEventListener('click', resetCalibration);
     els.selectAllTextBoxesBtn.addEventListener('click', () => setSelectAllTextBoxes(!state.admin.selectAllTextBoxes));
     if (els.adminUndoBtn) els.adminUndoBtn.addEventListener('click', undoAdminChange);
     if (els.adminRedoBtn) els.adminRedoBtn.addEventListener('click', redoAdminChange);
     if (els.adminAdvancedToggleBtn) els.adminAdvancedToggleBtn.addEventListener('click', toggleAdminAdvancedControls);
-    if (els.runBuiltInParserTestsBtn) els.runBuiltInParserTestsBtn.addEventListener('click', runBuiltInParserTests);
-    if (els.runParserTestBtn) els.runParserTestBtn.addEventListener('click', runParserTest);
-    if (els.clearParserTestBtn) els.clearParserTestBtn.addEventListener('click', clearParserTest);
-    if (els.loadParserRegressionFileBtn && els.parserRegressionFileInput) els.loadParserRegressionFileBtn.addEventListener('click', () => els.parserRegressionFileInput.click());
-    if (els.parserRegressionFileInput) els.parserRegressionFileInput.addEventListener('change', (event) => {
-      const file = event.target.files?.[0];
-      if (file) loadParserRegressionCasesFromFile(file);
-      event.target.value = '';
-    });
-    if (els.runParserRegressionBtn) els.runParserRegressionBtn.addEventListener('click', () => runParserRegressionTests());
-    if (els.generateParserRegressionBtn) els.generateParserRegressionBtn.addEventListener('click', generateAndRunParserRegressionTests);
-    if (els.loadCapturedParserTestsBtn) els.loadCapturedParserTestsBtn.addEventListener('click', loadCapturedParserTestsIntoRegression);
-    if (els.downloadCapturedParserTestsBtn) els.downloadCapturedParserTestsBtn.addEventListener('click', downloadCapturedParserTestCases);
-    if (els.downloadParserRegressionCasesBtn) els.downloadParserRegressionCasesBtn.addEventListener('click', downloadParserRegressionCases);
-    if (els.downloadParserRegressionReportJsonBtn) els.downloadParserRegressionReportJsonBtn.addEventListener('click', downloadParserRegressionReportJson);
-    if (els.downloadParserRegressionReportCsvBtn) els.downloadParserRegressionReportCsvBtn.addEventListener('click', downloadParserRegressionReportCsv);
+    if (isCapabilityEnabled('parserTestCapture')) {
+      if (els.runBuiltInParserTestsBtn) els.runBuiltInParserTestsBtn.addEventListener('click', runBuiltInParserTests);
+      if (els.runParserTestBtn) els.runParserTestBtn.addEventListener('click', runParserTest);
+      if (els.clearParserTestBtn) els.clearParserTestBtn.addEventListener('click', clearParserTest);
+      if (els.loadParserRegressionFileBtn && els.parserRegressionFileInput) els.loadParserRegressionFileBtn.addEventListener('click', () => els.parserRegressionFileInput.click());
+      if (els.parserRegressionFileInput) els.parserRegressionFileInput.addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        if (file) loadParserRegressionCasesFromFile(file);
+        event.target.value = '';
+      });
+      if (els.runParserRegressionBtn) els.runParserRegressionBtn.addEventListener('click', () => runParserRegressionTests());
+      if (els.generateParserRegressionBtn) els.generateParserRegressionBtn.addEventListener('click', generateAndRunParserRegressionTests);
+      if (els.loadCapturedParserTestsBtn) els.loadCapturedParserTestsBtn.addEventListener('click', loadCapturedParserTestsIntoRegression);
+      if (els.downloadCapturedParserTestsBtn) els.downloadCapturedParserTestsBtn.addEventListener('click', downloadCapturedParserTestCases);
+      if (els.downloadParserRegressionCasesBtn) els.downloadParserRegressionCasesBtn.addEventListener('click', downloadParserRegressionCases);
+      if (els.downloadParserRegressionReportJsonBtn) els.downloadParserRegressionReportJsonBtn.addEventListener('click', downloadParserRegressionReportJson);
+      if (els.downloadParserRegressionReportCsvBtn) els.downloadParserRegressionReportCsvBtn.addEventListener('click', downloadParserRegressionReportCsv);
+    }
     els.fontMinusBtn.addEventListener('click', () => adjustSelectedFontSize(-1));
     els.fontPlusBtn.addEventListener('click', () => adjustSelectedFontSize(1));
     els.lineMinusBtn.addEventListener('click', () => adjustSelectedLineHeight(-1));
     els.linePlusBtn.addEventListener('click', () => adjustSelectedLineHeight(1));
+    }
 
     els.loadDataInput.addEventListener('change', (event) => {
       const file = event.target.files?.[0];
@@ -1355,6 +1413,7 @@ function getTherapySuggestionPanel(targetId) {
     window.addEventListener('dragleave', handleWindowDragLeave);
     window.addEventListener('drop', handleWindowDrop);
 
+    if (isCapabilityEnabled('adminDashboard')) {
     els.loadCalibrationInput.addEventListener('change', (event) => {
       const file = event.target.files?.[0];
       if (file) loadCalibrationFromFile(file);
@@ -1394,8 +1453,11 @@ function getTherapySuggestionPanel(targetId) {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
+    }
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('resize', renderAdminOverlays);
+    window.addEventListener('resize', () => {
+      if (isCapabilityEnabled('adminDashboard')) renderAdminOverlays();
+    });
     window.addEventListener('pageshow', () => {
       setDisplayTogglesDefaultOn();
       renderAll();
@@ -1409,12 +1471,14 @@ function getTherapySuggestionPanel(targetId) {
   }
 
   async function init() {
-    liftAdminPanelAboveApp();
-    populateAdminLayoutSelect();
-    populateAdminFieldSelect();
-    forceAdminModeOffOnStartup();
-    exposePrintQaHooks();
-    updateAdminAccessVisibility();
+    if (isCapabilityEnabled('adminDashboard')) {
+      liftAdminPanelAboveApp();
+      populateAdminLayoutSelect();
+      populateAdminFieldSelect();
+      forceAdminModeOffOnStartup();
+      updateAdminAccessVisibility();
+    }
+    if (isLocalQaRuntime()) exposePrintQaHooks();
     setDisplayTogglesDefaultOn();
     applyPatientMode(DEFAULT_PATIENT_MODE, { renderLists: false });
     renderPatientSyncState();
@@ -1423,10 +1487,11 @@ function getTherapySuggestionPanel(targetId) {
     expandDefaultTextFields();
     wireEvents();
     exposeClinicalRecordHelpers();
-    exposeParserTestCaptureHelpers();
+    if (isCapabilityEnabled('parserTestCapture')) exposeParserTestCaptureHelpers();
     restorePatientDraftOnStartup();
     initFocusExpandingTextBoxes();
-    initSpeechInputControls();
+    if (isCapabilityEnabled('therapySpeechInput')) initSpeechInputControls();
+    applyProductionClinicalSafetyGate();
 
     // Prikaži listu odmah, čak i prije dovršetka učitavanja ugrađene podloge.
     renderAll();

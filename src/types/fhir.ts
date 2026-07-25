@@ -9,6 +9,7 @@ export type FhirResourceType =
   | "MedicationStatement"
   | "Observation"
   | "DiagnosticReport"
+  | "Provenance"
   | "Specimen";
 
 export interface FhirIdentifier {
@@ -35,6 +36,8 @@ export interface FhirReference {
 export interface FhirMeta {
   profile?: string[];
   lastUpdated?: ISODateTimeString;
+  source?: string;
+  tag?: FhirCoding[];
 }
 
 export interface FhirResourceBase {
@@ -113,6 +116,18 @@ export interface FhirDiagnosticReport extends FhirResourceBase {
   conclusion?: string;
 }
 
+export interface FhirProvenance extends FhirResourceBase {
+  resourceType: "Provenance";
+  target: FhirReference[];
+  recorded: ISODateTimeString;
+  activity?: FhirCodeableConcept;
+  agent: Array<{ type?: FhirCodeableConcept; who: FhirReference }>;
+  entity?: Array<{
+    role: "derivation" | "revision" | "quotation" | "source" | "removal";
+    what: FhirReference & { identifier?: FhirIdentifier };
+  }>;
+}
+
 export type FhirResource =
   | FhirPatient
   | FhirEncounter
@@ -120,7 +135,8 @@ export type FhirResource =
   | FhirAllergyIntolerance
   | FhirMedicationStatement
   | FhirObservation
-  | FhirDiagnosticReport;
+  | FhirDiagnosticReport
+  | FhirProvenance;
 
 export interface FhirBundleEntry {
   fullUrl?: string;
@@ -129,6 +145,8 @@ export interface FhirBundleEntry {
 
 export interface FhirBundle {
   resourceType: "Bundle";
+  id?: string;
+  meta?: FhirMeta;
   type: "document" | "collection";
   timestamp?: ISODateTimeString;
   entry: FhirBundleEntry[];
@@ -141,6 +159,10 @@ export interface BasicFhirValidationIssue {
 }
 
 export interface BasicFhirValidationResult {
+  ok: boolean;
   valid: boolean;
+  errors: string[];
   issues: BasicFhirValidationIssue[];
+  fhirVersion: "4.0.1";
+  experimental: true;
 }

@@ -1,0 +1,25 @@
+{
+  "schema": "temperaturna-lista-fhir-profile-manifest-v1",
+  "status": "experimental",
+  "fhirVersion": "4.0.1",
+  "warning": "Local experimental constraints only. Not approved by a hospital integration authority.",
+  "profiles": {
+    "Bundle": "urn:temperaturna-lista:fhir:StructureDefinition:bundle-experimental-v1",
+    "Patient": "urn:temperaturna-lista:fhir:StructureDefinition:patient-experimental-v1",
+    "Encounter": "urn:temperaturna-lista:fhir:StructureDefinition:encounter-experimental-v1",
+    "Condition": "urn:temperaturna-lista:fhir:StructureDefinition:condition-experimental-v1",
+    "AllergyIntolerance": "urn:temperaturna-lista:fhir:StructureDefinition:allergy-intolerance-experimental-v1",
+    "MedicationStatement": "urn:temperaturna-lista:fhir:StructureDefinition:medication-statement-experimental-v1",
+    "Observation": "urn:temperaturna-lista:fhir:StructureDefinition:observation-experimental-v1",
+    "DiagnosticReport": "urn:temperaturna-lista:fhir:StructureDefinition:diagnostic-report-experimental-v1",
+    "Provenance": "urn:temperaturna-lista:fhir:StructureDefinition:provenance-experimental-v1"
+  },
+  "requiredBundleRules": [
+    "Bundle.type is collection",
+    "Bundle is tagged experimental and FHIR 4.0.1",
+    "Patient, Encounter and Provenance are present",
+    "Every generated resource declares its experimental profile",
+    "Every reference resolves inside the Bundle",
+    "Provenance targets every non-Provenance resource and identifies an export actor"
+  ]
+}

@@ -4816,6 +4816,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function setFormData(data = {}) {
+    resetClinicalPrintReview({ render: false });
+    clearCurrentParserProvenance({ render: false });
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
     els.birthYear.value = data.birthYear || '';
@@ -4868,6 +4870,189 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     updateDisplayToggleUi();
     expandDefaultTextFields(data);
     scheduleAutoResizeTextareas();
+  }
+
+  const CLINICAL_PRINT_REVIEW_KEYS = Object.freeze({
+    identityEncounter: Object.freeze({
+      confirmed: 'identityEncounterConfirmed',
+      signature: 'identityEncounterSignature',
+      checkbox: 'confirmIdentityEncounter',
+      issue: 'izričita potvrda identiteta i encountera'
+    }),
+    allergyStatus: Object.freeze({
+      confirmed: 'allergyStatusConfirmed',
+      signature: 'allergyStatusSignature',
+      checkbox: 'confirmAllergyStatus',
+      issue: 'izričita potvrda alergijskog statusa'
+    }),
+    criticalFields: Object.freeze({
+      confirmed: 'criticalFieldsConfirmed',
+      signature: 'criticalFieldsSignature',
+      checkbox: 'confirmCriticalFields',
+      issue: 'potvrda terapije i kritičnih parsiranih polja'
+    })
+  });
+
+  function hashClinicalPrintReviewValue(value) {
+    const text = JSON.stringify(value);
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return `review-v1-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  }
+
+  function normalizeClinicalPrintReviewText(value) {
+    return normalizeLineBreaks(value || '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n+/g, '\n')
+      .trim();
+  }
+
+  function getClinicalOperatorName() {
+    return normalizeClinicalPrintReviewText(els.printOperatorName?.value || '')
+      .replace(/[<>]/g, '')
+      .slice(0, 120);
+  }
+
+  function reportMissingClinicalOperator() {
+    const message = 'Upišite ime i prezime operatera ispisa prije kliničke potvrde ili ispisa.';
+    if (els.printOperatorName) {
+      els.printOperatorName.setCustomValidity(message);
+      els.printOperatorName.focus();
+    }
+    setStatus(message, true);
+    return message;
+  }
+
+  function getClinicalPrintReviewSignatures(data = getFormData()) {
+    const operatorName = getClinicalOperatorName();
+    return {
+      identityEncounter: hashClinicalPrintReviewValue({
+        operatorName,
+        patientMode: getPatientModeFromData(data),
+        fullName: normalizeClinicalPrintReviewText(data.fullName),
+        birthYear: normalizeClinicalPrintReviewText(data.birthYear),
+        patientIdentifier: normalizeClinicalPrintReviewText(data.patientIdentifier),
+        encounterId: normalizeClinicalPrintReviewText(data.encounterId),
+        admissionDate: normalizeAdmissionDateInput(data.admissionDate),
+        room: normalizeClinicalPrintReviewText(data.room),
+        bed: normalizeClinicalPrintReviewText(data.bed)
+      }),
+      allergyStatus: hashClinicalPrintReviewValue({
+        operatorName,
+        allergies: normalizeClinicalPrintReviewText(data.allergies)
+      }),
+      criticalFields: hashClinicalPrintReviewValue({
+        operatorName,
+        diagnosis: normalizeClinicalPrintReviewText(data.diagnosis),
+        therapy: normalizeClinicalPrintReviewText(data.therapy),
+        ohbpTherapy: normalizeClinicalPrintReviewText(data.ohbpTherapy),
+        vitalSigns: normalizeClinicalPrintReviewText(data.vitalSigns),
+        labRaw: normalizeClinicalPrintReviewText(data.labRaw),
+        radiologyRaw: normalizeClinicalPrintReviewText(data.radiologyRaw),
+        followUpControlDate: normalizeAdmissionDateInput(data.followUpControlDate),
+        followUpControl: normalizeClinicalPrintReviewText(data.followUpControl),
+        parserSource: normalizeClinicalPrintReviewText(
+          state.ohbpLastParsedText || els.ambulatoryPasteBox?.value || ''
+        )
+      })
+    };
+  }
+
+  function resetClinicalPrintReview(options = {}) {
+    Object.values(CLINICAL_PRINT_REVIEW_KEYS).forEach((config) => {
+      state.clinicalPrintReview[config.confirmed] = false;
+      state.clinicalPrintReview[config.signature] = '';
+    });
+    state.clinicalPrintReview.confirmedAt = '';
+    state.clinicalPrintReview.confirmedBy = '';
+    if (options.render !== false) renderClinicalPrintReview({ reconcile: false });
+  }
+
+  function reconcileClinicalPrintReview(data = getFormData(), options = {}) {
+    const signatures = getClinicalPrintReviewSignatures(data);
+    let invalidated = false;
+    Object.entries(CLINICAL_PRINT_REVIEW_KEYS).forEach(([key, config]) => {
+      if (
+        state.clinicalPrintReview[config.confirmed] &&
+        state.clinicalPrintReview[config.signature] !== signatures[key]
+      ) {
+        state.clinicalPrintReview[config.confirmed] = false;
+        state.clinicalPrintReview[config.signature] = '';
+        setParserProvenanceGroupConfirmation(key, false, { reason: 'changed-after-parse' });
+        invalidated = true;
+      }
+    });
+    if (invalidated) {
+      state.clinicalPrintReview.confirmedAt = '';
+      state.clinicalPrintReview.confirmedBy = '';
+    }
+    if (options.render !== false) renderClinicalPrintReview({ reconcile: false });
+    return invalidated;
+  }
+
+  function setClinicalPrintReviewConfirmation(key, checked) {
+    const config = CLINICAL_PRINT_REVIEW_KEYS[key];
+    if (!config) return false;
+    if (checked && !getClinicalOperatorName()) {
+      state.clinicalPrintReview[config.confirmed] = false;
+      state.clinicalPrintReview[config.signature] = '';
+      reportMissingClinicalOperator();
+      renderClinicalPrintReview({ reconcile: false });
+      return false;
+    }
+    const signatures = getClinicalPrintReviewSignatures();
+    state.clinicalPrintReview[config.confirmed] = Boolean(checked);
+    state.clinicalPrintReview[config.signature] = checked ? signatures[key] : '';
+    setParserProvenanceGroupConfirmation(key, Boolean(checked), {
+      reason: checked ? 'confirmed' : 'unconfirmed'
+    });
+
+    const allConfirmed = Object.values(CLINICAL_PRINT_REVIEW_KEYS)
+      .every((item) => state.clinicalPrintReview[item.confirmed]);
+    if (allConfirmed) {
+      state.clinicalPrintReview.confirmedAt = new Date().toISOString();
+      state.clinicalPrintReview.confirmedBy = getClinicalOperatorName();
+    } else {
+      state.clinicalPrintReview.confirmedAt = '';
+      state.clinicalPrintReview.confirmedBy = '';
+    }
+    renderClinicalPrintReview({ reconcile: false });
+    return true;
+  }
+
+  function renderClinicalPrintReview(options = {}) {
+    if (!els.clinicalPrintReview) return;
+    if (options.reconcile !== false) reconcileClinicalPrintReview(getFormData(), { render: false });
+
+    const confirmedCount = Object.values(CLINICAL_PRINT_REVIEW_KEYS).reduce((count, config) => {
+      const checked = Boolean(state.clinicalPrintReview[config.confirmed]);
+      const checkbox = els[config.checkbox];
+      if (checkbox) checkbox.checked = checked;
+      return count + (checked ? 1 : 0);
+    }, 0);
+    const allConfirmed = confirmedCount === Object.keys(CLINICAL_PRINT_REVIEW_KEYS).length;
+    if (els.clinicalPrintReviewStatus) {
+      els.clinicalPrintReviewStatus.dataset.reviewState = allConfirmed ? 'confirmed' : 'pending';
+      if (allConfirmed) {
+        const confirmedAt = new Date(state.clinicalPrintReview.confirmedAt);
+        const timeLabel = Number.isNaN(confirmedAt.getTime())
+          ? ''
+          : confirmedAt.toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' });
+        els.clinicalPrintReviewStatus.textContent = `Sve 3 potvrde vrijede za trenutačni sadržaj${timeLabel ? ` (${timeLabel})` : ''}.`;
+      } else {
+        els.clinicalPrintReviewStatus.textContent = `Potrebne su još ${3 - confirmedCount} od 3 završne potvrde prije ispisa.`;
+      }
+    }
+  }
+
+  function getClinicalPrintReviewIssues(data = getFormData()) {
+    reconcileClinicalPrintReview(data, { render: true });
+    return Object.values(CLINICAL_PRINT_REVIEW_KEYS)
+      .filter((config) => !state.clinicalPrintReview[config.confirmed])
+      .map((config) => config.issue);
   }
 
   function splitClinicalLines(value) {
@@ -4972,6 +5157,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (/\bs\.?\s*c\.?\b/i.test(text)) return 's.c.';
     if (/\bi\.?\s*m\.?\b/i.test(text)) return 'i.m.';
     if (/\binh\.?|\binhal/i.test(text)) return 'inh.';
+    if (/\b(?:tbl|tabl|tableta|tablete|kaps|kapsula|kapsule|sir|sirup)\b/i.test(text)) return 'p.o.';
     return '';
   }
 
@@ -4986,7 +5172,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function parseMedicationLine(line, index, sourceText = 'therapy') {
     const clean = normalizeClinicalText(line, 500);
     const name = normalizedMedicationName(clean) || clean.split(/\s+/).slice(0, 3).join(' ');
-    const doseMatch = clean.match(/\b\d+(?:[,.]\d+)?\s*(mg|g|mcg|ug|µg|ml|mmol|ij|iu|%)\b/i);
+    const doseMatch = clean.match(/\b\d+(?:[,.]\d+)?\s*(mg|g|mcg|ug|µg|ml|mmol|ij|iu|%|tbl|tabl|kaps|amp|inj|inh|gtt)\b/i);
     return {
       id: makeClinicalItemId(sourceText === 'ohbpTherapy' ? 'ohbp-med' : 'med', index),
       name,
@@ -5156,10 +5342,12 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       },
       metadata: {
         appVersion: APP_VERSION,
+        buildSha: APP_BUILD_SHA,
         createdAt: options.createdAt || nowIso,
         updatedAt: nowIso,
         source: options.source || 'form',
-        parserVersion: APP_VERSION
+        parserVersion: PARSER_VERSION,
+        parserProvenance: serializeCurrentParserProvenance()
       }
     };
   }
@@ -5212,10 +5400,10 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         }
       }
       if (med.sourceText && !med.dose) {
-        issues.push(makeValidationIssue('info', `medications[${index}].dose`, `Redak terapije nema prepoznatu dozu: ${med.sourceText}.`));
+        issues.push(makeValidationIssue('critical', `medications[${index}].dose`, `Redak terapije nema prepoznatu dozu: ${med.sourceText}.`));
       }
       if (med.sourceText && !med.route) {
-        issues.push(makeValidationIssue('info', `medications[${index}].route`, `Redak terapije nema prepoznat put primjene: ${med.sourceText}.`));
+        issues.push(makeValidationIssue('critical', `medications[${index}].route`, `Redak terapije nema prepoznat put primjene: ${med.sourceText}.`));
       }
     });
     return issues;
@@ -5340,12 +5528,17 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
 
   function clinicalRecordToFhirBundle(record, options = {}) {
     const bundleId = options.id || `temperaturna-lista-${Date.now()}`;
+    const exportTimestamp = options.timestamp || new Date().toISOString();
     const patientIdentifierValue = record.patient?.patientIdentifiers?.[0]?.value || '';
     const patientId = makeFhirSafeId(options.patientId || patientIdentifierValue, 'patient-1');
     const encounterId = makeFhirSafeId(options.encounterId || record.encounter?.id || '', 'encounter-1');
     const entries = [];
     const push = (resource) => {
-      entries.push({ fullUrl: `urn:uuid:${resource.resourceType}-${resource.id}`, resource });
+      const profile = FHIR_RESOURCE_PROFILES[resource.resourceType];
+      const profiledResource = profile
+        ? { ...resource, meta: { ...(resource.meta || {}), profile: [profile] } }
+        : resource;
+      entries.push({ fullUrl: `urn:uuid:${profiledResource.resourceType}-${profiledResource.id}`, resource: profiledResource });
     };
     push({
       resourceType: 'Patient',
@@ -5383,7 +5576,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patient: { reference: `Patient/${patientId}` },
       clinicalStatus: { text: allergy.status || 'active' },
       code: { text: allergy.substance || '' },
-      reaction: allergy.reaction ? [{ description: allergy.reaction }] : []
+      reaction: allergy.reaction ? [{ manifestation: [{ text: allergy.reaction }], description: allergy.reaction }] : []
     }));
     (record.medications || []).forEach((medication, index) => push({
       resourceType: 'MedicationStatement',
@@ -5441,17 +5634,53 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       encounter: { reference: `Encounter/${encounterId}` },
       conclusion: micro.resultText || micro.sourceText || ''
     }));
+    const provenanceTargets = entries.map(entry => ({ reference: entry.fullUrl }));
+    push({
+      resourceType: 'Provenance',
+      id: makeFhirSafeId(options.provenanceId, 'provenance-1'),
+      target: provenanceTargets,
+      recorded: exportTimestamp,
+      activity: {
+        coding: [{
+          system: 'urn:temperaturna-lista:fhir:CodeSystem/export-activity',
+          code: 'local-export',
+          display: 'Local experimental FHIR export'
+        }],
+        text: 'Experimental local FHIR export'
+      },
+      agent: [{
+        type: { text: 'author' },
+        who: { display: normalizeClinicalIdentifierText(options.actorDisplay || record.metadata?.actor || 'Lokalni korisnik', 120) }
+      }],
+      entity: [{
+        role: 'source',
+        what: {
+          identifier: {
+            system: 'urn:temperaturna-lista:clinical-record-schema',
+            value: normalizeClinicalIdentifierText(record.schema || CLINICAL_RECORD_SCHEMA, 120)
+          },
+          display: `${record.metadata?.appVersion || APP_VERSION} / ${record.metadata?.buildSha || APP_BUILD_SHA}`
+        }
+      }]
+    });
     return {
       resourceType: 'Bundle',
       id: bundleId,
       type: 'collection',
-      meta: { source: FHIR_EXPORT_SCHEMA },
-      timestamp: new Date().toISOString(),
+      meta: {
+        profile: [FHIR_RESOURCE_PROFILES.Bundle],
+        source: `urn:temperaturna-lista:fhir:${FHIR_EXPORT_SCHEMA}`,
+        tag: [
+          { system: FHIR_EXPERIMENTAL_TAG_SYSTEM, code: 'experimental', display: 'Experimental export - not clinically validated' },
+          { system: 'http://hl7.org/fhir/FHIR-version', code: FHIR_VERSION, display: `FHIR R4 ${FHIR_VERSION}` }
+        ]
+      },
+      timestamp: exportTimestamp,
       entry: entries
     };
   }
 
-  function validateBasicFhirBundle(bundle) {
+  function validateLegacyBasicFhirBundle(bundle) {
     const errors = [];
     if (!bundle || bundle.resourceType !== 'Bundle') errors.push('FHIR payload mora biti Bundle.');
     if (bundle?.type !== 'collection') errors.push('Bundle.type mora biti collection.');
@@ -5460,6 +5689,83 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (!resourceTypes.has('Patient')) errors.push('Bundle mora sadržavati Patient.');
     if (!resourceTypes.has('Encounter')) errors.push('Bundle mora sadržavati Encounter.');
     return { ok: errors.length === 0, errors };
+  }
+
+  function validateBasicFhirBundle(bundle) {
+    const issues = [];
+    const addIssue = (code, message, entryIndex = undefined) => issues.push({ code, message, ...(entryIndex == null ? {} : { entryIndex }) });
+    if (!bundle || bundle.resourceType !== 'Bundle') addIssue('bundle-type', 'FHIR payload mora biti Bundle.');
+    if (bundle?.type !== 'collection') addIssue('bundle-collection', 'Bundle.type mora biti collection.');
+    if (!Array.isArray(bundle?.entry) || !bundle.entry.length) addIssue('bundle-entry', 'Bundle mora imati entry zapise.');
+    if (!bundle?.meta?.profile?.includes(FHIR_RESOURCE_PROFILES.Bundle)) addIssue('bundle-profile', 'Bundle nema eksperimentalni Temperaturna lista profil.');
+    const tags = Array.isArray(bundle?.meta?.tag) ? bundle.meta.tag : [];
+    if (!tags.some(tag => tag?.system === FHIR_EXPERIMENTAL_TAG_SYSTEM && tag?.code === 'experimental')) {
+      addIssue('experimental-tag', 'Bundle mora biti jasno oznacen kao eksperimentalan.');
+    }
+    if (!tags.some(tag => tag?.system === 'http://hl7.org/fhir/FHIR-version' && tag?.code === FHIR_VERSION)) {
+      addIssue('fhir-version', `Bundle mora deklarirati FHIR R4 ${FHIR_VERSION}.`);
+    }
+    if (!Number.isFinite(Date.parse(bundle?.timestamp || ''))) addIssue('bundle-timestamp', 'Bundle.timestamp nije valjan datum/vrijeme.');
+
+    const entries = Array.isArray(bundle?.entry) ? bundle.entry : [];
+    const resourceTypes = new Set();
+    const fullUrls = new Set();
+    const relativeReferences = new Set();
+    entries.forEach((entry, index) => {
+      const resource = entry?.resource;
+      const resourceType = resource?.resourceType || '';
+      const resourceId = resource?.id || '';
+      if (!resource || !resourceType) addIssue('entry-resource', 'Bundle entry nema valjani resource.', index);
+      if (!entry?.fullUrl || fullUrls.has(entry.fullUrl)) addIssue('entry-full-url', 'Bundle fullUrl nedostaje ili nije jedinstven.', index);
+      if (entry?.fullUrl) fullUrls.add(entry.fullUrl);
+      if (!/^[A-Za-z0-9.-]{1,64}$/.test(resourceId)) addIssue('resource-id', 'FHIR resource.id nije valjan.', index);
+      resourceTypes.add(resourceType);
+      if (resourceType && resourceId) relativeReferences.add(`${resourceType}/${resourceId}`);
+      const expectedProfile = FHIR_RESOURCE_PROFILES[resourceType];
+      if (!expectedProfile) addIssue('resource-type', `Nepodrzan resourceType: ${resourceType || '(prazno)'}.`, index);
+      if (expectedProfile && !resource?.meta?.profile?.includes(expectedProfile)) {
+        addIssue('resource-profile', `${resourceType} nema ocekivani eksperimentalni profil.`, index);
+      }
+    });
+    if (!resourceTypes.has('Patient')) addIssue('patient-required', 'Bundle mora sadrzavati Patient.');
+    if (!resourceTypes.has('Encounter')) addIssue('encounter-required', 'Bundle mora sadrzavati Encounter.');
+    if (!resourceTypes.has('Provenance')) addIssue('provenance-required', 'Bundle mora sadrzavati Provenance.');
+
+    const referenceValues = [];
+    const collectReferences = (value) => {
+      if (!value || typeof value !== 'object') return;
+      if (typeof value.reference === 'string') referenceValues.push(value.reference);
+      Object.values(value).forEach(child => {
+        if (child && typeof child === 'object') collectReferences(child);
+      });
+    };
+    entries.forEach(entry => collectReferences(entry?.resource));
+    referenceValues.forEach(reference => {
+      if (!fullUrls.has(reference) && !relativeReferences.has(reference)) {
+        addIssue('unresolved-reference', `Nerazrijesena FHIR referenca: ${reference}.`);
+      }
+    });
+
+    const provenance = entries.find(entry => entry?.resource?.resourceType === 'Provenance')?.resource;
+    const nonProvenanceTargets = entries.filter(entry => entry?.resource?.resourceType !== 'Provenance').map(entry => entry.fullUrl);
+    const provenanceTargets = new Set((provenance?.target || []).map(target => target?.reference).filter(Boolean));
+    if (!Number.isFinite(Date.parse(provenance?.recorded || ''))) addIssue('provenance-recorded', 'Provenance.recorded nije valjan datum/vrijeme.');
+    if (!Array.isArray(provenance?.agent) || !provenance.agent.length || !provenance.agent[0]?.who?.display) {
+      addIssue('provenance-agent', 'Provenance mora imati autora izvoza.');
+    }
+    nonProvenanceTargets.forEach(reference => {
+      if (!provenanceTargets.has(reference)) addIssue('provenance-target', `Provenance ne pokriva resource ${reference}.`);
+    });
+
+    const errors = issues.map(issue => issue.message);
+    return {
+      ok: issues.length === 0,
+      valid: issues.length === 0,
+      errors,
+      issues,
+      fhirVersion: FHIR_VERSION,
+      experimental: true
+    };
   }
 
   function buildCurrentFhirBundle() {
@@ -5476,11 +5782,15 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     }
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/fhir+json;charset=utf-8' });
     downloadBlob(`temperaturna_lista_fhir_${parserRegressionTimestampForFile()}.json`, blob);
-    setStatus('FHIR JSON Bundle je preuzet.');
+    setStatus('Eksperimentalni FHIR R4 JSON Bundle je preuzet. Potrebna je vanjska profilna validacija prije integracije.');
     return true;
   }
 
   async function copyFhirBundleToClipboard(record = patientDataToClinicalRecordV1(getFormData(), { source: 'fhir-export' })) {
+    if (!isCapabilityEnabled('fhirClipboard')) {
+      setStatus('Kopiranje FHIR podataka u clipboard nije odobreno u produkcijskom kliničkom načinu. Za odobreni testni izvoz koristi preuzimanje datoteke.', true);
+      return false;
+    }
     const bundle = clinicalRecordToFhirBundle(record);
     const validation = validateBasicFhirBundle(bundle);
     if (!validation.ok) {
@@ -5501,6 +5811,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     window.TemperaturnaListaClinical = {
       schema: CLINICAL_RECORD_SCHEMA,
       fhirExportSchema: FHIR_EXPORT_SCHEMA,
+      fhirVersion: FHIR_VERSION,
+      fhirProfiles: FHIR_RESOURCE_PROFILES,
       fromPatientData: (data, options = {}) => patientDataToClinicalRecordV1(data, options),
       fromCurrentForm: () => patientDataToClinicalRecordV1(getFormData(), { source: 'current-form' }),
       validateClinicalRecord,
@@ -5536,6 +5848,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       els.ohbpPasteBox.value = '';
     }
     state.ohbpLastParsedText = '';
+    resetClinicalPrintReview({ render: false });
     setOhbpParseStatus('');
     clearPatientDraft({ quiet: true });
     renderAll();
@@ -5602,4 +5915,3 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
 
-  

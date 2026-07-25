@@ -115,6 +115,8 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function renderAll() {
+    renderClinicalPrintReview();
+    renderParserProvenance();
     let model;
     try {
       model = deriveDocumentModel(getFormData());
@@ -137,7 +139,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     try {
       updateTextOverflowWarningStatus(collectTextOverflowWarnings(model));
       updateFastFocusPanel(model);
-      renderAdminOverlays();
+      if (isCapabilityEnabled('adminDashboard')) renderAdminOverlays();
       updateLabWarningStatus(model.labWarnings || []);
     } catch (error) {
       console.error('Greška pomoćnih preview panela.', error);
@@ -240,11 +242,15 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return finalName;
   }
 
-  function buildPatientDataEnvelope(exportedAt = new Date()) {
+  function buildPatientDataEnvelope(exportedAt = new Date(), data = getFormData()) {
+    const parserProvenance = serializeCurrentParserProvenance();
     return {
       version: 1,
+      appVersion: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
       exportedAt: exportedAt.toISOString(),
-      data: getFormData()
+      data,
+      ...(parserProvenance ? { parserProvenance } : {})
     };
   }
 
@@ -263,18 +269,21 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     };
   }
 
-  function buildDowntimeBackupEnvelope(exportedAt = new Date()) {
+  function buildDowntimeBackupPayload(exportedAt = new Date()) {
+    const parserProvenance = serializeCurrentParserProvenance();
     return {
-      schema: DOWNTIME_BACKUP_SCHEMA,
+      schema: DOWNTIME_BACKUP_PAYLOAD_SCHEMA,
       version: 1,
       appVersion: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
       exportedAt: exportedAt.toISOString(),
       containsPatientData: true,
       authorizedUseOnly: true,
       retentionPolicy: RETENTION_POLICY,
       availability: { ...state.appAvailability },
       authContext: getBackupAuthContextSnapshot(),
-      data: getFormData()
+      data: getFormData(),
+      ...(parserProvenance ? { parserProvenance } : {})
     };
   }
 
@@ -360,6 +369,192 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     );
   }
 
+  function getDowntimeBackupExpiry(exportedAt = new Date()) {
+    const base = exportedAt instanceof Date ? exportedAt : new Date(exportedAt);
+    const safeBase = Number.isNaN(base.getTime()) ? new Date() : base;
+    return new Date(safeBase.getTime() + (RETENTION_POLICY.patientDays * 24 * 60 * 60 * 1000)).toISOString();
+  }
+
+  function getSafeDowntimeBackupFilename(exportedAt = new Date()) {
+    const date = exportedAt instanceof Date ? exportedAt : new Date(exportedAt);
+    const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+    const timestamp = [
+      safeDate.getFullYear(),
+      String(safeDate.getMonth() + 1).padStart(2, '0'),
+      String(safeDate.getDate()).padStart(2, '0'),
+      '_',
+      String(safeDate.getHours()).padStart(2, '0'),
+      String(safeDate.getMinutes()).padStart(2, '0'),
+      String(safeDate.getSeconds()).padStart(2, '0')
+    ].join('');
+    const randomBytes = new Uint8Array(4);
+    crypto.getRandomValues(randomBytes);
+    const randomId = Array.from(randomBytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
+    return `TL_DOWNTIME_${timestamp}_${randomId}.json`;
+  }
+
+  function closeSecurePassphraseDialog(value = null) {
+    const request = securePassphraseRequest;
+    securePassphraseRequest = null;
+    if (els.securePassphraseDialog?.open) els.securePassphraseDialog.close();
+    if (els.securePassphraseForm) els.securePassphraseForm.reset();
+    if (els.securePassphraseError) els.securePassphraseError.textContent = '';
+    if (request?.resolve) request.resolve(value);
+  }
+
+  function ensureSecurePassphraseDialogHandlers() {
+    if (!els.securePassphraseDialog || els.securePassphraseDialog.dataset.bound === 'true') return;
+    els.securePassphraseDialog.dataset.bound = 'true';
+    els.securePassphraseCancelBtn?.addEventListener('click', () => closeSecurePassphraseDialog(null));
+    els.securePassphraseDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      closeSecurePassphraseDialog(null);
+    });
+    els.securePassphraseForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const passphrase = String(els.securePassphraseInput?.value || '');
+      const confirmation = String(els.securePassphraseConfirmInput?.value || '');
+      const needsConfirmation = securePassphraseRequest?.mode === 'create';
+      if (passphrase.length < DOWNTIME_BACKUP_MIN_PASSPHRASE_LENGTH) {
+        if (els.securePassphraseError) {
+          els.securePassphraseError.textContent = `Passphrase mora imati najmanje ${DOWNTIME_BACKUP_MIN_PASSPHRASE_LENGTH} znakova.`;
+        }
+        els.securePassphraseInput?.focus();
+        return;
+      }
+      if (needsConfirmation && passphrase !== confirmation) {
+        if (els.securePassphraseError) els.securePassphraseError.textContent = 'Upisane passphrase vrijednosti nisu jednake.';
+        els.securePassphraseConfirmInput?.focus();
+        return;
+      }
+      closeSecurePassphraseDialog(passphrase);
+    });
+  }
+
+  function requestSecurePassphrase(options = {}) {
+    if (!els.securePassphraseDialog || typeof els.securePassphraseDialog.showModal !== 'function') {
+      setStatus('Siguran unos passphrase nije dostupan u ovom pregledniku.', true);
+      return Promise.resolve(null);
+    }
+    if (securePassphraseRequest) closeSecurePassphraseDialog(null);
+    ensureSecurePassphraseDialogHandlers();
+    const mode = options.mode === 'unlock' ? 'unlock' : 'create';
+    if (els.securePassphraseTitle) {
+      els.securePassphraseTitle.textContent = mode === 'create'
+        ? 'Zaštiti downtime backup'
+        : 'Otključaj downtime backup';
+    }
+    if (els.securePassphraseDescription) {
+      els.securePassphraseDescription.textContent = mode === 'create'
+        ? 'Postavi passphrase od najmanje 12 znakova. Ne sprema se u aplikaciju i potrebna je za restore.'
+        : 'Unesi passphrase korištenu pri izradi backupa. Ne sprema se u aplikaciju.';
+    }
+    if (els.securePassphraseConfirmGroup) els.securePassphraseConfirmGroup.hidden = mode !== 'create';
+    if (els.securePassphraseConfirmInput) els.securePassphraseConfirmInput.required = mode === 'create';
+    if (els.securePassphraseSubmitBtn) els.securePassphraseSubmitBtn.textContent = mode === 'create' ? 'Šifriraj i preuzmi' : 'Otključaj i vrati';
+    if (els.securePassphraseError) els.securePassphraseError.textContent = '';
+    return new Promise((resolve) => {
+      securePassphraseRequest = { mode, resolve };
+      els.securePassphraseDialog.showModal();
+      window.setTimeout(() => els.securePassphraseInput?.focus(), 0);
+    });
+  }
+
+  async function encryptDowntimeBackupEnvelope(passphrase, exportedAt = new Date()) {
+    if (!hasPatientDraftCryptoSupport()) return { ok: false, reason: 'crypto-unavailable' };
+    if (String(passphrase || '').length < DOWNTIME_BACKUP_MIN_PASSPHRASE_LENGTH) {
+      return { ok: false, reason: 'weak-passphrase' };
+    }
+    const saltBytes = new Uint8Array(16);
+    const ivBytes = new Uint8Array(12);
+    crypto.getRandomValues(saltBytes);
+    crypto.getRandomValues(ivBytes);
+    const key = await derivePatientDraftKey(passphrase, saltBytes);
+    const encodedPayload = new TextEncoder().encode(JSON.stringify(buildDowntimeBackupPayload(exportedAt)));
+    const cipherBytes = new Uint8Array(await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: ivBytes },
+      key,
+      encodedPayload
+    ));
+    return {
+      ok: true,
+      envelope: {
+        schema: DOWNTIME_BACKUP_SCHEMA,
+        version: 2,
+        appVersion: APP_VERSION,
+        buildSha: APP_BUILD_SHA,
+        exportedAt: exportedAt.toISOString(),
+        expiresAt: getDowntimeBackupExpiry(exportedAt),
+        cipher: 'AES-GCM-256',
+        kdf: {
+          name: 'PBKDF2',
+          hash: 'SHA-256',
+          iterations: PATIENT_DRAFT_PBKDF2_ITERATIONS
+        },
+        salt: bytesToBase64(saltBytes),
+        iv: bytesToBase64(ivBytes),
+        payload: bytesToBase64(cipherBytes)
+      }
+    };
+  }
+
+  function validateEncryptedDowntimeBackupEnvelope(envelope) {
+    if (!isPlainJsonObject(envelope) || envelope.schema !== DOWNTIME_BACKUP_SCHEMA) {
+      return { ok: false, reason: 'invalid-envelope' };
+    }
+    const allowedKeys = ['schema', 'version', 'appVersion', 'buildSha', 'exportedAt', 'expiresAt', 'cipher', 'kdf', 'salt', 'iv', 'payload'];
+    if (getUnknownKeys(envelope, allowedKeys).length) return { ok: false, reason: 'unexpected-fields' };
+    if (envelope.version !== 2 || envelope.cipher !== 'AES-GCM-256') return { ok: false, reason: 'unsupported-version' };
+    if (!isPlainJsonObject(envelope.kdf)
+      || envelope.kdf.name !== 'PBKDF2'
+      || envelope.kdf.hash !== 'SHA-256'
+      || envelope.kdf.iterations !== PATIENT_DRAFT_PBKDF2_ITERATIONS) {
+      return { ok: false, reason: 'unsupported-kdf' };
+    }
+    if (!envelope.salt || !envelope.iv || !envelope.payload || String(envelope.payload).length > PATIENT_JSON_SCHEMA.maxFileSizeBytes * 3) {
+      return { ok: false, reason: 'invalid-ciphertext' };
+    }
+    const expiresAt = new Date(String(envelope.expiresAt || ''));
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) return { ok: false, reason: 'expired' };
+    return { ok: true };
+  }
+
+  async function decryptDowntimeBackupEnvelope(envelope, passphrase) {
+    const metadata = validateEncryptedDowntimeBackupEnvelope(envelope);
+    if (!metadata.ok) return metadata;
+    if (!hasPatientDraftCryptoSupport()) return { ok: false, reason: 'crypto-unavailable' };
+    try {
+      const saltBytes = base64ToBytes(envelope.salt);
+      const ivBytes = base64ToBytes(envelope.iv);
+      const cipherBytes = base64ToBytes(envelope.payload);
+      if (saltBytes.length !== 16 || ivBytes.length !== 12 || !cipherBytes.length) {
+        return { ok: false, reason: 'invalid-ciphertext' };
+      }
+      const key = await derivePatientDraftKey(passphrase, saltBytes);
+      const plainBytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBytes }, key, cipherBytes);
+      const payload = JSON.parse(new TextDecoder().decode(plainBytes));
+      if (!isPlainJsonObject(payload)
+        || payload.schema !== DOWNTIME_BACKUP_PAYLOAD_SCHEMA
+        || payload.authorizedUseOnly !== true
+        || payload.containsPatientData !== true) {
+        return { ok: false, reason: 'invalid-payload' };
+      }
+      const validated = validatePatientDataObject(payload.data);
+      if (!validated.ok) return { ok: false, reason: 'invalid-patient-data' };
+      return {
+        ok: true,
+        data: validated.data,
+        parserProvenance: sanitizeParserProvenanceForRestore(payload.parserProvenance),
+        source: 'downtime-backup',
+        exportedAt: String(payload.exportedAt || envelope.exportedAt || ''),
+        appVersion: String(payload.appVersion || envelope.appVersion || ''),
+        buildSha: String(payload.buildSha || envelope.buildSha || '')
+      };
+    } catch (error) {
+      return { ok: false, reason: 'wrong-passphrase' };
+    }
+  }
+
   function getPatientDraftDataSignature(data) {
     try {
       return JSON.stringify(data || {});
@@ -379,18 +574,21 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
   function buildPatientDraftPayload(savedAt = new Date(), options = {}) {
     const data = getFormData();
+    const parserProvenance = serializeCurrentParserProvenance();
     const startupRecovery = typeof options.startupRecovery === 'boolean'
       ? options.startupRecovery
       : shouldMarkPatientDraftForStartupRecovery(data);
     return {
       version: PATIENT_DRAFT_SCHEMA_VERSION,
       appVersion: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
       savedAt: savedAt.toISOString(),
       startupRecovery,
       recoveryReason: startupRecovery
         ? String(options.recoveryReason || 'unsaved-patient').slice(0, 80)
         : '',
-      data
+      data,
+      ...(parserProvenance ? { parserProvenance } : {})
     };
   }
 
@@ -412,6 +610,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
           kind: 'encrypted',
           version: Number(parsed.version || 0),
           appVersion: String(parsed.appVersion || ''),
+          buildSha: String(parsed.buildSha || ''),
           savedAt: String(parsed.savedAt || ''),
           expiresAt: String(parsed.expiresAt || ''),
           envelope: parsed
@@ -499,6 +698,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         schema: PATIENT_DRAFT_ENCRYPTION_SCHEMA,
         version: PATIENT_DRAFT_SCHEMA_VERSION,
         appVersion: APP_VERSION,
+        buildSha: APP_BUILD_SHA,
         savedAt,
         expiresAt,
         salt: bytesToBase64(saltBytes),
@@ -513,6 +713,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
           kind: 'encrypted',
           version: PATIENT_DRAFT_SCHEMA_VERSION,
           appVersion: APP_VERSION,
+          buildSha: APP_BUILD_SHA,
           savedAt,
           expiresAt,
           envelope
@@ -546,11 +747,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
           draft: {
             version: Number(parsed.version || 0),
             appVersion: String(parsed.appVersion || envelope.appVersion || ''),
+            buildSha: String(parsed.buildSha || envelope.buildSha || ''),
             savedAt: String(parsed.savedAt || envelope.savedAt || ''),
             expiresAt: String(parsed.expiresAt || envelope.expiresAt || ''),
             startupRecovery: Boolean(parsed.startupRecovery),
             recoveryReason: String(parsed.recoveryReason || ''),
-            data: validated.data
+            data: validated.data,
+            parserProvenance: sanitizeParserProvenanceForRestore(parsed.parserProvenance)
           }
         };
       } catch (error) {
@@ -735,6 +938,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     try {
       resetCurrentFirebasePatientContext();
       setFormData(draft.data);
+      restoreCurrentParserProvenance(draft.parserProvenance);
       renderAll();
       setPatientSyncState({
         status: 'localOnly',
@@ -869,10 +1073,14 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     const filename = ensureExtension(suggestedBase || `TL_BACKUP_${getLocalIsoDateString(savedAt)}`, '.json');
     const blob = new Blob([JSON.stringify(buildPatientDataEnvelope(savedAt), null, 2)], { type: 'application/json' });
     downloadBlob(filename, blob);
+    void writePatientAuditEvent('patient.localJsonBackupExport', {
+      trigger: 'patient-json-backup',
+      changeSummary: 'Lokalni JSON backup pacijenta preuzet je na zahtjev korisnika.'
+    });
     setStatus(`Backup pacijenta preuzet je kao JSON datoteka: ${filename}`);
   }
 
-  function downloadDowntimeBackupData() {
+  async function downloadDowntimeBackupData() {
     const savedAt = new Date();
     const currentData = getFormData();
     if (!isPatientDataDifferentFromEmpty(currentData)) {
@@ -880,60 +1088,142 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       setStatus('Nema unesenih podataka pacijenta za downtime backup.', true);
       return;
     }
-    savePatientDraftNow({ quiet: true, startupRecovery: false, recoveryReason: 'downtime-backup' });
-    const suggestedBase = getSuggestedPatientFilenameBase(PAGE.fileNames.patientData, '.json', savedAt)
-      .replace(/^TL_/, 'TL_DOWNTIME_BACKUP_');
-    const filename = ensureExtension(suggestedBase || `TL_DOWNTIME_BACKUP_${getLocalIsoDateString(savedAt)}`, '.json');
-    const blob = new Blob([JSON.stringify(buildDowntimeBackupEnvelope(savedAt), null, 2)], { type: 'application/json' });
+    const passphrase = await requestSecurePassphrase({ mode: 'create' });
+    if (!passphrase) {
+      setDowntimeBackupStatus('Preuzimanje šifriranog downtime backupa je otkazano.', 'warn');
+      return;
+    }
+    const encrypted = await encryptDowntimeBackupEnvelope(passphrase, savedAt);
+    if (!encrypted.ok) {
+      setDowntimeBackupStatus('Downtime backup nije moguće sigurno šifrirati u ovom pregledniku.', 'error');
+      setStatus('Šifriranje downtime backupa nije uspjelo.', true);
+      return;
+    }
+    const filename = getSafeDowntimeBackupFilename(savedAt);
+    const blob = new Blob([JSON.stringify(encrypted.envelope, null, 2)], { type: 'application/json' });
     downloadBlob(filename, blob);
-    setDowntimeBackupStatus(`Downtime backup preuzet: ${filename}. Datoteka sadrži kliničke podatke; čuvati samo na odobrenoj bolničkoj lokaciji.`, 'warn');
-    setStatus(`Downtime backup preuzet je kao JSON datoteka: ${filename}`);
+    void writePatientAuditEvent('patient.backupExport', {
+      trigger: 'downtime-backup',
+      changeSummary: 'Šifrirani downtime backup preuzet je lokalno.'
+    });
+    setDowntimeBackupStatus(`Šifrirani downtime backup preuzet: ${filename}. Passphrase nije spremljena; čuvaj je odvojeno.`, 'ok');
+    setStatus(`Šifrirani downtime backup preuzet je kao lokalna JSON datoteka: ${filename}`);
   }
 
   async function savePatientData() {
+    if (state.patientSyncState.saveInFlight) {
+      setStatus('Spremanje lokalnog JSON-a je već u tijeku. Pričekajte završetak.', true);
+      return false;
+    }
+
+    const dataAtExportStart = getFormData();
+    if (!String(dataAtExportStart.fullName || '').trim()) {
+      const message = 'Pacijent neće biti spremljen jer ime i prezime nisu uneseni.';
+      setStatus(message, true);
+      try {
+        window.alert(message);
+      } catch (error) {
+        // Status bar remains the fallback when dialogs are not available.
+      }
+      return false;
+    }
+
     const savedAt = new Date();
+    const exportedVersion = getPatientSyncVersion(dataAtExportStart);
     const suggestedFilename = ensureExtension(
       getSuggestedPatientFilenameBase(PAGE.fileNames.patientData, '.json', savedAt) || PAGE.fileNames.patientData,
       '.json'
     );
     savePatientDraftNow({ quiet: true });
-    const payload = buildPatientDataEnvelope(savedAt);
+    const payload = buildPatientDataEnvelope(savedAt, dataAtExportStart);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    let exportCompleted = false;
 
-    if (supportsNativeSavePicker()) {
-      try {
-        const savedName = await saveBlobWithNativePicker(blob, suggestedFilename, {
-          types: [
-            {
-              description: 'JSON podatci pacijenta',
-              accept: { 'application/json': ['.json'] }
-            }
-          ]
-        });
-        if (!savedName) return;
-        savePatientDraftNow({ quiet: true, startupRecovery: false, recoveryReason: 'manual-json-save' });
-        setStatus(`Podaci pacijenta spremljeni su u JSON datoteku: ${savedName}`);
-        return;
-      } catch (error) {
-        if (error && error.name === 'AbortError') {
-          setStatus('Spremanje podataka je otkazano.');
-          return;
+    setPatientSyncState({
+      status: 'saving',
+      lastSaveTarget: 'local-json',
+      lastError: '',
+      currentPatientVersion: exportedVersion,
+      hasUnsavedChanges: true,
+      saveInFlight: true
+    });
+    updateFirebasePatientControls();
+
+    try {
+      if (supportsNativeSavePicker()) {
+        try {
+          const savedName = await saveBlobWithNativePicker(blob, suggestedFilename, {
+            types: [
+              {
+                description: 'JSON podatci pacijenta',
+                accept: { 'application/json': ['.json'] }
+              }
+            ]
+          });
+          if (!savedName) {
+            setStatus('Spremanje podataka je otkazano.');
+            return false;
+          }
+          exportCompleted = true;
+          savePatientDraftNow({ quiet: true, startupRecovery: false, recoveryReason: 'manual-json-save' });
+          markPatientJsonExported(savedAt, exportedVersion);
+          void writePatientAuditEvent('patient.localJsonExport', {
+            trigger: 'patient-json-save-picker',
+            changeSummary: 'Lokalni JSON pacijenta spremljen je na zahtjev korisnika.'
+          });
+          setStatus(`Podaci pacijenta spremljeni su u JSON datoteku: ${savedName}`);
+          return true;
+        } catch (error) {
+          if (error && error.name === 'AbortError') {
+            setStatus('Spremanje podataka je otkazano.');
+            return false;
+          }
+          console.warn('Save picker nije uspio, koristi se standardno preuzimanje.', error);
+          setStatus('Preglednik nije dopustio odabir mjesta spremanja. Koristi se standardno preuzimanje.', true);
         }
-        console.warn('Save picker nije uspio, koristi se standardno preuzimanje.', error);
-        setStatus('Preglednik nije dopustio odabir mjesta spremanja. Koristi se standardno preuzimanje.', true);
       }
-    }
 
-    const filename = askFilename(
-      PAGE.fileNames.patientData,
-      '.json',
-      'spremanje podataka',
-      suggestedFilename.replace(/\.json$/i, '')
-    );
-    if (!filename) return;
-    downloadBlob(filename, blob);
-    savePatientDraftNow({ quiet: true, startupRecovery: false, recoveryReason: 'manual-json-save' });
-    setStatus(`Podaci pacijenta spremljeni su u JSON datoteku: ${filename}`);
+      const filename = askFilename(
+        PAGE.fileNames.patientData,
+        '.json',
+        'spremanje podataka',
+        suggestedFilename.replace(/\.json$/i, '')
+      );
+      if (!filename) {
+        setStatus('Spremanje podataka je otkazano.');
+        return false;
+      }
+      downloadBlob(filename, blob);
+      exportCompleted = true;
+      savePatientDraftNow({ quiet: true, startupRecovery: false, recoveryReason: 'manual-json-save' });
+      markPatientJsonExported(savedAt, exportedVersion);
+      void writePatientAuditEvent('patient.localJsonExport', {
+        trigger: 'patient-json-download',
+        changeSummary: 'Lokalni JSON pacijenta preuzet je na zahtjev korisnika.'
+      });
+      setStatus(`Podaci pacijenta spremljeni su u JSON datoteku: ${filename}`);
+      return true;
+    } catch (error) {
+      console.error('Lokalni JSON nije moguće spremiti.', error);
+      setStatus('Lokalni JSON nije moguće spremiti. Podaci u obrascu nisu označeni kao spremljeni.', true);
+      return false;
+    } finally {
+      if (!exportCompleted) {
+        const currentData = getFormData();
+        const hasData = isPatientDataDifferentFromEmpty(currentData);
+        setPatientSyncState({
+          status: hasData ? 'dirty' : 'empty',
+          lastSaveTarget: 'none',
+          lastError: '',
+          currentPatientVersion: getPatientSyncVersion(currentData),
+          hasUnsavedChanges: hasData,
+          saveInFlight: false
+        });
+      } else if (state.patientSyncState.saveInFlight) {
+        setPatientSyncState({ saveInFlight: false });
+      }
+      updateFirebasePatientControls();
+    }
   }
 
   const PATIENT_JSON_SCHEMA = Object.freeze({
@@ -961,8 +1251,8 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'patientIdentifier', 'encounterId', 'room', 'bed', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
     stringFields: Object.freeze(['patientMode', 'fullName', 'birthYear', 'patientIdentifier', 'encounterId', 'room', 'bed', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'labRaw', 'radiologyRaw', 'admissionDate']),
     booleanFields: Object.freeze(['microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
-    allowedEnvelopeKeys: Object.freeze(['version', 'exportedAt', 'data']),
-    allowedDowntimeBackupKeys: Object.freeze(['schema', 'version', 'appVersion', 'exportedAt', 'containsPatientData', 'authorizedUseOnly', 'retentionPolicy', 'availability', 'authContext', 'data'])
+    allowedEnvelopeKeys: Object.freeze(['version', 'appVersion', 'buildSha', 'exportedAt', 'data', 'parserProvenance']),
+    allowedDowntimeBackupKeys: Object.freeze(['schema', 'version', 'appVersion', 'buildSha', 'exportedAt', 'expiresAt', 'cipher', 'kdf', 'salt', 'iv', 'payload'])
   });
 
   function isPlainJsonObject(value) {
@@ -1111,23 +1401,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     }
 
     if (parsed.schema === DOWNTIME_BACKUP_SCHEMA) {
-      const unknownBackupKeys = getUnknownKeys(parsed, PATIENT_JSON_SCHEMA.allowedDowntimeBackupKeys);
-      if (unknownBackupKeys.length) {
-        return { ok: false, message: `Downtime backup sadrži neočekivana polja: ${unknownBackupKeys.slice(0, 5).join(', ')}.` };
-      }
-      if (parsed.authorizedUseOnly !== true || parsed.containsPatientData !== true) {
-        return { ok: false, message: 'Downtime backup mora biti označen kao ovlaštena datoteka s pacijentnim podacima.' };
-      }
-      const validated = validatePatientDataObject(parsed.data);
-      if (!validated.ok) {
-        return { ok: false, message: `Downtime backup ne sadrži valjane podatke pacijenta: ${validated.errors.join(' ')}` };
-      }
+      return { ok: false, message: 'Šifrirani downtime backup mora se otključati passphraseom.' };
+    }
+
+    if (parsed.schema === LEGACY_CLEARTEXT_DOWNTIME_BACKUP_SCHEMA) {
       return {
-        ok: true,
-        data: validated.data,
-        source: 'downtime-backup',
-        exportedAt: String(parsed.exportedAt || ''),
-        appVersion: String(parsed.appVersion || '')
+        ok: false,
+        message: 'Stari nešifrirani downtime backup nije dopušten za automatski restore. Otvori ga samo kroz odobreni migracijski postupak.'
       };
     }
 
@@ -1140,6 +1420,12 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       if (hasOwnKey(parsed, 'version') && (!Number.isInteger(parsed.version) || parsed.version < 1 || parsed.version > 99)) {
         return { ok: false, message: 'Polje "version" mora biti cijeli broj.' };
       }
+      if (hasOwnKey(parsed, 'appVersion') && (typeof parsed.appVersion !== 'string' || parsed.appVersion.length > 80)) {
+        return { ok: false, message: 'Polje "appVersion" mora biti kratka tekstualna verzija.' };
+      }
+      if (hasOwnKey(parsed, 'buildSha') && (typeof parsed.buildSha !== 'string' || !/^[a-f0-9]{12}$/i.test(parsed.buildSha))) {
+        return { ok: false, message: 'Polje "buildSha" mora biti 12-znamenkasti heksadekadski build identifikator.' };
+      }
       if (hasOwnKey(parsed, 'exportedAt') && typeof parsed.exportedAt !== 'string') {
         return { ok: false, message: 'Polje "exportedAt" mora biti tekstualni ISO datum.' };
       }
@@ -1150,7 +1436,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       if (!validated.ok) {
         return { ok: false, message: `JSON podataka pacijenta nije valjan: ${validated.errors.join(' ')}` };
       }
-      return { ok: true, data: validated.data };
+      const parserProvenance = hasOwnKey(parsed, 'parserProvenance')
+        ? sanitizeParserProvenanceForRestore(parsed.parserProvenance)
+        : null;
+      if (hasOwnKey(parsed, 'parserProvenance') && !parserProvenance) {
+        return { ok: false, message: 'JSON sadrži nevaljanu ili nepodržanu provenijenciju parsera.' };
+      }
+      return { ok: true, data: validated.data, parserProvenance };
     }
 
     const validated = validatePatientDataObject(parsed);
@@ -1166,26 +1458,66 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       setStatus('Odabrana datoteka nije JSON datoteka.', true);
       return;
     }
-    if (file.size > PATIENT_JSON_SCHEMA.maxFileSizeBytes) {
-      setStatus(`JSON datoteka je sumnjivo velika (${formatBytes(file.size)}). Najveća dopuštena veličina je ${formatBytes(PATIENT_JSON_SCHEMA.maxFileSizeBytes)}.`, true);
+    const maxImportBytes = PATIENT_JSON_SCHEMA.maxFileSizeBytes * 3;
+    if (file.size > maxImportBytes) {
+      setStatus(`JSON datoteka je sumnjivo velika (${formatBytes(file.size)}). Najveća dopuštena veličina je ${formatBytes(maxImportBytes)}.`, true);
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const raw = String(reader.result || '');
-        if (raw.length > PATIENT_JSON_SCHEMA.maxFileSizeBytes) {
+        if (raw.length > maxImportBytes) {
           setStatus('JSON datoteka je prevelika za učitavanje podataka pacijenta.', true);
           return;
         }
         const parsed = JSON.parse(raw || '{}');
-        const validation = validatePatientJsonPayload(parsed);
+        let validation;
+        const isDowntimeBackup = parsed.schema === DOWNTIME_BACKUP_SCHEMA;
+        if (isDowntimeBackup) {
+          const envelopeValidation = validateEncryptedDowntimeBackupEnvelope(parsed);
+          if (!envelopeValidation.ok) {
+            const message = envelopeValidation.reason === 'expired'
+              ? 'Šifrirani downtime backup je istekao prema pravilima retencije i neće biti vraćen.'
+              : 'Šifrirani downtime backup nije valjan ili koristi nepodržanu sigurnosnu shemu.';
+            setDowntimeBackupStatus(message, 'error');
+            setStatus(message, true);
+            return;
+          }
+          const passphrase = await requestSecurePassphrase({ mode: 'unlock' });
+          if (!passphrase) {
+            setDowntimeBackupStatus('Restore šifriranog downtime backupa je otkazan.', 'warn');
+            return;
+          }
+          validation = await decryptDowntimeBackupEnvelope(parsed, passphrase);
+          if (!validation.ok) {
+            const message = validation.reason === 'wrong-passphrase'
+              ? 'Passphrase nije ispravna. Downtime backup nije vraćen.'
+              : 'Downtime backup nije moguće sigurno otvoriti ili ne sadrži valjane podatke.';
+            setDowntimeBackupStatus(message, 'error');
+            setStatus(message, true);
+            void writePatientAuditEvent('patient.backupRestoreFailed', {
+              trigger: 'downtime-backup',
+              changeSummary: 'Restore šifriranog downtime backupa nije uspio.'
+            });
+            return;
+          }
+        } else {
+          validation = validatePatientJsonPayload(parsed);
+        }
         if (!validation.ok) {
+          if (!isDowntimeBackup) {
+            void writePatientAuditEvent('patient.localJsonRestoreFailed', {
+              trigger: options.fromDrop ? 'patient-json-drop' : 'patient-json-picker',
+              changeSummary: 'Lokalni JSON pacijenta odbijen je tijekom provjere sheme.'
+            });
+          }
           setStatus(validation.message, true);
           return;
         }
         setFormData(validation.data);
+        restoreCurrentParserProvenance(validation.parserProvenance);
         renderAll();
         updateDowntimeBackupControls();
         savePatientDraftNow({ quiet: true });
@@ -1194,12 +1526,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         scheduleFirebasePatientAutoSave({ force: true });
         const sourceText = options.fromDrop ? 'povlačenjem u aplikaciju' : 'iz JSON datoteke';
         if (validation.source === 'downtime-backup') {
-          setDowntimeBackupStatus(`Downtime backup učitan: ${file.name || 'JSON datoteka'}. Provjeri pacijenta prije lokalnog spremanja ili ispisa.`, 'warn');
-          setStatus(`Podaci pacijenta vraćeni su iz downtime backupa: ${file.name || 'JSON datoteka'}.`);
+          void writePatientAuditEvent('patient.backupRestore', {
+            trigger: 'downtime-backup',
+            changeSummary: 'Šifrirani downtime backup vraćen je lokalno.'
+          });
+          setDowntimeBackupStatus(`Šifrirani downtime backup učitan: ${file.name || 'JSON datoteka'}. Provjeri pacijenta prije lokalnog spremanja ili ispisa.`, 'warn');
+          setStatus(`Podaci pacijenta vraćeni su iz šifriranog downtime backupa: ${file.name || 'JSON datoteka'}.`);
         } else {
+          void writePatientAuditEvent('patient.localJsonRestore', {
+            trigger: options.fromDrop ? 'patient-json-drop' : 'patient-json-picker',
+            changeSummary: 'Lokalni JSON pacijenta uspješno je učitan.'
+          });
           setStatus(`Podaci pacijenta učitani su ${sourceText}: ${file.name || 'JSON datoteka'}.`);
         }
       } catch (error) {
+        void writePatientAuditEvent('patient.localJsonRestoreFailed', {
+          trigger: options.fromDrop ? 'patient-json-drop' : 'patient-json-picker',
+          changeSummary: 'Lokalni JSON pacijenta nije bilo moguće parsirati ili provjeriti.'
+        });
         setStatus('Ne mogu učitati JSON podataka pacijenta: datoteka nije valjan JSON ili ne odgovara shemi.', true);
       }
     };
@@ -1300,6 +1644,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
   function getAppAvailabilityMessage(availability = state.appAvailability) {
     if (LOCAL_PATIENT_STORAGE_ONLY) {
+      if (availability.networkStatus === 'offline') {
+        return 'Dostupnost: offline način. Aplikacija ostaje dostupna za rad, ali podatke treba ručno spremiti u lokalni JSON. Online spremanje pacijenata je isključeno.';
+      }
       return 'Dostupnost: lokalna aplikacija je učitana. Online spremanje pacijenata je isključeno; koristi se samo lokalni JSON.';
     }
     const lastCheck = availability.lastSuccessfulFirebaseCheckAt
@@ -1425,9 +1772,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     const hasData = isPatientDataDifferentFromEmpty(getFormData());
     if (els.downloadDowntimeBackupBtn) els.downloadDowntimeBackupBtn.disabled = !hasData;
     setDowntimeBackupStatus(hasData
-      ? 'Downtime backup: spreman za ručno preuzimanje. Datoteka sadrži kliničke podatke i mora se čuvati prema bolničkim pravilima.'
-      : 'Downtime backup: nema unesenog pacijenta za export.',
-      hasData ? 'warn' : 'neutral');
+      ? 'Šifrirani downtime backup: spreman za ručno preuzimanje uz passphrase.'
+      : 'Šifrirani downtime backup: nema unesenog pacijenta za export.',
+      hasData ? 'ok' : 'neutral');
   }
 
   function getPatientSyncVersion(data = getFormData()) {
@@ -1436,7 +1783,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function getPatientSyncStatusTone(status) {
-    if (status === 'synced') return 'ok';
+    if (status === 'synced' || status === 'exported') return 'ok';
     if (status === 'failed' || status === 'offline') return 'error';
     if (status === 'dirty' || status === 'saving' || status === 'localOnly') return 'warn';
     return 'neutral';
@@ -1445,24 +1792,30 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function getPatientSyncTargetLabel(target) {
     if (target === 'firebase') return 'Firebase';
     if (target === 'encrypted-local') return 'šifrirani lokalni oporavak';
+    if (target === 'local-json') return 'lokalni JSON';
     return 'nije spremljeno';
   }
 
   function getPatientSyncStatusMessage(syncState = state.patientSyncState) {
     const savedAt = syncState.lastSavedAt ? formatPatientDraftSavedAt(syncState.lastSavedAt) : '';
-    if (syncState.status === 'empty') return 'Sinkronizacija: nema unesenog pacijenta.';
+    if (syncState.status === 'empty') return LOCAL_PATIENT_STORAGE_ONLY
+      ? 'Lokalno spremanje: nema unesenog pacijenta.'
+      : 'Sinkronizacija: nema unesenog pacijenta.';
     if (syncState.status === 'saving') return LOCAL_PATIENT_STORAGE_ONLY
-      ? 'Sinkronizacija: online spremanje je isključeno.'
+      ? 'Lokalno spremanje: spremam aktualnu verziju pacijenta u JSON...'
       : 'Sinkronizacija: spremam pacijenta u Firebase...';
+    if (syncState.status === 'exported') return `Lokalno spremanje: aktualna verzija spremljena je u JSON${savedAt ? ` (${savedAt})` : ''}. Nema nespremljenih promjena nakon izvoza.`;
     if (syncState.status === 'synced') return `Sinkronizacija: spremljeno u ${getPatientSyncTargetLabel(syncState.lastSaveTarget)}${savedAt ? ` (${savedAt})` : ''}.`;
     if (syncState.status === 'failed') return `Sinkronizacija: spremanje nije uspjelo${syncState.lastError ? ` — ${syncState.lastError}` : ''}.`;
     if (syncState.status === 'offline') return LOCAL_PATIENT_STORAGE_ONLY
       ? 'Sinkronizacija: online spremanje je isključeno; koristi lokalni JSON.'
       : 'Sinkronizacija: pacijent nije spremljen jer Firebase prijava ili klinički kontekst nisu dostupni.';
     if (syncState.status === 'localOnly') return LOCAL_PATIENT_STORAGE_ONLY
-      ? 'Sinkronizacija: online spremanje pacijenata je isključeno. Trajno spremi pacijenta kao lokalni JSON.'
+      ? 'Lokalno spremanje: aktualna verzija nije spremljena u JSON. Spremi JSON ili izričito potvrdi ispis nespremljene kopije.'
       : `Sinkronizacija: pacijent je spremljen samo lokalno u šifrirani oporavak${savedAt ? ` (${savedAt})` : ''}. Prije ispisa treba Firebase spremanje ili izričita potvrda.`;
-    return 'Sinkronizacija: postoje nespremljene promjene.';
+    return LOCAL_PATIENT_STORAGE_ONLY
+      ? 'Lokalno spremanje: postoje nespremljene promjene. Spremi novi JSON prije zatvaranja ili ispisa.'
+      : 'Sinkronizacija: postoje nespremljene promjene.';
   }
 
   function renderPatientSyncState() {
@@ -1478,6 +1831,12 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     els.patientSyncStatus.classList.toggle('ok', tone === 'ok');
     els.patientSyncStatus.classList.toggle('warn', tone === 'warn');
     els.patientSyncStatus.classList.toggle('error', tone === 'error');
+    if (LOCAL_PATIENT_STORAGE_ONLY && els.savePatientTopBtn) {
+      const busy = Boolean(syncState.saveInFlight);
+      els.savePatientTopBtn.disabled = busy;
+      els.savePatientTopBtn.textContent = busy ? 'Spremam JSON...' : 'Spremi JSON';
+      els.savePatientTopBtn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
   }
 
   function setPatientSyncState(patch = {}) {
@@ -1497,7 +1856,8 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       lastError: options.lastError || '',
       currentPatientDocId: options.currentPatientDocId || '',
       currentPatientVersion: options.currentPatientVersion || getPatientSyncVersion(data),
-      hasUnsavedChanges: Boolean(options.hasUnsavedChanges)
+      hasUnsavedChanges: Boolean(options.hasUnsavedChanges),
+      saveInFlight: Boolean(options.saveInFlight)
     });
   }
 
@@ -1539,7 +1899,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       lastError: '',
       currentPatientDocId: docId,
       currentPatientVersion: options.currentPatientVersion || getPatientSyncVersion(data),
-      hasUnsavedChanges: false
+      hasUnsavedChanges: false,
+      saveInFlight: false
+    });
+  }
+
+  function markPatientJsonExported(exportedAt, exportedVersion) {
+    const currentData = getFormData();
+    const currentVersion = getPatientSyncVersion(currentData);
+    const isCurrentVersion = Boolean(exportedVersion) && currentVersion === exportedVersion;
+    setPatientSyncState({
+      status: isCurrentVersion ? 'exported' : 'dirty',
+      lastSavedAt: exportedAt instanceof Date ? exportedAt.toISOString() : String(exportedAt || ''),
+      lastSaveTarget: 'local-json',
+      lastError: isCurrentVersion ? '' : 'Podaci su izmijenjeni tijekom spremanja JSON-a.',
+      currentPatientDocId: '',
+      currentPatientVersion: isCurrentVersion ? exportedVersion : currentVersion,
+      hasUnsavedChanges: !isCurrentVersion,
+      saveInFlight: false
     });
   }
 
@@ -1567,8 +1944,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     }
     const currentVersion = getPatientSyncVersion(data);
     if (
-      state.patientSyncState.status === 'synced' &&
-      state.patientSyncState.currentPatientDocId &&
+      ['synced', 'exported'].includes(state.patientSyncState.status) &&
       state.patientSyncState.currentPatientVersion === currentVersion
     ) {
       renderPatientSyncState();
@@ -1581,10 +1957,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     const data = getFormData();
     if (!isPatientDataDifferentFromEmpty(data)) return true;
     const currentVersion = getPatientSyncVersion(data);
-    return Boolean(
-      state.patientSyncState.status === 'synced' &&
+    const firebaseSaved = state.patientSyncState.status === 'synced' &&
       state.patientSyncState.lastSaveTarget === 'firebase' &&
-      state.patientSyncState.currentPatientDocId &&
+      state.patientSyncState.currentPatientDocId;
+    const localJsonSaved = state.patientSyncState.status === 'exported' &&
+      state.patientSyncState.lastSaveTarget === 'local-json';
+    return Boolean(
+      (firebaseSaved || localJsonSaved) &&
       state.patientSyncState.currentPatientVersion === currentVersion &&
       !state.patientSyncState.hasUnsavedChanges
     );
@@ -1715,7 +2094,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function refreshFirebaseAuthContext() {
     const context = buildAuthContext(state.firebasePatients.user, state.firebasePatients.userProfile);
     state.firebasePatients.authContext = context;
-    updateAdminAccessVisibility();
+    if (isCapabilityEnabled('adminDashboard')) updateAdminAccessVisibility();
     return context;
   }
 
@@ -2135,10 +2514,18 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     safeSessionStorageRemoveItem(FIREBASE_LOGIN_GATE_SESSION_KEY);
   }
 
-  window.__TEMPERATURNA_LISTA_TEST_DISMISS_FIREBASE_LOGIN_GATE__ = () => {
-    dismissFirebaseLoginGateForSession();
-    return true;
-  };
+  if (isLocalQaRuntime()) {
+    window.__TEMPERATURNA_LISTA_TEST_DISMISS_FIREBASE_LOGIN_GATE__ = () => {
+      dismissFirebaseLoginGateForSession();
+      return true;
+    };
+  } else {
+    try {
+      delete window.__TEMPERATURNA_LISTA_TEST_DISMISS_FIREBASE_LOGIN_GATE__;
+    } catch (error) {
+      window.__TEMPERATURNA_LISTA_TEST_DISMISS_FIREBASE_LOGIN_GATE__ = undefined;
+    }
+  }
 
   function showFirebaseLoginGate(message = '') {
     if (!els.firebaseLoginGate) return;
@@ -2742,8 +3129,46 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     };
   }
 
+  function recordLocalOperationalAuditEvent(eventType, options = {}) {
+    const safeEventType = String(eventType || '')
+      .replace(/[^a-zA-Z0-9._-]/g, '')
+      .slice(0, 80);
+    if (!safeEventType) return false;
+    const now = new Date();
+    const oldestAllowed = now.getTime() - (RETENTION_POLICY.auditDays * 24 * 60 * 60 * 1000);
+    let events = [];
+    try {
+      const parsed = JSON.parse(safeLocalStorageGetItem(STORAGE_KEYS.operationalAudit) || '[]');
+      if (Array.isArray(parsed)) events = parsed;
+    } catch (error) {
+      events = [];
+    }
+    const sanitizedEvents = events
+      .filter(item => isPlainJsonObject(item) && new Date(String(item.createdAt || '')).getTime() >= oldestAllowed)
+      .slice(-499)
+      .map(item => ({
+        schema: 'temperaturna-lista-operational-audit-v1',
+        eventType: String(item.eventType || '').slice(0, 80),
+        createdAt: String(item.createdAt || '').slice(0, 40),
+        appVersion: String(item.appVersion || '').slice(0, 120),
+        buildSha: String(item.buildSha || '').replace(/[^a-f0-9]/gi, '').slice(0, 12),
+        trigger: String(item.trigger || '').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 80),
+        outcome: String(item.outcome || '').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 32)
+      }));
+    sanitizedEvents.push({
+      schema: 'temperaturna-lista-operational-audit-v1',
+      eventType: safeEventType,
+      createdAt: String(options.createdAt || now.toISOString()).slice(0, 40),
+      appVersion: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
+      trigger: String(options.trigger || '').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 80),
+      outcome: /Failed|WithoutSync|error/i.test(safeEventType) ? 'failed' : 'completed'
+    });
+    return safeLocalStorageSetItem(STORAGE_KEYS.operationalAudit, JSON.stringify(sanitizedEvents));
+  }
+
   async function writePatientAuditEvent(eventType, options = {}) {
-    if (LOCAL_PATIENT_STORAGE_ONLY) return false;
+    if (LOCAL_PATIENT_STORAGE_ONLY) return recordLocalOperationalAuditEvent(eventType, options);
     const authContext = refreshFirebaseAuthContext();
     if (!state.firebasePatients.user || !authContext.hasValidClinicalContext) return false;
     try {
@@ -2773,6 +3198,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         actorEmail: user.email || authContext.email || '',
         actorRole: getPatientAuditActorRole(authContext),
         appVersion: APP_VERSION,
+        buildSha: APP_BUILD_SHA,
         createdAt: nowIso,
         serverCreatedAt: client.serverTimestamp(),
         source: 'client',
@@ -2959,7 +3385,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function choosePatientConflictResolution(remoteRecord, options = {}) {
-    const injected = window.__TEMPERATURNA_LISTA_CONFLICT_RESOLUTION__;
+    const injected = isLocalQaRuntime() ? window.__TEMPERATURNA_LISTA_CONFLICT_RESOLUTION__ : undefined;
     if (typeof injected === 'function') {
       return normalizePatientConflictChoice(injected({ remoteRecord, options }));
     }
@@ -3095,8 +3521,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         els.openFirebasePatientDialogBtn.title = 'Učitaj lokalnu JSON datoteku pacijenta s računala.';
       }
       if (els.savePatientTopBtn) {
-        els.savePatientTopBtn.disabled = false;
-        els.savePatientTopBtn.textContent = 'Spremi JSON';
+        const saveBusy = Boolean(state.patientSyncState.saveInFlight);
+        els.savePatientTopBtn.disabled = saveBusy;
+        els.savePatientTopBtn.textContent = saveBusy ? 'Spremam JSON...' : 'Spremi JSON';
+        els.savePatientTopBtn.setAttribute('aria-busy', saveBusy ? 'true' : 'false');
         els.savePatientTopBtn.title = 'Spremi pacijenta samo kao lokalnu JSON datoteku.';
       }
       if (els.newPatientEntryBtn) els.newPatientEntryBtn.disabled = false;
@@ -3724,6 +4152,12 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       return smokeClient;
     }
 
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      const error = new Error('Online spremanje je isključeno. Koristi lokalni JSON.');
+      error.code = 'online-storage-disabled';
+      throw error;
+    }
+
     const [appModule, authModule, firestoreModule] = await Promise.all([
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`),
@@ -3830,6 +4264,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return {
       schema: FIREBASE_PRINT_CALIBRATION_SCHEMA,
       appVersion: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
       configId: FIREBASE_PRINT_CALIBRATION_CONFIG_ID,
       updatedAt: new Date().toISOString(),
       updatedByUid: authContext.uid || state.firebasePatients.user?.uid || '',
@@ -3838,6 +4273,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       serverUpdatedAt: client.serverTimestamp(),
       calibration: state.calibration
     };
+  }
+
+  async function saveCalibrationToLocalApp() {
+    if (!requireSuperAdminForAdminMode({ silent: true })) {
+      const message = getAdminAccessMessage();
+      setStatus(message, true);
+      return { ok: false, message };
+    }
+    const saved = saveCalibrationToStorage();
+    if (!saved) {
+      const message = 'Lokalne postavke nije moguće spremiti u ovom pregledniku.';
+      setStatus(message, true);
+      return { ok: false, message };
+    }
+    markAdminCalibrationSaved();
+    const message = 'Postavke su spremljene lokalno na ovom računalu i vrijedit će pri sljedećem otvaranju u istom pregledniku.';
+    setStatus(message);
+    return { ok: true, message };
   }
 
   async function saveCalibrationToOnlineApp() {
@@ -3944,7 +4397,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         }
       }
 
-      await loadRemotePrintCalibrationConfig({ silent: true });
       await refreshFirebasePatients({ silent: true });
       scheduleFirebasePatientAutoSave({ force: true });
     } catch (error) {
@@ -3968,6 +4420,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (!els.firebasePatientAuthStatus || state.firebasePatients.initialized) return;
     state.firebasePatients.initialized = true;
     if (LOCAL_PATIENT_STORAGE_ONLY) {
+      const qaSmokeClient = isLocalQaRuntime() ? getFirebasePatientsSmokeClient() : null;
       state.firebasePatients.authResolved = true;
       state.firebasePatients.user = null;
       state.firebasePatients.userProfile = null;
@@ -3975,11 +4428,14 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       resetCurrentFirebasePatientContext();
       hideFirebaseLoginGate();
       setFirebasePatientStatus('Online spremanje pacijenata je isključeno. Koristi se samo lokalni JSON.', 'warn');
-      if (els.appAvailabilityStatus) {
-        els.appAvailabilityStatus.dataset.firebaseStatus = 'disabled';
-        els.appAvailabilityStatus.textContent = 'Dostupnost: lokalna aplikacija je učitana. Firebase spremanje pacijenata je isključeno.';
-      }
+      renderAppAvailabilityState();
       updateFirebasePatientControls();
+      if (qaSmokeClient) {
+        state.firebasePatients.client = qaSmokeClient;
+        qaSmokeClient.onAuthStateChanged(qaSmokeClient.auth, (user) => {
+          void handleFirebaseAuthenticatedUser(user);
+        });
+      }
       return;
     }
     mountFirebaseLoginGateOnBody();
@@ -4577,19 +5033,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         resetPatientSyncState('empty');
         return { attempted: false, saved: false, reason: 'empty', localOnly: true };
       }
-      markPatientSyncDirty({
-        data: getFormData(),
-        status: 'localOnly',
-        lastSaveTarget: 'none',
-        lastError: '',
-        currentPatientDocId: ''
-      });
+      const savedLocally = isCurrentPatientSyncedForPrint();
+      if (!savedLocally) {
+        markPatientSyncDirty({
+          data: getFormData(),
+          status: 'localOnly',
+          lastSaveTarget: state.patientSyncState.lastSaveTarget || 'none',
+          lastError: '',
+          currentPatientDocId: ''
+        });
+      }
       return {
         attempted: false,
-        saved: false,
-        reason: 'local-json-only',
+        saved: savedLocally,
+        reason: savedLocally ? 'local-json-current' : 'local-json-unsaved',
         localOnly: true,
-        message: 'Online spremanje pacijenata je isključeno; koristi se lokalni JSON.'
+        message: savedLocally
+          ? 'Aktualna verzija pacijenta spremljena je u lokalni JSON.'
+          : 'Aktualna verzija pacijenta nije spremljena u lokalni JSON.'
       };
     }
     if (!isPatientDataDifferentFromEmpty(getFormData())) {
@@ -4632,14 +5093,22 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function shouldConfirmPrintWithoutFirebaseSave(saveResult) {
-    if (LOCAL_PATIENT_STORAGE_ONLY) return false;
+    if (LOCAL_PATIENT_STORAGE_ONLY) return !isCurrentPatientSyncedForPrint();
     if (!isPatientDataDifferentFromEmpty(getFormData())) return false;
     if (saveResult?.saved && isCurrentPatientSyncedForPrint()) return false;
     return !isCurrentPatientSyncedForPrint();
   }
 
   async function confirmPrintWithoutFirebaseSave(saveResult) {
-    if (LOCAL_PATIENT_STORAGE_ONLY) return true;
+    if (LOCAL_PATIENT_STORAGE_ONLY) {
+      if (!shouldConfirmPrintWithoutFirebaseSave(saveResult)) return true;
+      return showPrintConfirmDialog({
+        title: 'Lista nije spremljena u lokalni JSON',
+        message: 'Aktualna verzija pacijenta nema potvrđen lokalni JSON izvoz. Ispisom se neće automatski spremiti datoteka. Želite li ipak ispisati ovu nespremljenu lokalnu kopiju?',
+        proceedLabel: 'Ispiši nespremljenu kopiju',
+        cancelLabel: 'Ne ispisuj'
+      });
+    }
     if (!shouldConfirmPrintWithoutFirebaseSave(saveResult)) return true;
     const detail = String(saveResult?.message || state.patientSyncState.lastError || 'Pacijent nije spremljen u Firebase.').trim();
     const syncMessage = getPatientSyncStatusMessage();
@@ -4653,7 +5122,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
 
   function getPrintStatusAfterFirebaseSave(saveResult) {
     if (LOCAL_PATIENT_STORAGE_ONLY || saveResult?.localOnly) {
-      return 'Otvoren je dijalog za ispis. Pacijenta spremi lokalno kao JSON datoteku.';
+      return saveResult?.saved
+        ? 'Aktualna verzija pacijenta spremljena je u lokalni JSON i otvoren je dijalog za ispis.'
+        : 'Ispis je otvoren nakon izričite potvrde nespremljene lokalne kopije. Spremi aktualni lokalni JSON.';
     }
     if (saveResult?.saved) {
       return 'Pacijent je spremljen u Firebase i otvoren je dijalog za ispis.';
@@ -4810,7 +5281,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
             return bTime - aTime;
           });
         }
-        if (isSuperAdmin(getFirebaseAuthContext())) {
+        if (isCapabilityEnabled('adminDashboard') && isSuperAdmin(getFirebaseAuthContext())) {
           const adminRecoverySnapshot = await queryAdminRecoverableFirebasePatientSnapshots(client);
           legacyReadBlocked = legacyReadBlocked || adminRecoverySnapshot.blocked;
           const currentIds = new Set(records.map(record => record.id));
@@ -5529,6 +6000,8 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   async function saveCalibration() {
     const payload = {
       version: 1,
+      appVersion: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
       exportedAt: new Date().toISOString(),
       calibration: state.calibration
     };
@@ -5577,13 +6050,14 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function buildSelfContainedHtmlWithCalibration() {
     const payload = {
       version: APP_VERSION,
+      buildSha: APP_BUILD_SHA,
       exportedAt: new Date().toISOString(),
       calibration: state.calibration
     };
     const serializedCalibration = inlineScriptJson(payload);
     const rootClone = document.documentElement.cloneNode(true);
     // Ne spremati runtime CSS varijablu s data URI podlogom u HTML atribut style.
-    // Podloga ostaje samo u CLEAN_BACKGROUND_DATA_URI, a --preview-bg se ponovno postavlja pri učitavanju.
+    // Podloga ostaje u lokalnom CLEAN_BACKGROUND_ASSET_URL assetu, a --preview-bg se ponovno postavlja pri učitavanju.
     rootClone.style.removeProperty('--preview-bg');
     if (!rootClone.getAttribute('style')) {
       rootClone.removeAttribute('style');
@@ -5739,13 +6213,23 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   async function renderCanvasesForExport() {
     const model = deriveDocumentModel(getFormData());
     const canvases = [];
+    const documentPageCount = Math.max(
+      Number(model.previewListCount || 0),
+      Number(state.previewListCount || 0),
+      Number(model.previewPages?.[1]?.pageNumber || 2),
+      2
+    );
     const page1 = document.createElement('canvas');
     page1.width = PAGE.printWidthPx;
     page1.height = PAGE.printHeightPx;
+    page1.dataset.printPageNumber = String(model.previewPages?.[0]?.pageNumber || 1);
+    page1.dataset.printDocumentPageCount = String(documentPageCount);
     renderPageToCanvas(page1, model.page1LayoutKey, model, 1, { forceWhiteBackground: true });
     const page2 = document.createElement('canvas');
     page2.width = PAGE.printWidthPx;
     page2.height = PAGE.printHeightPx;
+    page2.dataset.printPageNumber = String(model.previewPages?.[1]?.pageNumber || 2);
+    page2.dataset.printDocumentPageCount = String(documentPageCount);
     renderPageToCanvas(page2, model.page2LayoutKey, model, 2, { forceWhiteBackground: true });
     canvases.push(page1, page2);
     return canvases;

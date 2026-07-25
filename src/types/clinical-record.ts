@@ -1,5 +1,7 @@
 export type ISODateString = string;
 export type ISODateTimeString = string;
+import type { ParserProvenanceV1 } from "./parser";
+
 export type ClinicalRecordSchema = "temperaturna-lista-clinical-record-v1";
 
 export type PatientMode = "ambulatory" | "ward";
@@ -148,10 +150,12 @@ export interface ClinicalFreeText {
 
 export interface ClinicalRecordMetadata {
   appVersion?: string;
+  buildSha?: string;
   createdAt?: ISODateTimeString;
   updatedAt?: ISODateTimeString;
   source?: "manual" | "parser" | "firebase" | "import" | "test";
   parserVersion?: string;
+  parserProvenance?: ParserProvenanceV1 | null;
 }
 
 export interface ClinicalRecordV1 {
@@ -209,6 +213,7 @@ export type PatientSyncStatus =
   | "empty"
   | "dirty"
   | "saving"
+  | "exported"
   | "synced"
   | "failed"
   | "offline"
@@ -217,9 +222,10 @@ export type PatientSyncStatus =
 export interface PatientSyncState {
   status: PatientSyncStatus;
   lastSavedAt?: ISODateTimeString;
-  lastSaveTarget: "firebase" | "encrypted-local" | "none";
+  lastSaveTarget: "firebase" | "encrypted-local" | "local-json" | "none";
   lastError?: string;
   currentPatientDocId?: string;
-  currentPatientVersion?: number;
+  currentPatientVersion?: number | string;
   hasUnsavedChanges: boolean;
+  saveInFlight?: boolean;
 }
