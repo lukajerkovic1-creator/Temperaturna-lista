@@ -295,7 +295,22 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function parseTherapyDatabaseDate(value) {
-    const date = new Date(value || '');
+    const normalizedValue = String(value || '').trim();
+    const calendarMatch = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
+    if (calendarMatch) {
+      const year = Number(calendarMatch[1]);
+      const month = Number(calendarMatch[2]);
+      const day = Number(calendarMatch[3]);
+      const calendarDate = new Date(year, month - 1, day);
+      if (
+        calendarDate.getFullYear() === year &&
+        calendarDate.getMonth() === month - 1 &&
+        calendarDate.getDate() === day
+      ) {
+        return calendarDate;
+      }
+    }
+    const date = new Date(normalizedValue);
     return Number.isFinite(date.getTime()) ? date : null;
   }
 
