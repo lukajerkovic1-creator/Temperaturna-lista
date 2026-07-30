@@ -1431,7 +1431,8 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('does not automatically restore the legacy cleartext patient draft', async ({ page }) => {
+  test('does not automatically restore the legacy cleartext patient draft', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Legacy draft migration UI exists only in the localhost QA runtime.');
     await page.addInitScript(() => {
       window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
       localStorage.setItem('temperaturna_lista_pacijent_autosave_v1', JSON.stringify({
@@ -1462,7 +1463,8 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('encrypted local draft requires passphrase after reload and restores with the correct passphrase', async ({ page }) => {
+  test('encrypted local draft requires passphrase after reload and restores with the correct passphrase', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Encrypted draft recovery UI exists only in the localhost QA runtime.');
     await page.addInitScript(() => {
       window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
     });
@@ -1536,7 +1538,8 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('expired encrypted local draft is removed instead of restored', async ({ page }) => {
+  test('expired encrypted local draft is removed instead of restored', async ({ page, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Encrypted draft recovery UI exists only in the localhost QA runtime.');
     await page.addInitScript(() => {
       window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
     });
