@@ -5,7 +5,8 @@ Status: technical migration note.
 The active patient model stores only fields currently supported by the form and
 local export workflow. Retired hospital identification and location fields are
 not part of the DOM, parser output, ClinicalRecordV1, FHIR export, preview, print
-or PDF pipeline.
+or PDF pipeline. Retired final-clinical-confirmation keys, print-operator values
+and parser-confirmation actor/time fields are also outside the active model.
 
 Old local JSON backups remain importable. Before schema validation, the single
 `sanitizeLegacyPatientDataForImport` boundary recursively removes retired keys.

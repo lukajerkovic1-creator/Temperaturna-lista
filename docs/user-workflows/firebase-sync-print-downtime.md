@@ -22,13 +22,11 @@ Use `Spremi JSON` for patient records and verify that the browser completed the 
 
 Before print:
 
-1. enter the operator's full name; it exists only in the current browser tab and is not saved to JSON, browser storage, or a network service;
-2. verify identity and admission date;
-3. verify diagnosis, allergies, therapy, vital signs, labs, and microbiology;
-4. complete all three final clinical confirmations;
-5. confirm whether the latest local JSON revision has been downloaded;
-6. select the correct page pair in the preview;
-7. print only the currently selected pages.
+1. verify identity and admission date;
+2. verify diagnosis, allergies, therapy, vital signs, labs, and microbiology;
+3. confirm whether the latest local JSON revision has been downloaded;
+4. select the correct page pair in the preview;
+5. print only the currently selected pages.
 
 If the app warns that the latest changes are not saved, download JSON or follow the explicit local-unsaved print confirmation workflow.
 

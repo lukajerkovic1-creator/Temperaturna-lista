@@ -15,7 +15,6 @@ function buildEvidenceUrl() {
 
 async function fillSyntheticRecord(page) {
   const values = {
-    printOperatorName: 'TESTNI OPERATER DOKAZ',
     fullName: 'TESTIC ISPIS',
     birthYear: '1970',
     admissionDate: '17.07.2026.',
@@ -26,9 +25,6 @@ async function fillSyntheticRecord(page) {
   for (const [id, value] of Object.entries(values)) {
     await page.locator(`#${id}`).fill(value);
   }
-  await page.locator('#confirmIdentityAdmission').check();
-  await page.locator('#confirmAllergyStatus').check();
-  await page.locator('#confirmCriticalFields').check();
 }
 
 (async () => {
@@ -42,7 +38,7 @@ async function fillSyntheticRecord(page) {
       window.__TEMPERATURNA_LISTA_SKIP_PRINT_DIALOG__ = true;
     });
     await page.goto(buildEvidenceUrl(), { waitUntil: 'domcontentloaded' });
-    await page.locator('#printOperatorName').waitFor({ state: 'visible' });
+    await page.locator('#printBtn').waitFor({ state: 'visible' });
     await fillSyntheticRecord(page);
     await page.locator('#printBtn').click();
 

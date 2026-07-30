@@ -2639,12 +2639,6 @@
     parserProvenancePanel: document.getElementById('parserProvenancePanel'),
     parserProvenanceSummary: document.getElementById('parserProvenanceSummary'),
     parserProvenanceList: document.getElementById('parserProvenanceList'),
-    clinicalPrintReview: document.getElementById('clinicalPrintReview'),
-    printOperatorName: document.getElementById('printOperatorName'),
-    confirmIdentityAdmission: document.getElementById('confirmIdentityAdmission'),
-    confirmAllergyStatus: document.getElementById('confirmAllergyStatus'),
-    confirmCriticalFields: document.getElementById('confirmCriticalFields'),
-    clinicalPrintReviewStatus: document.getElementById('clinicalPrintReviewStatus'),
     printBtn: document.getElementById('printBtn'),
     dataAdminAdvancedSection: document.getElementById('dataAdminAdvancedSection'),
     dataAdminAdvancedTitle: document.querySelector('#dataAdminAdvancedSection .advanced-section-title'),
@@ -2982,16 +2976,6 @@
       currentPatientVersion: '',
       hasUnsavedChanges: false,
       saveInFlight: false
-    },
-    clinicalPrintReview: {
-      identityAdmissionConfirmed: false,
-      allergyStatusConfirmed: false,
-      criticalFieldsConfirmed: false,
-      identityAdmissionSignature: '',
-      allergyStatusSignature: '',
-      criticalFieldsSignature: '',
-      confirmedAt: '',
-      confirmedBy: ''
     },
     appAvailability: {
       networkStatus: navigator.onLine === false ? 'offline' : 'online',

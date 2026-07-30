@@ -2477,10 +2477,6 @@ function normalizeOhbpFusedSectionLabels(value) {
     return 0.62;
   }
 
-  function getParserProvenanceActor() {
-    return typeof getClinicalOperatorName === 'function' ? getClinicalOperatorName() : '';
-  }
-
   function createEmptyParserProvenance() {
     return {
       schema: PARSER_PROVENANCE_SCHEMA,
@@ -2514,10 +2510,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt,
         confidence: getParserFieldConfidence(parsed, fieldName, sourceExcerpt, parsedValue),
         valueHash: hashParserProvenanceValue(parsedValue),
-        status: 'unconfirmed',
-        confirmed: false,
-        confirmedAt: '',
-        confirmedBy: ''
+        status: 'parsed'
       };
     });
     state.parserProvenance = {
@@ -2532,7 +2525,6 @@ function normalizeOhbpFusedSectionLabels(value) {
     if (els.parserProvenancePanel && Object.keys(fields).length) {
       els.parserProvenancePanel.open = true;
     }
-    resetClinicalPrintReview({ render: false });
     renderParserProvenance();
   }
 
@@ -2548,34 +2540,8 @@ function normalizeOhbpFusedSectionLabels(value) {
     });
   }
 
-  function setParserProvenanceGroupConfirmation(group, confirmed, options = {}) {
-    const provenance = state.parserProvenance;
-    if (!provenance?.fields) return;
-    const confirmedAt = confirmed ? new Date().toISOString() : '';
-    const confirmedBy = confirmed ? getParserProvenanceActor() : '';
-    Object.values(provenance.fields).forEach((entry) => {
-      if (entry.group !== group) return;
-      entry.confirmed = Boolean(confirmed);
-      entry.confirmedAt = confirmedAt;
-      entry.confirmedBy = confirmedBy;
-      entry.status = confirmed ? 'confirmed' : String(options.reason || 'unconfirmed');
-    });
-    renderParserProvenance();
-  }
-
   function getCurrentParserFieldValue(fieldName, data = getFormData()) {
     return normalizeParserProvenanceValue(data?.[fieldName]);
-  }
-
-  function getUnconfirmedCriticalParserProvenanceIssues(data = getFormData()) {
-    const fields = Object.values(state.parserProvenance?.fields || {});
-    return fields
-      .filter((entry) => entry.critical && getCurrentParserFieldValue(entry.field, data))
-      .filter((entry) => {
-        const currentHash = hashParserProvenanceValue(getCurrentParserFieldValue(entry.field, data));
-        return !entry.confirmed || entry.valueHash !== currentHash;
-      })
-      .map((entry) => `nepotvrđeno parsirano polje: ${entry.label}`);
   }
 
   function serializeCurrentParserProvenance() {
@@ -2596,10 +2562,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt: String(entry.sourceExcerpt || '').slice(0, 240),
         confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
         valueHash: String(entry.valueHash || ''),
-        status: 'unconfirmed',
-        confirmed: false,
-        confirmedAt: '',
-        confirmedBy: ''
+        status: 'parsed'
       }]))
     };
   }
@@ -2623,10 +2586,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt: String(entry.sourceExcerpt || '').replace(/[\r\n\t]+/g, ' ').slice(0, 240),
         confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
         valueHash: String(entry.valueHash || '').slice(0, 80),
-        status: 'unconfirmed',
-        confirmed: false,
-        confirmedAt: '',
-        confirmedBy: ''
+        status: 'parsed'
       };
     });
     return restored.parsedAt && Object.keys(restored.fields).length ? restored : null;
@@ -2652,17 +2612,13 @@ function normalizeOhbpFusedSectionLabels(value) {
       return;
     }
 
-    const unconfirmedCount = fields.filter((entry) => !entry.confirmed).length;
-    els.parserProvenanceSummary.textContent = unconfirmedCount
-      ? `${unconfirmedCount}/${fields.length} nepotvrđeno · ${provenance.parserVersion}`
-      : `${fields.length}/${fields.length} potvrđeno · ${provenance.parserVersion}`;
-    els.parserProvenanceSummary.dataset.state = unconfirmedCount ? 'pending' : 'confirmed';
+    els.parserProvenanceSummary.textContent = `${fields.length} parsiranih polja · ${provenance.parserVersion}`;
+    els.parserProvenanceSummary.dataset.state = 'available';
 
     fields.forEach((entry) => {
       const item = document.createElement('li');
-      item.className = `parser-provenance-item${entry.confirmed ? ' confirmed' : ''}`;
+      item.className = 'parser-provenance-item';
       item.dataset.field = entry.field;
-      item.dataset.confirmed = String(Boolean(entry.confirmed));
 
       const field = document.createElement('span');
       field.className = 'parser-provenance-field';
@@ -2670,9 +2626,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       const meta = document.createElement('span');
       meta.className = 'parser-provenance-meta';
       const confidence = `${Math.round((Number(entry.confidence) || 0) * 100)}%`;
-      meta.textContent = entry.confirmed
-        ? `${confidence} · potvrđeno ${entry.confirmedBy || 'lokalni korisnik'} ${entry.confirmedAt ? formatPatientDraftSavedAt(entry.confirmedAt) : ''}`
-        : `${confidence} · nepotvrđeno`;
+      meta.textContent = `${confidence} · automatski prepoznato`;
       const excerpt = document.createElement('q');
       excerpt.className = 'parser-provenance-excerpt';
       excerpt.textContent = entry.sourceExcerpt || 'Izvorni isječak nije pouzdano lociran.';

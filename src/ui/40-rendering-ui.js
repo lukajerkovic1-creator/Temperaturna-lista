@@ -115,7 +115,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function renderAll() {
-    renderClinicalPrintReview();
     renderParserProvenance();
     let model;
     try {
@@ -1304,7 +1303,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       'patientroom',
       'bed',
       'bednumber',
-      'patientbed'
+      'patientbed',
+      'printoperatorname',
+      'operatorname',
+      'printoperator',
+      'finalconfirmation',
+      'clinicalconfirmation',
+      'clinicalprintreview',
+      'confirmationcount',
+      'requiredconfirmations',
+      'identityconfirmed',
+      'identityadmissionconfirmed',
+      'identityadmissionsignature',
+      'allergyconfirmed',
+      'allergystatusconfirmed',
+      'allergystatussignature',
+      'reviewconfirmed',
+      'criticalfieldsconfirmed',
+      'criticalfieldssignature'
     ]);
 
     const sanitize = (entry) => {
@@ -1312,6 +1328,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       if (!isPlainJsonObject(entry)) return entry;
 
       const resourceType = String(entry.resourceType || '');
+      const isLegacyParserProvenanceField =
+        typeof entry.field === 'string' &&
+        typeof entry.valueHash === 'string' &&
+        Object.prototype.hasOwnProperty.call(entry, 'sourceExcerpt');
       const result = {};
       Object.entries(entry).forEach(([key, child]) => {
         const normalizedKey = key.toLowerCase();
@@ -1319,7 +1339,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         const isLegacyFhirField =
           (resourceType === 'Patient' && normalizedKey === 'identifier') ||
           (resourceType === 'Encounter' && (normalizedKey === 'identifier' || normalizedKey === 'location'));
-        if (discardedKeys.has(normalizedKey) || isLegacyVisitAlias || isLegacyFhirField) return;
+        const isLegacyParserConfirmation =
+          isLegacyParserProvenanceField &&
+          ['confirmed', 'confirmedat', 'confirmedby'].includes(normalizedKey);
+        if (discardedKeys.has(normalizedKey) || isLegacyVisitAlias || isLegacyFhirField || isLegacyParserConfirmation) return;
         result[key] = sanitize(child);
       });
       return result;

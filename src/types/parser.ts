@@ -1,9 +1,6 @@
 import type { ClinicalRecordV1, ISODateTimeString } from "./clinical-record";
 
-export type ParserProvenanceConfirmationStatus =
-  | "unconfirmed"
-  | "confirmed"
-  | "changed-after-parse";
+export type ParserProvenanceStatus = "parsed";
 
 export interface ParserFieldProvenance {
   field: string;
@@ -13,10 +10,7 @@ export interface ParserFieldProvenance {
   sourceExcerpt: string;
   confidence: number;
   valueHash: string;
-  status: ParserProvenanceConfirmationStatus;
-  confirmed: boolean;
-  confirmedAt: ISODateTimeString | "";
-  confirmedBy: string;
+  status: ParserProvenanceStatus;
 }
 
 export interface ParserProvenanceV1 {

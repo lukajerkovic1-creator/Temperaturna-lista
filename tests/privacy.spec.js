@@ -74,7 +74,6 @@ test.describe('Privacy regression tests', () => {
       therapy: 'ceftriakson 2 g i.v.',
       allergies: 'azitromicin',
     });
-    await page.locator('#printOperatorName').fill('Privacy Operater Testic');
     await page.waitForTimeout(500);
 
     await expectBrowserStorageNotToContain(page, [
@@ -83,21 +82,18 @@ test.describe('Privacy regression tests', () => {
       'ceftriakson 2 g',
       'azitromicin',
       '22.06.2026',
-      'Privacy Operater Testic',
     ]);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#fullName')).toHaveValue('');
     await expect(page.locator('#diagnosis')).toHaveValue('');
     await expect(page.locator('#therapy')).toHaveValue('');
-    await expect(page.locator('#printOperatorName')).toHaveValue('');
     await expectBrowserStorageNotToContain(page, [
       'Privacy Regression Testic',
       'Privacy regression pneumonija',
       'ceftriakson 2 g',
       'azitromicin',
       '22.06.2026',
-      'Privacy Operater Testic',
     ]);
 
     browserSignals.assertCleanBrowserSignals();

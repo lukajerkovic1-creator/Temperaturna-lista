@@ -12,21 +12,18 @@ Each automatically applied field can carry a
 - a bounded source excerpt (maximum 240 characters), not the complete pasted report;
 - parser version and parse time;
 - a confidence value between 0 and 1;
-- a hash of the parsed field value;
-- confirmation status, actor and time for the current session.
+- a hash of the parsed field value.
 
 The current parser version is `temperaturna-lista-parser-v2`.
 
-## Confirmation and print blocking
+## Review and printing
 
-Identity/encounter, allergy and critical clinical confirmations update the
-matching provenance entries. Editing a covered field invalidates its review
-group. Printing is blocked while a current critical parser-derived field is
-unconfirmed or its value does not match the recorded value hash.
+Parser provenance is informational. It helps the user compare an automatically
+populated field with its bounded source excerpt and confidence estimate. It does
+not contain a confirmation state, operator identity or print guard.
 
-The medication validator independently blocks a medication line without a
-recognizable dose or route. Provenance confirmation does not override clinical
-validation findings.
+Clinical validation and medication warnings remain independent from parser
+provenance. Removing parser confirmation does not suppress those findings.
 
 ## Local persistence
 
@@ -34,13 +31,12 @@ Parser provenance can be included in a user-requested local patient JSON,
 encrypted local recovery draft and encrypted downtime backup. It is never sent
 to Firebase in the local-only production model.
 
-Confirmation state is never trusted after persistence. During export it is
-reset, and after import or recovery every entry is restored as unconfirmed.
-The user must review the current values again before printing.
+Legacy confirmation fields are silently discarded during import and are not
+written by new exports.
 
 ## Limitations
 
 - Confidence is a parser heuristic, not a probability of clinical correctness.
 - A source excerpt supports human review but does not prove that extraction is correct.
 - The value hash is an integrity comparison inside the client, not a digital signature.
-- Parser behavior and the confirmation workflow require clinical and hospital governance review before use with real patient data.
+- Parser behavior and the surrounding clinical workflow require clinical and hospital governance review before use with real patient data.

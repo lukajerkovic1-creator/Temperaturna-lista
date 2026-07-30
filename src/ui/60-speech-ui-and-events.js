@@ -594,7 +594,6 @@ function getTherapySuggestionPanel(targetId) {
   }
 
   function onFormChanged() {
-    reconcileClinicalPrintReview(getFormData(), { render: true });
     updateDisplayToggleUi();
     renderAll();
     updatePatientSyncStateForCurrentForm();
@@ -1115,23 +1114,6 @@ function getTherapySuggestionPanel(targetId) {
       const eventName = element.type === 'checkbox' ? 'change' : 'input';
       element.addEventListener(eventName, onFormChanged);
     });
-
-    [
-      [els.confirmIdentityAdmission, 'identityAdmission'],
-      [els.confirmAllergyStatus, 'allergyStatus'],
-      [els.confirmCriticalFields, 'criticalFields']
-    ].forEach(([checkbox, key]) => {
-      checkbox?.addEventListener('change', () => {
-        setClinicalPrintReviewConfirmation(key, checkbox.checked);
-      });
-    });
-
-    if (els.printOperatorName) {
-      els.printOperatorName.addEventListener('input', () => {
-        els.printOperatorName.setCustomValidity('');
-        reconcileClinicalPrintReview(getFormData(), { render: true });
-      });
-    }
 
     if (els.admissionDate) {
       els.admissionDate.addEventListener('input', updateAdmissionDateInputValidity);

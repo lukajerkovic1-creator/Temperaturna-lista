@@ -14,16 +14,14 @@ versioning such as `v0.1.0`.
 - Static app validation and basic security smoke checks.
 - Initial TypeScript typecheck gate.
 - Playwright quality suites for security, accessibility, privacy and performance regressions.
-- Session-only final clinical review controls for identity/admission, allergy status and critical diagnosis/medication fields. Confirmations are bound to hashed data signatures and are not persisted.
-- Field-level parser provenance with bounded source excerpts, confidence, parser version, value hashes and visible confirmation status for automatically populated clinical fields.
+- Field-level parser provenance with bounded source excerpts, confidence, parser version and value hashes for automatically populated clinical fields.
 - Mandatory dependency-free source linting and Node unit tests for SemVer validation and deterministic build fingerprints; CI can no longer skip either gate when a package script is missing.
 - Deterministic parser fuzz/property coverage for synthetic OHBP records: harmless formatting mutations must preserve critical fields, and bounded random input must never throw or return an invalid result shape. The parser test API exists only in the localhost QA bundle.
 - Experimental FHIR R4 4.0.1 profile manifest, resource-level profile tags, export `Provenance`, internal-reference validation and positive/negative synthetic fixture checks. Documentation explicitly states that this is not an official HL7 or hospital profile validation.
 - Fingerprinted static asset boundary for the application icon, blank form background and local medication database, including file-signature, load-order, decoded-byte and size-budget validation.
-- Required session-only print operator identity. It binds final clinical/parser confirmations to a named operator and is never saved to JSON, browser storage, or a network service.
 ### Changed
 
-- Application version now comes from `package.json` (`0.5.0`), and the build injects one deterministic 12-character source fingerprint into the production and QA artifacts. The same version/build identity is shown in the UI and carried by local JSON, encrypted recovery, local operational audit and ClinicalRecordV1 metadata.
+- Application version now comes from `package.json` (`0.6.0`), and the build injects one deterministic 12-character source fingerprint into the production and QA artifacts. The same version/build identity is shown in the UI and carried by local JSON, encrypted recovery, local operational audit and ClinicalRecordV1 metadata.
 - The generated browser bootstrap is split into a clinical production bundle and an explicit localhost QA bundle. Admin/calibration, parser-test capture, speech recognition and FHIR clipboard implementation code exists only in the QA artifact.
 - Medication lines without a recognizable dose or route are critical validation findings. Common oral dosage forms such as tablets and capsules imply the oral route for validation purposes.
 - Local JSON-only availability status now explicitly identifies offline operation and instructs the user to save patient data manually to JSON; Firebase patient storage remains identified as disabled rather than unavailable.
@@ -40,6 +38,8 @@ versioning such as `v0.1.0`.
 
 - Removed the four retired hospital identification/location inputs from the DOM, active form state, parser output, local JSON, ClinicalRecordV1, FHIR export, preview and print workflow.
 - Removed the dedicated pre-print warning for those retired fields. Identity review now covers only the supported patient identity and admission data.
+- Removed the final clinical confirmation fieldset, session print operator, three confirmation checkboxes, confirmation signatures, counters and their print guards.
+- Parser provenance remains visible and exportable as informational evidence, but no longer stores confirmation actor/time or blocks print.
 
 ### Fixed
 

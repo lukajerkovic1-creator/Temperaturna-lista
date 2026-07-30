@@ -3289,10 +3289,6 @@
     text-align: right;
   }
 
-  .parser-provenance-summary[data-state="confirmed"] {
-    color: #166534;
-  }
-
   .parser-provenance-help {
     margin: 0;
     padding: 0 11px 8px;
@@ -3320,11 +3316,6 @@
     background: #fffaf0;
     font-size: 11px;
     line-height: 1.35;
-  }
-
-  .parser-provenance-item.confirmed {
-    border-left-color: #16a34a;
-    background: #f0fdf4;
   }
 
   .parser-provenance-field {
@@ -3363,98 +3354,6 @@
     .parser-provenance-summary {
       text-align: left;
     }
-  }
-
-  .clinical-print-review {
-    display: grid;
-    gap: 8px;
-    min-width: 0;
-    margin: 0;
-    padding: 11px;
-    border: 1px solid #b8c7d8;
-    border-radius: 10px;
-    background: #f7fafc;
-  }
-
-  .clinical-print-review legend {
-    padding: 0 5px;
-    color: var(--ink);
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .clinical-operator-field {
-    display: grid;
-    gap: 5px;
-    min-width: 0;
-    padding: 8px;
-    border: 1px solid #c8d6e5;
-    border-radius: 8px;
-    background: #fff;
-  }
-
-  .clinical-operator-field label {
-    color: var(--ink);
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  .clinical-operator-field input {
-    width: 100%;
-  }
-
-  .clinical-operator-field p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 11px;
-    line-height: 1.35;
-  }
-
-  .clinical-print-review-help,
-  .clinical-print-review-status {
-    margin: 0;
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.4;
-  }
-
-  .clinical-print-review-item {
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr);
-    align-items: start;
-    gap: 7px;
-    min-width: 0;
-    padding: 7px 8px;
-    border: 1px solid #d6dee8;
-    border-radius: 8px;
-    background: #ffffff;
-    color: var(--ink);
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1.35;
-    cursor: pointer;
-  }
-
-  .clinical-print-review-item:has(input:checked) {
-    border-color: #86c99c;
-    background: #f0fdf4;
-    color: #166534;
-  }
-
-  .clinical-print-review-item input {
-    width: 16px;
-    height: 16px;
-    margin: 1px 0 0;
-  }
-
-  .clinical-print-review-status[data-review-state="confirmed"] {
-    color: #166534;
-    font-weight: 800;
-  }
-
-  .clinical-print-review-status[data-review-state="pending"] {
-    color: #92400e;
-    font-weight: 700;
   }
 
   #printBtn {

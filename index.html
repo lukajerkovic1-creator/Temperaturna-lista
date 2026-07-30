@@ -427,31 +427,9 @@
               <span>Dokaz automatskog parsiranja</span>
               <span class="parser-provenance-summary" id="parserProvenanceSummary" role="status" aria-live="polite">Nema parsiranih polja.</span>
             </summary>
-            <p class="parser-provenance-help">Za svako automatski uneseno polje prikazani su izvorni isječak, procjena pouzdanosti i status potvrde. Kritična parsirana polja moraju biti potvrđena prije ispisa.</p>
+            <p class="parser-provenance-help">Za svako automatski uneseno polje prikazani su izvorni isječak i procjena pouzdanosti. Automatski prepoznate podatke ručno provjeri prije ispisa.</p>
             <ul class="parser-provenance-list" id="parserProvenanceList" aria-label="Provenijencija automatski parsiranih polja"></ul>
           </details>
-          <fieldset class="clinical-print-review" id="clinicalPrintReview">
-            <legend>Završna klinička potvrda</legend>
-            <div class="clinical-operator-field">
-              <label for="printOperatorName">Operater ispisa (ime i prezime)</label>
-              <input id="printOperatorName" type="text" maxlength="120" autocomplete="off" required aria-describedby="printOperatorNameHelp">
-              <p id="printOperatorNameHelp">Vrijedi samo u ovoj otvorenoj kartici. Ne sprema se u JSON, browser storage ni mrežu.</p>
-            </div>
-            <p class="clinical-print-review-help">Potvrde vrijede samo za trenutačni sadržaj. Izmjena kritičnih podataka automatski ih poništava.</p>
-            <label class="clinical-print-review-item" for="confirmIdentityAdmission">
-              <input id="confirmIdentityAdmission" type="checkbox">
-              <span>Potvrđeni su ime/godište i datum prijema.</span>
-            </label>
-            <label class="clinical-print-review-item" for="confirmAllergyStatus">
-              <input id="confirmAllergyStatus" type="checkbox">
-              <span>Potvrđen je eksplicitni alergijski status.</span>
-            </label>
-            <label class="clinical-print-review-item" for="confirmCriticalFields">
-              <input id="confirmCriticalFields" type="checkbox">
-              <span>Pregledani su dijagnoza, terapija, doza/put primjene i kritična parsirana polja.</span>
-            </label>
-            <div id="clinicalPrintReviewStatus" class="clinical-print-review-status" role="status" aria-live="polite" data-review-state="pending">Potrebne su 3 završne potvrde prije ispisa.</div>
-          </fieldset>
           <button id="printBtn" class="primary" type="button">Ispiši temperaturnu listu</button>
           <div class="toolbar-row secondary-row" id="patientDraftStatusRow">
             <div id="patientDraftStatus" class="patient-draft-status" role="status" aria-live="polite" data-draft-state="unknown">Lokalni auto-save pacijentnih podataka je isključen.</div>

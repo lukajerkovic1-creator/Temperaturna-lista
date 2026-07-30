@@ -321,20 +321,8 @@ async function openApp(page, path = './') {
   };
 }
 
-async function confirmClinicalPrintReview(page, operatorName = 'Testni Operater') {
-  const operatorInput = page.locator('#printOperatorName');
-  if (!(await operatorInput.inputValue()).trim()) {
-    await operatorInput.fill(operatorName);
-  }
-  await page.locator('#confirmIdentityAdmission').check();
-  await page.locator('#confirmAllergyStatus').check();
-  await page.locator('#confirmCriticalFields').check();
-  await expect(page.locator('#clinicalPrintReviewStatus')).toHaveAttribute('data-review-state', 'confirmed');
-}
-
-async function fillClinicalPrintPrerequisites(page, overrides = {}, options = {}) {
+async function fillClinicalPrintPrerequisites(page, overrides = {}) {
   const values = {
-    operatorName: 'Testni Operater',
     fullName: 'Print Testic',
     birthYear: '1970',
     admissionDate: '19.06.2026.',
@@ -343,16 +331,12 @@ async function fillClinicalPrintPrerequisites(page, overrides = {}, options = {}
     therapy: 'Ceftriakson 2 g i.v.',
     ...overrides
   };
-  await page.locator('#printOperatorName').fill(values.operatorName);
   await page.locator('#fullName').fill(values.fullName);
   await page.locator('#birthYear').fill(values.birthYear);
   await page.locator('#admissionDate').fill(values.admissionDate);
   await page.locator('#diagnosis').fill(values.diagnosis);
   await page.locator('#allergies').fill(values.allergies);
   await page.locator('#therapy').fill(values.therapy);
-  if (options.confirmReview !== false) {
-    await confirmClinicalPrintReview(page);
-  }
   return values;
 }
 
@@ -663,6 +647,14 @@ test.describe('GitHub Pages smoke test', () => {
         encounterId: 'LEGACY-VISIT-SECRET',
         room: 'LEGACY-ROOM-SECRET',
         bed: 'LEGACY-BED-SECRET',
+        printOperatorName: 'LEGACY-OPERATOR-SECRET',
+        identityAdmissionConfirmed: true,
+        allergyStatusConfirmed: true,
+        criticalFieldsConfirmed: true,
+        clinicalPrintReview: {
+          confirmedBy: 'LEGACY-OPERATOR-SECRET',
+          confirmedAt: '2026-07-01T10:00:00.000Z'
+        },
         diagnosis: 'Sintetska dijagnoza ostaje.',
         allergies: 'nema',
         patientOrigin: 'Testni odjel',
@@ -689,6 +681,31 @@ test.describe('GitHub Pages smoke test', () => {
         showFollowUpControlOnList: true,
         showLabsOnList: true,
         showRadiologyOnList: true
+      },
+      printOperator: 'LEGACY-OPERATOR-SECRET',
+      finalConfirmation: true,
+      parserProvenance: {
+        schema: 'temperaturna-lista-parser-provenance-v1',
+        parserVersion: 'temperaturna-lista-parser-v2',
+        parserMode: 'department',
+        source: 'legacy-json',
+        parsedAt: '2026-07-01T09:59:00.000Z',
+        sourceTextHash: 'legacy-source-hash',
+        fields: {
+          fullName: {
+            field: 'fullName',
+            label: 'Ime i prezime',
+            group: 'identityAdmission',
+            critical: true,
+            sourceExcerpt: 'Legacy Import Testic',
+            confidence: 0.9,
+            valueHash: 'legacy-value-hash',
+            status: 'confirmed',
+            confirmed: true,
+            confirmedAt: '2026-07-01T10:00:00.000Z',
+            confirmedBy: 'LEGACY-OPERATOR-SECRET'
+          }
+        }
       }
     };
 
@@ -709,6 +726,11 @@ test.describe('GitHub Pages smoke test', () => {
           encounterId: 'LEGACY-VISIT-SECRET',
           room: 'LEGACY-ROOM-SECRET',
           bed: 'LEGACY-BED-SECRET',
+          printOperatorName: 'LEGACY-OPERATOR-SECRET',
+          clinicalPrintReview: {
+            identityAdmissionConfirmed: true,
+            confirmedBy: 'LEGACY-OPERATOR-SECRET'
+          },
           fullName: 'Legacy Import Testic'
         },
         clinicalRecord: {
@@ -743,7 +765,8 @@ test.describe('GitHub Pages smoke test', () => {
       'LEGACY-PATIENT-SECRET',
       'LEGACY-VISIT-SECRET',
       'LEGACY-ROOM-SECRET',
-      'LEGACY-BED-SECRET'
+      'LEGACY-BED-SECRET',
+      'LEGACY-OPERATOR-SECRET'
     ]) {
       expect(serializedOutput).not.toContain(retiredValue);
     }
@@ -766,6 +789,26 @@ test.describe('GitHub Pages smoke test', () => {
     expect(layout.hasOverflow).toBe(false);
     expect(layout.verticalGap).not.toBeNull();
     expect(layout.verticalGap).toBeLessThan(40);
+    const printLayout = await page.locator('#workflowStep4Title').evaluate((title) => {
+      const section = title.closest('.workflow-step');
+      const toolbar = section?.querySelector('.toolbar');
+      const printButton = toolbar?.querySelector('#printBtn');
+      let previousVisible = printButton?.previousElementSibling;
+      while (previousVisible && (previousVisible.hidden || previousVisible.classList.contains('hidden'))) {
+        previousVisible = previousVisible.previousElementSibling;
+      }
+      const previousRect = previousVisible?.getBoundingClientRect();
+      const printRect = printButton?.getBoundingClientRect();
+      return {
+        hasRetiredBlock: Boolean(toolbar?.querySelector('#clinicalPrintReview')),
+        hasOverflow: Boolean(toolbar && toolbar.scrollWidth > toolbar.clientWidth + 1),
+        verticalGap: previousRect && printRect ? Math.round(printRect.top - previousRect.bottom) : null
+      };
+    });
+    expect(printLayout.hasRetiredBlock).toBe(false);
+    expect(printLayout.hasOverflow).toBe(false);
+    expect(printLayout.verticalGap).not.toBeNull();
+    expect(printLayout.verticalGap).toBeLessThan(32);
 
     page.once('dialog', async (dialog) => {
       expect(dialog.type()).toBe('prompt');
@@ -783,15 +826,17 @@ test.describe('GitHub Pages smoke test', () => {
       'LEGACY-PATIENT-SECRET',
       'LEGACY-VISIT-SECRET',
       'LEGACY-ROOM-SECRET',
-      'LEGACY-BED-SECRET'
+      'LEGACY-BED-SECRET',
+      'LEGACY-OPERATOR-SECRET'
     ]) {
       expect(savedText).not.toContain(retiredValue);
     }
+    expect(savedText).not.toMatch(/printOperatorName|clinicalPrintReview|identityAdmissionConfirmed|allergyStatusConfirmed|criticalFieldsConfirmed|"confirmedAt"|"confirmedBy"/i);
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('records field-level parser provenance and warns before print after a parsed field changes', async ({ page }) => {
+  test('records field-level parser provenance as informational evidence without print confirmation state', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
 
@@ -814,31 +859,19 @@ test.describe('GitHub Pages smoke test', () => {
     const nameProvenance = page.locator('.parser-provenance-item[data-field="fullName"]');
     await expect(nameProvenance).toBeVisible();
     await expect(nameProvenance.locator('.parser-provenance-excerpt')).toContainText(/TESTIĆ PROVENIJENCIJA/i);
-    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/\d+%.*nepotvrđeno/i);
+    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/\d+%.*automatski prepoznato/i);
     await expect(page.locator('#parserProvenanceSummary')).toContainText(/parser-v2/i);
-
-    await confirmClinicalPrintReview(page);
-    await expect(nameProvenance).toHaveAttribute('data-confirmed', 'true');
-    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/potvrđeno.*Testni Operater/i);
-    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'confirmed');
+    await expect(nameProvenance).not.toHaveAttribute('data-confirmed', /.+/);
+    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'available');
 
     await page.locator('#fullName').fill('Izmijenjeni Testić');
-    await expect(page.locator('#confirmIdentityAdmission')).not.toBeChecked();
-    await expect(nameProvenance).toHaveAttribute('data-confirmed', 'false');
-    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'pending');
-
-    await page.locator('#printBtn').click();
-    const warningDialog = page.locator('#printConfirmDialog');
-    await expect(warningDialog).toBeVisible();
-    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/nepotvrđeno parsirano polje: Ime i prezime/i);
-    await expect(warningDialog.locator('[data-print-confirm-action="proceed"]')).toHaveText('Svejedno ispiši');
-    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
-    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/automatski prepoznato/i);
+    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'available');
 
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('persists parser provenance in local JSON but never persists its confirmation', async ({ page }) => {
+  test('persists parser provenance in local JSON without retired confirmation keys', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'showSaveFilePicker', {
         configurable: true,
@@ -860,8 +893,6 @@ test.describe('GitHub Pages smoke test', () => {
       'Th: Testamicin 1 g i.v.'
     ].join('\n'));
     await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toBeVisible();
-    await confirmClinicalPrintReview(page);
-
     page.once('dialog', async (dialog) => {
       expect(dialog.type()).toBe('prompt');
       await dialog.accept('TL_PARSER_PROVENANCE_TEST');
@@ -878,9 +909,9 @@ test.describe('GitHub Pages smoke test', () => {
     expect(savedEnvelope.parserProvenance.parserVersion).toBe('temperaturna-lista-parser-v2');
     expect(savedEnvelope.parserProvenance.fields.fullName.sourceExcerpt).toMatch(/JSON PROVENIJENCIJA/i);
     expect(savedEnvelope.parserProvenance.fields.fullName.confidence).toBeGreaterThan(0);
-    expect(savedEnvelope.parserProvenance.fields.fullName.confirmed).toBe(false);
-    expect(savedEnvelope.parserProvenance.fields.fullName.confirmedAt).toBe('');
-    expect(savedEnvelope.parserProvenance.fields.fullName.confirmedBy).toBe('');
+    expect(savedEnvelope.parserProvenance.fields.fullName).not.toHaveProperty('confirmed');
+    expect(savedEnvelope.parserProvenance.fields.fullName).not.toHaveProperty('confirmedAt');
+    expect(savedEnvelope.parserProvenance.fields.fullName).not.toHaveProperty('confirmedBy');
 
     await page.locator('#loadDataInput').setInputFiles({
       name: 'TL_PARSER_PROVENANCE_TEST.json',
@@ -889,9 +920,8 @@ test.describe('GitHub Pages smoke test', () => {
     });
     await expect(page.locator('#statusBar')).toContainText(/Podaci pacijenta učitani su iz JSON datoteke/i);
     await expect(page.locator('#fullName')).toHaveValue(/Provenijencija Json/i);
-    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toHaveAttribute('data-confirmed', 'false');
-    await expect(page.locator('#confirmIdentityAdmission')).not.toBeChecked();
-    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'pending');
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).not.toHaveAttribute('data-confirmed', /.+/);
+    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'available');
     await expect.poll(async () => page.evaluate(() => {
       const events = JSON.parse(localStorage.getItem('temperaturna_lista_operativni_audit_v1') || '[]');
       return events.some((event) => event.eventType === 'patient.localJsonRestore');
@@ -1749,74 +1779,26 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('requires explicit final clinical confirmations before print', async ({ page }) => {
+  test('removes final clinical confirmation UI and prints without an operator or review checkboxes', async ({ page }) => {
     await installFirebaseSmokeClient(page);
-    const browserSignals = await openApp(page, './?qa=print-explicit-review&firebaseSmoke=1');
+    const browserSignals = await openApp(page, './?qa=print-without-final-confirmation&firebaseSmoke=1');
 
     await expect(page.locator('#firebaseLoginGate')).toBeHidden();
     await fillClinicalPrintPrerequisites(page, {
-      fullName: 'Explicit Review Testic'
-    }, { confirmReview: false });
-
-    await expect(page.locator('#clinicalPrintReviewStatus')).toHaveAttribute('data-review-state', 'pending');
-    await page.locator('#printBtn').click();
-    const warningDialog = page.locator('#printConfirmDialog');
-    await expect(warningDialog).toBeVisible();
-    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/izričita potvrda identiteta i datuma prijema/i);
-    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/potvrda alergijskog statusa/i);
-    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/kritičnih parsiranih polja/i);
-    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
-    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
-
-    browserSignals.assertCleanBrowserSignals();
-  });
-
-  test('warns before print without a named session operator', async ({ page }) => {
-    await installFirebaseSmokeClient(page);
-    const browserSignals = await openApp(page, './?qa=print-operator-required&firebaseSmoke=1');
-
-    await fillClinicalPrintPrerequisites(page, {
-      operatorName: '',
-      fullName: 'Operator Required Testic'
-    }, { confirmReview: false });
-
-    await page.locator('#confirmIdentityAdmission').click();
-    await expect(page.locator('#confirmIdentityAdmission')).not.toBeChecked();
-    await expect(page.locator('#statusBar')).toContainText(/operatera ispisa/i);
-    await expect(page.locator('#printOperatorName')).toBeFocused();
-
-    await page.locator('#printBtn').click();
-    const warningDialog = page.locator('#printConfirmDialog');
-    await expect(warningDialog).toBeVisible();
-    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/ime i prezime operatera ispisa/i);
-    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
-    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
-
-    browserSignals.assertCleanBrowserSignals();
-  });
-
-  test('invalidates a clinical confirmation after critical data changes', async ({ page }) => {
-    await installFirebaseSmokeClient(page);
-    const browserSignals = await openApp(page, './?qa=print-review-invalidation&firebaseSmoke=1');
-
-    await expect(page.locator('#firebaseLoginGate')).toBeHidden();
-    await fillClinicalPrintPrerequisites(page, {
-      fullName: 'Review Invalidation Testic'
+      fullName: 'No Final Review Testic'
     });
 
-    await expect(page.locator('#confirmCriticalFields')).toBeChecked();
-    await page.locator('#diagnosis').fill('Izmijenjena sintetska dijagnoza.');
-    await expect(page.locator('#confirmCriticalFields')).not.toBeChecked();
-    await expect(page.locator('#confirmIdentityAdmission')).toBeChecked();
-    await expect(page.locator('#confirmAllergyStatus')).toBeChecked();
-    await expect(page.locator('#clinicalPrintReviewStatus')).toHaveAttribute('data-review-state', 'pending');
-
+    await expect(page.locator(
+      '#clinicalPrintReview, #printOperatorName, #confirmIdentityAdmission, #confirmAllergyStatus, #confirmCriticalFields, #clinicalPrintReviewStatus'
+    )).toHaveCount(0);
+    await page.locator('#diagnosis').fill('Izmijenjena sintetska dijagnoza bez resetiranja potvrda.');
     await page.locator('#printBtn').click();
     const warningDialog = page.locator('#printConfirmDialog');
     await expect(warningDialog).toBeVisible();
-    await expect(warningDialog.locator('#printConfirmDialogDescription')).toContainText(/terapije i kritičnih parsiranih polja/i);
-    await warningDialog.locator('[data-print-confirm-action="cancel"]').click();
-    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(0);
+    await expect(warningDialog.locator('#printConfirmDialogTitle')).toHaveText('Lista nije spremljena u lokalni JSON');
+    await expect(warningDialog.locator('#printConfirmDialogDescription')).not.toContainText(/operater|završn.*potvrd|kliničk.*potvrd/i);
+    await warningDialog.locator('[data-print-confirm-action="proceed"]').click();
+    await expect.poll(async () => page.evaluate(() => window.__TEMPERATURNA_LISTA_PRINT_CALLS__ || 0)).toBe(1);
 
     browserSignals.assertCleanBrowserSignals();
   });

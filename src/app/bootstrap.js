@@ -8,8 +8,8 @@
   // ============================================================
   // VERZIJA APLIKACIJE — jedini izvor istine
   // ============================================================
-  const APP_VERSION = '0.5.0';
-  const APP_BUILD_SHA = 'a0978f975dc1';
+  const APP_VERSION = '0.6.0';
+  const APP_BUILD_SHA = '2c2c50df6dae';
   const PARSER_VERSION = 'temperaturna-lista-parser-v2';
   const PARSER_PROVENANCE_SCHEMA = 'temperaturna-lista-parser-provenance-v1';
   window.__TEMPERATURNA_LISTA_BUILD_SHA__ = APP_BUILD_SHA;
@@ -2639,12 +2639,6 @@
     parserProvenancePanel: document.getElementById('parserProvenancePanel'),
     parserProvenanceSummary: document.getElementById('parserProvenanceSummary'),
     parserProvenanceList: document.getElementById('parserProvenanceList'),
-    clinicalPrintReview: document.getElementById('clinicalPrintReview'),
-    printOperatorName: document.getElementById('printOperatorName'),
-    confirmIdentityAdmission: document.getElementById('confirmIdentityAdmission'),
-    confirmAllergyStatus: document.getElementById('confirmAllergyStatus'),
-    confirmCriticalFields: document.getElementById('confirmCriticalFields'),
-    clinicalPrintReviewStatus: document.getElementById('clinicalPrintReviewStatus'),
     printBtn: document.getElementById('printBtn'),
     dataAdminAdvancedSection: document.getElementById('dataAdminAdvancedSection'),
     dataAdminAdvancedTitle: document.querySelector('#dataAdminAdvancedSection .advanced-section-title'),
@@ -2982,16 +2976,6 @@
       currentPatientVersion: '',
       hasUnsavedChanges: false,
       saveInFlight: false
-    },
-    clinicalPrintReview: {
-      identityAdmissionConfirmed: false,
-      allergyStatusConfirmed: false,
-      criticalFieldsConfirmed: false,
-      identityAdmissionSignature: '',
-      allergyStatusSignature: '',
-      criticalFieldsSignature: '',
-      confirmedAt: '',
-      confirmedBy: ''
     },
     appAvailability: {
       networkStatus: navigator.onLine === false ? 'offline' : 'online',
@@ -7860,7 +7844,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function setFormData(data = {}) {
-    resetClinicalPrintReview({ render: false });
     clearCurrentParserProvenance({ render: false });
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
@@ -7910,185 +7893,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     updateDisplayToggleUi();
     expandDefaultTextFields(data);
     scheduleAutoResizeTextareas();
-  }
-
-  const CLINICAL_PRINT_REVIEW_KEYS = Object.freeze({
-    identityAdmission: Object.freeze({
-      confirmed: 'identityAdmissionConfirmed',
-      signature: 'identityAdmissionSignature',
-      checkbox: 'confirmIdentityAdmission',
-      issue: 'izričita potvrda identiteta i datuma prijema'
-    }),
-    allergyStatus: Object.freeze({
-      confirmed: 'allergyStatusConfirmed',
-      signature: 'allergyStatusSignature',
-      checkbox: 'confirmAllergyStatus',
-      issue: 'izričita potvrda alergijskog statusa'
-    }),
-    criticalFields: Object.freeze({
-      confirmed: 'criticalFieldsConfirmed',
-      signature: 'criticalFieldsSignature',
-      checkbox: 'confirmCriticalFields',
-      issue: 'potvrda terapije i kritičnih parsiranih polja'
-    })
-  });
-
-  function hashClinicalPrintReviewValue(value) {
-    const text = JSON.stringify(value);
-    let hash = 0x811c9dc5;
-    for (let index = 0; index < text.length; index += 1) {
-      hash ^= text.charCodeAt(index);
-      hash = Math.imul(hash, 0x01000193);
-    }
-    return `review-v1-${(hash >>> 0).toString(16).padStart(8, '0')}`;
-  }
-
-  function normalizeClinicalPrintReviewText(value) {
-    return normalizeLineBreaks(value || '')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n+/g, '\n')
-      .trim();
-  }
-
-  function getClinicalOperatorName() {
-    return normalizeClinicalPrintReviewText(els.printOperatorName?.value || '')
-      .replace(/[<>]/g, '')
-      .slice(0, 120);
-  }
-
-  function reportMissingClinicalOperator() {
-    const message = 'Upišite ime i prezime operatera ispisa prije kliničke potvrde ili ispisa.';
-    if (els.printOperatorName) {
-      els.printOperatorName.setCustomValidity(message);
-      els.printOperatorName.focus();
-    }
-    setStatus(message, true);
-    return message;
-  }
-
-  function getClinicalPrintReviewSignatures(data = getFormData()) {
-    const operatorName = getClinicalOperatorName();
-    return {
-      identityAdmission: hashClinicalPrintReviewValue({
-        operatorName,
-        patientMode: getPatientModeFromData(data),
-        fullName: normalizeClinicalPrintReviewText(data.fullName),
-        birthYear: normalizeClinicalPrintReviewText(data.birthYear),
-        admissionDate: normalizeAdmissionDateInput(data.admissionDate)
-      }),
-      allergyStatus: hashClinicalPrintReviewValue({
-        operatorName,
-        allergies: normalizeClinicalPrintReviewText(data.allergies)
-      }),
-      criticalFields: hashClinicalPrintReviewValue({
-        operatorName,
-        diagnosis: normalizeClinicalPrintReviewText(data.diagnosis),
-        therapy: normalizeClinicalPrintReviewText(data.therapy),
-        ohbpTherapy: normalizeClinicalPrintReviewText(data.ohbpTherapy),
-        vitalSigns: normalizeClinicalPrintReviewText(data.vitalSigns),
-        labRaw: normalizeClinicalPrintReviewText(data.labRaw),
-        radiologyRaw: normalizeClinicalPrintReviewText(data.radiologyRaw),
-        followUpControlDate: normalizeAdmissionDateInput(data.followUpControlDate),
-        followUpControl: normalizeClinicalPrintReviewText(data.followUpControl),
-        parserSource: normalizeClinicalPrintReviewText(
-          state.ohbpLastParsedText || els.ambulatoryPasteBox?.value || ''
-        )
-      })
-    };
-  }
-
-  function resetClinicalPrintReview(options = {}) {
-    Object.values(CLINICAL_PRINT_REVIEW_KEYS).forEach((config) => {
-      state.clinicalPrintReview[config.confirmed] = false;
-      state.clinicalPrintReview[config.signature] = '';
-    });
-    state.clinicalPrintReview.confirmedAt = '';
-    state.clinicalPrintReview.confirmedBy = '';
-    if (options.render !== false) renderClinicalPrintReview({ reconcile: false });
-  }
-
-  function reconcileClinicalPrintReview(data = getFormData(), options = {}) {
-    const signatures = getClinicalPrintReviewSignatures(data);
-    let invalidated = false;
-    Object.entries(CLINICAL_PRINT_REVIEW_KEYS).forEach(([key, config]) => {
-      if (
-        state.clinicalPrintReview[config.confirmed] &&
-        state.clinicalPrintReview[config.signature] !== signatures[key]
-      ) {
-        state.clinicalPrintReview[config.confirmed] = false;
-        state.clinicalPrintReview[config.signature] = '';
-        setParserProvenanceGroupConfirmation(key, false, { reason: 'changed-after-parse' });
-        invalidated = true;
-      }
-    });
-    if (invalidated) {
-      state.clinicalPrintReview.confirmedAt = '';
-      state.clinicalPrintReview.confirmedBy = '';
-    }
-    if (options.render !== false) renderClinicalPrintReview({ reconcile: false });
-    return invalidated;
-  }
-
-  function setClinicalPrintReviewConfirmation(key, checked) {
-    const config = CLINICAL_PRINT_REVIEW_KEYS[key];
-    if (!config) return false;
-    if (checked && !getClinicalOperatorName()) {
-      state.clinicalPrintReview[config.confirmed] = false;
-      state.clinicalPrintReview[config.signature] = '';
-      reportMissingClinicalOperator();
-      renderClinicalPrintReview({ reconcile: false });
-      return false;
-    }
-    const signatures = getClinicalPrintReviewSignatures();
-    state.clinicalPrintReview[config.confirmed] = Boolean(checked);
-    state.clinicalPrintReview[config.signature] = checked ? signatures[key] : '';
-    setParserProvenanceGroupConfirmation(key, Boolean(checked), {
-      reason: checked ? 'confirmed' : 'unconfirmed'
-    });
-
-    const allConfirmed = Object.values(CLINICAL_PRINT_REVIEW_KEYS)
-      .every((item) => state.clinicalPrintReview[item.confirmed]);
-    if (allConfirmed) {
-      state.clinicalPrintReview.confirmedAt = new Date().toISOString();
-      state.clinicalPrintReview.confirmedBy = getClinicalOperatorName();
-    } else {
-      state.clinicalPrintReview.confirmedAt = '';
-      state.clinicalPrintReview.confirmedBy = '';
-    }
-    renderClinicalPrintReview({ reconcile: false });
-    return true;
-  }
-
-  function renderClinicalPrintReview(options = {}) {
-    if (!els.clinicalPrintReview) return;
-    if (options.reconcile !== false) reconcileClinicalPrintReview(getFormData(), { render: false });
-
-    const confirmedCount = Object.values(CLINICAL_PRINT_REVIEW_KEYS).reduce((count, config) => {
-      const checked = Boolean(state.clinicalPrintReview[config.confirmed]);
-      const checkbox = els[config.checkbox];
-      if (checkbox) checkbox.checked = checked;
-      return count + (checked ? 1 : 0);
-    }, 0);
-    const allConfirmed = confirmedCount === Object.keys(CLINICAL_PRINT_REVIEW_KEYS).length;
-    if (els.clinicalPrintReviewStatus) {
-      els.clinicalPrintReviewStatus.dataset.reviewState = allConfirmed ? 'confirmed' : 'pending';
-      if (allConfirmed) {
-        const confirmedAt = new Date(state.clinicalPrintReview.confirmedAt);
-        const timeLabel = Number.isNaN(confirmedAt.getTime())
-          ? ''
-          : confirmedAt.toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' });
-        els.clinicalPrintReviewStatus.textContent = `Sve 3 potvrde vrijede za trenutačni sadržaj${timeLabel ? ` (${timeLabel})` : ''}.`;
-      } else {
-        els.clinicalPrintReviewStatus.textContent = `Potrebne su još ${3 - confirmedCount} od 3 završne potvrde prije ispisa.`;
-      }
-    }
-  }
-
-  function getClinicalPrintReviewIssues(data = getFormData()) {
-    reconcileClinicalPrintReview(data, { render: true });
-    return Object.values(CLINICAL_PRINT_REVIEW_KEYS)
-      .filter((config) => !state.clinicalPrintReview[config.confirmed])
-      .map((config) => config.issue);
   }
 
   function splitClinicalLines(value) {
@@ -8833,7 +8637,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       els.ohbpPasteBox.value = '';
     }
     state.ohbpLastParsedText = '';
-    resetClinicalPrintReview({ render: false });
     setOhbpParseStatus('');
     clearPatientDraft({ quiet: true });
     renderAll();
@@ -11379,10 +11182,6 @@ function normalizeOhbpFusedSectionLabels(value) {
     return 0.62;
   }
 
-  function getParserProvenanceActor() {
-    return typeof getClinicalOperatorName === 'function' ? getClinicalOperatorName() : '';
-  }
-
   function createEmptyParserProvenance() {
     return {
       schema: PARSER_PROVENANCE_SCHEMA,
@@ -11416,10 +11215,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt,
         confidence: getParserFieldConfidence(parsed, fieldName, sourceExcerpt, parsedValue),
         valueHash: hashParserProvenanceValue(parsedValue),
-        status: 'unconfirmed',
-        confirmed: false,
-        confirmedAt: '',
-        confirmedBy: ''
+        status: 'parsed'
       };
     });
     state.parserProvenance = {
@@ -11434,7 +11230,6 @@ function normalizeOhbpFusedSectionLabels(value) {
     if (els.parserProvenancePanel && Object.keys(fields).length) {
       els.parserProvenancePanel.open = true;
     }
-    resetClinicalPrintReview({ render: false });
     renderParserProvenance();
   }
 
@@ -11450,34 +11245,8 @@ function normalizeOhbpFusedSectionLabels(value) {
     });
   }
 
-  function setParserProvenanceGroupConfirmation(group, confirmed, options = {}) {
-    const provenance = state.parserProvenance;
-    if (!provenance?.fields) return;
-    const confirmedAt = confirmed ? new Date().toISOString() : '';
-    const confirmedBy = confirmed ? getParserProvenanceActor() : '';
-    Object.values(provenance.fields).forEach((entry) => {
-      if (entry.group !== group) return;
-      entry.confirmed = Boolean(confirmed);
-      entry.confirmedAt = confirmedAt;
-      entry.confirmedBy = confirmedBy;
-      entry.status = confirmed ? 'confirmed' : String(options.reason || 'unconfirmed');
-    });
-    renderParserProvenance();
-  }
-
   function getCurrentParserFieldValue(fieldName, data = getFormData()) {
     return normalizeParserProvenanceValue(data?.[fieldName]);
-  }
-
-  function getUnconfirmedCriticalParserProvenanceIssues(data = getFormData()) {
-    const fields = Object.values(state.parserProvenance?.fields || {});
-    return fields
-      .filter((entry) => entry.critical && getCurrentParserFieldValue(entry.field, data))
-      .filter((entry) => {
-        const currentHash = hashParserProvenanceValue(getCurrentParserFieldValue(entry.field, data));
-        return !entry.confirmed || entry.valueHash !== currentHash;
-      })
-      .map((entry) => `nepotvrđeno parsirano polje: ${entry.label}`);
   }
 
   function serializeCurrentParserProvenance() {
@@ -11498,10 +11267,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt: String(entry.sourceExcerpt || '').slice(0, 240),
         confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
         valueHash: String(entry.valueHash || ''),
-        status: 'unconfirmed',
-        confirmed: false,
-        confirmedAt: '',
-        confirmedBy: ''
+        status: 'parsed'
       }]))
     };
   }
@@ -11525,10 +11291,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt: String(entry.sourceExcerpt || '').replace(/[\r\n\t]+/g, ' ').slice(0, 240),
         confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
         valueHash: String(entry.valueHash || '').slice(0, 80),
-        status: 'unconfirmed',
-        confirmed: false,
-        confirmedAt: '',
-        confirmedBy: ''
+        status: 'parsed'
       };
     });
     return restored.parsedAt && Object.keys(restored.fields).length ? restored : null;
@@ -11554,17 +11317,13 @@ function normalizeOhbpFusedSectionLabels(value) {
       return;
     }
 
-    const unconfirmedCount = fields.filter((entry) => !entry.confirmed).length;
-    els.parserProvenanceSummary.textContent = unconfirmedCount
-      ? `${unconfirmedCount}/${fields.length} nepotvrđeno · ${provenance.parserVersion}`
-      : `${fields.length}/${fields.length} potvrđeno · ${provenance.parserVersion}`;
-    els.parserProvenanceSummary.dataset.state = unconfirmedCount ? 'pending' : 'confirmed';
+    els.parserProvenanceSummary.textContent = `${fields.length} parsiranih polja · ${provenance.parserVersion}`;
+    els.parserProvenanceSummary.dataset.state = 'available';
 
     fields.forEach((entry) => {
       const item = document.createElement('li');
-      item.className = `parser-provenance-item${entry.confirmed ? ' confirmed' : ''}`;
+      item.className = 'parser-provenance-item';
       item.dataset.field = entry.field;
-      item.dataset.confirmed = String(Boolean(entry.confirmed));
 
       const field = document.createElement('span');
       field.className = 'parser-provenance-field';
@@ -11572,9 +11331,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       const meta = document.createElement('span');
       meta.className = 'parser-provenance-meta';
       const confidence = `${Math.round((Number(entry.confidence) || 0) * 100)}%`;
-      meta.textContent = entry.confirmed
-        ? `${confidence} · potvrđeno ${entry.confirmedBy || 'lokalni korisnik'} ${entry.confirmedAt ? formatPatientDraftSavedAt(entry.confirmedAt) : ''}`
-        : `${confidence} · nepotvrđeno`;
+      meta.textContent = `${confidence} · automatski prepoznato`;
       const excerpt = document.createElement('q');
       excerpt.className = 'parser-provenance-excerpt';
       excerpt.textContent = entry.sourceExcerpt || 'Izvorni isječak nije pouzdano lociran.';
@@ -14493,7 +14250,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   }
 
   function renderAll() {
-    renderClinicalPrintReview();
     renderParserProvenance();
     let model;
     try {
@@ -15237,7 +14993,24 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       'patientroom',
       'bed',
       'bednumber',
-      'patientbed'
+      'patientbed',
+      'printoperatorname',
+      'operatorname',
+      'printoperator',
+      'finalconfirmation',
+      'clinicalconfirmation',
+      'clinicalprintreview',
+      'confirmationcount',
+      'requiredconfirmations',
+      'identityconfirmed',
+      'identityadmissionconfirmed',
+      'identityadmissionsignature',
+      'allergyconfirmed',
+      'allergystatusconfirmed',
+      'allergystatussignature',
+      'reviewconfirmed',
+      'criticalfieldsconfirmed',
+      'criticalfieldssignature'
     ]);
 
     const sanitize = (entry) => {
@@ -15245,6 +15018,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       if (!isPlainJsonObject(entry)) return entry;
 
       const resourceType = String(entry.resourceType || '');
+      const isLegacyParserProvenanceField =
+        typeof entry.field === 'string' &&
+        typeof entry.valueHash === 'string' &&
+        Object.prototype.hasOwnProperty.call(entry, 'sourceExcerpt');
       const result = {};
       Object.entries(entry).forEach(([key, child]) => {
         const normalizedKey = key.toLowerCase();
@@ -15252,7 +15029,10 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
         const isLegacyFhirField =
           (resourceType === 'Patient' && normalizedKey === 'identifier') ||
           (resourceType === 'Encounter' && (normalizedKey === 'identifier' || normalizedKey === 'location'));
-        if (discardedKeys.has(normalizedKey) || isLegacyVisitAlias || isLegacyFhirField) return;
+        const isLegacyParserConfirmation =
+          isLegacyParserProvenanceField &&
+          ['confirmed', 'confirmedat', 'confirmedby'].includes(normalizedKey);
+        if (discardedKeys.has(normalizedKey) || isLegacyVisitAlias || isLegacyFhirField || isLegacyParserConfirmation) return;
         result[key] = sanitize(child);
       });
       return result;
@@ -19658,17 +19438,12 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
       String(data.ohbpTherapy || '').trim()
     ].filter(Boolean).join('\n');
 
-    if (!getClinicalOperatorName()) issues.push('ime i prezime operatera ispisa');
-
     if (!fullName) issues.push('ime i prezime pacijenta');
     if (!/^(?:18|19|20)\d{2}$/.test(birthYear)) issues.push('valjano godiste pacijenta');
     if (!admissionDate) issues.push('potvrden datum prijema');
     if (!diagnosis) issues.push('potvrdena dijagnoza');
     if (!allergies) issues.push('eksplicitni alergijski status, npr. nema ili navesti alergiju');
     if (!therapy) issues.push('potvrdena terapija');
-
-    issues.push(...getClinicalPrintReviewIssues(data));
-    issues.push(...getUnconfirmedCriticalParserProvenanceIssues(data));
 
     const record = patientDataToClinicalRecordV1(data, { source: 'pre-print-validation' });
     const validationIssues = validateClinicalRecord(record).issues
@@ -20002,7 +19777,6 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
   }
 
   function onFormChanged() {
-    reconcileClinicalPrintReview(getFormData(), { render: true });
     updateDisplayToggleUi();
     renderAll();
     updatePatientSyncStateForCurrentForm();
@@ -20389,23 +20163,6 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
       const eventName = element.type === 'checkbox' ? 'change' : 'input';
       element.addEventListener(eventName, onFormChanged);
     });
-
-    [
-      [els.confirmIdentityAdmission, 'identityAdmission'],
-      [els.confirmAllergyStatus, 'allergyStatus'],
-      [els.confirmCriticalFields, 'criticalFields']
-    ].forEach(([checkbox, key]) => {
-      checkbox?.addEventListener('change', () => {
-        setClinicalPrintReviewConfirmation(key, checkbox.checked);
-      });
-    });
-
-    if (els.printOperatorName) {
-      els.printOperatorName.addEventListener('input', () => {
-        els.printOperatorName.setCustomValidity('');
-        reconcileClinicalPrintReview(getFormData(), { render: true });
-      });
-    }
 
     if (els.admissionDate) {
       els.admissionDate.addEventListener('input', updateAdmissionDateInputValidity);

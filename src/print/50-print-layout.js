@@ -247,17 +247,12 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
       String(data.ohbpTherapy || '').trim()
     ].filter(Boolean).join('\n');
 
-    if (!getClinicalOperatorName()) issues.push('ime i prezime operatera ispisa');
-
     if (!fullName) issues.push('ime i prezime pacijenta');
     if (!/^(?:18|19|20)\d{2}$/.test(birthYear)) issues.push('valjano godiste pacijenta');
     if (!admissionDate) issues.push('potvrden datum prijema');
     if (!diagnosis) issues.push('potvrdena dijagnoza');
     if (!allergies) issues.push('eksplicitni alergijski status, npr. nema ili navesti alergiju');
     if (!therapy) issues.push('potvrdena terapija');
-
-    issues.push(...getClinicalPrintReviewIssues(data));
-    issues.push(...getUnconfirmedCriticalParserProvenanceIssues(data));
 
     const record = patientDataToClinicalRecordV1(data, { source: 'pre-print-validation' });
     const validationIssues = validateClinicalRecord(record).issues

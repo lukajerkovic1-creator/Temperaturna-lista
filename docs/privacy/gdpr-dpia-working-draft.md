@@ -29,7 +29,7 @@ The intended production deployment must define:
 - Local patient auto-save is disabled by default.
 - Optional local recovery uses encrypted storage with a user-provided passphrase.
 - Production patient storage is local-JSON-only; Firebase patient reads and writes are disabled in the bundle and Firestore rules are fail-closed.
-- Print requires explicit clinical confirmations and an explicit local-unsaved decision when applicable.
+- Print retains clinical validation warnings and requires an explicit local-unsaved decision when applicable.
 - Downtime backup files use AES-GCM with a PBKDF2/SHA-256 passphrase-derived key and are not silently stored in browser storage.
 - Downtime backup filenames do not contain patient identity; legacy cleartext downtime backups are rejected.
 
