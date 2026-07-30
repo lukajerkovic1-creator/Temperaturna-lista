@@ -132,26 +132,6 @@
               <input id="birthYear" type="text" inputmode="numeric" autocomplete="off" placeholder="npr. 1954">
             </div>
           </div>
-          <div class="name-year-row">
-            <div class="input-row">
-              <label for="patientIdentifier">MBO/MRN ili bolnicki broj</label>
-              <input id="patientIdentifier" type="text" autocomplete="off" placeholder="npr. MBO 123456789">
-            </div>
-            <div class="input-row">
-              <label for="encounterId">Encounter / protokol</label>
-              <input id="encounterId" type="text" autocomplete="off" placeholder="npr. TEST-PROT-0001">
-            </div>
-          </div>
-          <div class="name-year-row">
-            <div class="input-row">
-              <label for="patientRoom">Soba</label>
-              <input id="patientRoom" type="text" autocomplete="off" placeholder="npr. 12">
-            </div>
-            <div class="input-row">
-              <label for="patientBed">Krevet</label>
-              <input id="patientBed" type="text" autocomplete="off" placeholder="npr. 3">
-            </div>
-          </div>
           <div class="input-row">
             <label for="admissionDate">Datum prijema</label>
             <div class="date-entry-row">
@@ -458,9 +438,9 @@
               <p id="printOperatorNameHelp">Vrijedi samo u ovoj otvorenoj kartici. Ne sprema se u JSON, browser storage ni mrežu.</p>
             </div>
             <p class="clinical-print-review-help">Potvrde vrijede samo za trenutačni sadržaj. Izmjena kritičnih podataka automatski ih poništava.</p>
-            <label class="clinical-print-review-item" for="confirmIdentityEncounter">
-              <input id="confirmIdentityEncounter" type="checkbox">
-              <span>Potvrđeni su ime/godište, datum prijema i svi dostupni MBO/MRN ili encounter/protokol brojevi. Ako broj nije dostupan, aplikacija upozorava prije ispisa.</span>
+            <label class="clinical-print-review-item" for="confirmIdentityAdmission">
+              <input id="confirmIdentityAdmission" type="checkbox">
+              <span>Potvrđeni su ime/godište i datum prijema.</span>
             </label>
             <label class="clinical-print-review-item" for="confirmAllergyStatus">
               <input id="confirmAllergyStatus" type="checkbox">

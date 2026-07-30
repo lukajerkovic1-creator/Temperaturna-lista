@@ -18,10 +18,6 @@ async function fillSyntheticRecord(page) {
     printOperatorName: 'TESTNI OPERATER DOKAZ',
     fullName: 'TESTIC ISPIS',
     birthYear: '1970',
-    patientIdentifier: 'TEST-MBO-EVIDENCE-001',
-    encounterId: 'TEST-ENC-EVIDENCE-001',
-    patientRoom: '12',
-    patientBed: '3',
     admissionDate: '17.07.2026.',
     diagnosis: 'Sintetska pneumonija.',
     allergies: 'nema',
@@ -30,7 +26,7 @@ async function fillSyntheticRecord(page) {
   for (const [id, value] of Object.entries(values)) {
     await page.locator(`#${id}`).fill(value);
   }
-  await page.locator('#confirmIdentityEncounter').check();
+  await page.locator('#confirmIdentityAdmission').check();
   await page.locator('#confirmAllergyStatus').check();
   await page.locator('#confirmCriticalFields').check();
 }

@@ -156,7 +156,7 @@ function normalizeOhbpFusedSectionLabels(value) {
 
     candidate = candidate.replace(/\s*(?:,|;)?\s*\bro(?:\u0111|đ)en[ao]?\b.*$/iu, '').trim();
 
-    const boundaryIndex = candidate.search(/\s*(?:,|;)?\s*\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|MBOO?|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b/iu);
+    const boundaryIndex = candidate.search(/\s*(?:,|;)?\s*\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b/iu);
     if (boundaryIndex >= 0) {
       candidate = candidate.slice(0, boundaryIndex).trim();
     }
@@ -189,7 +189,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       if (resolved) return resolved;
     }
 
-    const labelledCompactMatch = compact.match(/\bPrezime\s+i\s+ime\s*:\s*(.{2,160}?)(?=\s+\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|MBOO?|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b|$)/iu);
+    const labelledCompactMatch = compact.match(/\bPrezime\s+i\s+ime\s*:\s*(.{2,160}?)(?=\s+\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b|$)/iu);
     if (labelledCompactMatch) {
       const resolved = resolveOhbpPersonNameCandidate(labelledCompactMatch[1]);
       if (resolved) return resolved;
@@ -2087,7 +2087,6 @@ function normalizeOhbpFusedSectionLabels(value) {
       /\n\s*Datum\s+izdavanja\s*:/i,
       /\n\s*Umjesto\s+preporu[čc]enog\s+lijeka\b/i,
       /\n\s*-{5,}\s*(?:\n|$)/i,
-      /\n\s*MBOO\s*:/i,
       /\n\s*Dg\.\s*/i,
       /\n\s*Th\.?\s*:/i
     ];
@@ -2117,12 +2116,6 @@ function normalizeOhbpFusedSectionLabels(value) {
 
     const birthMatch = compact.match(/\bro(?:đ|d|dj|\?|\uFFFD)en[ao]?\s*:?\s*(\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+(\d{4}))/iu);
     if (birthMatch) data.birthYear = birthMatch[2];
-
-    const patientIdentifierMatch = compact.match(/\b(?:MBOO?|MBO|MRN|bolni[čc]ki\s+broj)\s*:\s*([A-Za-z0-9./-]{4,40})/iu);
-    if (patientIdentifierMatch) data.patientIdentifier = patientIdentifierMatch[1].trim();
-
-    const encounterIdMatch = compact.match(/\b(?:Protokol\s+broj|Broj\s+protokola|Encounter(?:\s+ID)?)\s*:\s*([A-Za-z0-9./-]{4,60})/iu);
-    if (encounterIdMatch) data.encounterId = encounterIdMatch[1].trim();
 
     const dateMatch = compact.match(/\bPrimljen[ao]?\s*:\s*(\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+\d{4})/i) ||
       compact.match(/\bDatum\s+(?:nalaza|pregleda|prijema)\s*:\s*(\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+\d{4})/i);
@@ -2248,7 +2241,6 @@ function normalizeOhbpFusedSectionLabels(value) {
       /\bEKG\b/i,
       ...LAB_SECTION_START_PATTERNS,
       ...DIAGNOSIS_URINE_LAB_HARD_STOP_PATTERNS,
-      /\bMBOO\s*:/i,
       /\bDatum\s+(?:nalaza|pregleda|prijema)\s*:/i,
       /\bPrimljen[ao]?\s*:/i
     ]);
@@ -2403,11 +2395,9 @@ function normalizeOhbpFusedSectionLabels(value) {
   }
 
   const PARSER_PROVENANCE_FIELDS = Object.freeze({
-    fullName: Object.freeze({ label: 'Ime i prezime', group: 'identityEncounter', critical: true }),
-    birthYear: Object.freeze({ label: 'Godište', group: 'identityEncounter', critical: true }),
-    patientIdentifier: Object.freeze({ label: 'MBO/MRN', group: 'identityEncounter', critical: true }),
-    encounterId: Object.freeze({ label: 'Encounter/protokol', group: 'identityEncounter', critical: true }),
-    admissionDate: Object.freeze({ label: 'Datum prijema', group: 'identityEncounter', critical: true }),
+    fullName: Object.freeze({ label: 'Ime i prezime', group: 'identityAdmission', critical: true }),
+    birthYear: Object.freeze({ label: 'Godište', group: 'identityAdmission', critical: true }),
+    admissionDate: Object.freeze({ label: 'Datum prijema', group: 'identityAdmission', critical: true }),
     allergies: Object.freeze({ label: 'Alergije', group: 'allergyStatus', critical: true }),
     diagnosis: Object.freeze({ label: 'Dijagnoza', group: 'criticalFields', critical: true }),
     therapy: Object.freeze({ label: 'Kronična terapija', group: 'criticalFields', critical: true }),
@@ -2422,8 +2412,6 @@ function normalizeOhbpFusedSectionLabels(value) {
   const PARSER_PROVENANCE_SOURCE_PATTERNS = Object.freeze({
     fullName: /\b(?:rođen[ai]?|rodjen[ai]?|pacijent(?:ica)?)\b/i,
     birthYear: /\b(?:rođen[ai]?|rodjen[ai]?|godište)\b/i,
-    patientIdentifier: /\b(?:MBOO?|MRN|matični\s+broj|broj\s+osiguranika)\b/i,
-    encounterId: /\b(?:protokol\s+broj|broj\s+nalaza|encounter)\b/i,
     admissionDate: /\b(?:datum\s+(?:prijema|nalaza)|vrijeme\s+početka)\b/i,
     allergies: /\b(?:alergije|alergija|alergič)\b/i,
     diagnosis: /\b(?:dijagnoza|Dg\.?)(?:\s|:)/i,
@@ -2942,16 +2930,6 @@ function normalizeOhbpFusedSectionLabels(value) {
       markAutofilled(els.birthYear, true);
       changed = true;
     }
-    if (parsed.patientIdentifier && els.patientIdentifier) {
-      els.patientIdentifier.value = parsed.patientIdentifier;
-      markAutofilled(els.patientIdentifier, true);
-      changed = true;
-    }
-    if (parsed.encounterId && els.encounterId) {
-      els.encounterId.value = parsed.encounterId;
-      markAutofilled(els.encounterId, true);
-      changed = true;
-    }
     if (parsed.admissionDate) {
       els.admissionDate.value = formatIsoDateToCroatian(parsed.admissionDate);
       updateAdmissionDateInputValidity();
@@ -3097,16 +3075,6 @@ function normalizeOhbpFusedSectionLabels(value) {
     if (parsed.birthYear && els.birthYear) {
       els.birthYear.value = parsed.birthYear;
       markAutofilled(els.birthYear, true);
-      changed = true;
-    }
-    if (parsed.patientIdentifier && els.patientIdentifier) {
-      els.patientIdentifier.value = parsed.patientIdentifier;
-      markAutofilled(els.patientIdentifier, true);
-      changed = true;
-    }
-    if (parsed.encounterId && els.encounterId) {
-      els.encounterId.value = parsed.encounterId;
-      markAutofilled(els.encounterId, true);
       changed = true;
     }
     if (parsed.admissionDate && els.admissionDate) {

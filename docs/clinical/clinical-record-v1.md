@@ -10,8 +10,8 @@ Status: radni tehnicki nacrt. Ovo nije klinicki certificirani podatkovni model.
 
 Model pokriva:
 
-- pacijenta: ime, godiste, spol i identifikatore ako se ikad uvedu;
-- boravak: datum prijema, izvor, odjel, sobu/krevet i mod pacijenta;
+- pacijenta: ime, godiste i spol;
+- boravak: datum prijema, izvor, odjel i mod pacijenta;
 - dijagnoze;
 - alergije;
 - terapiju;
@@ -23,7 +23,9 @@ Model pokriva:
 
 ## Kompatibilnost
 
-Postojeci ispis i forma nastavljaju koristiti postojece vrijednosti. `ClinicalRecordV1` se gradi iz njih i sprema u Firebase kao dodatni strukturirani sloj.
+Postojeci ispis i forma nastavljaju koristiti podrzane vrijednosti. `ClinicalRecordV1` se gradi iz njih i izvozi samo u lokalne datoteke.
+
+Stari lokalni backupi mogu sadrzavati umirovljena bolnicka polja. Jedina legacy import-sanitizacija ta polja tiho odbacuje prije validacije; ona se ne vracaju u aktivni model ni u novi izvoz.
 
 ## Ogranicenja
 

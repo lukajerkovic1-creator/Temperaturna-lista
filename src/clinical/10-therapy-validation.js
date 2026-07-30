@@ -4725,10 +4725,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patientMode: getCurrentPatientMode(),
       fullName: els.fullName.value.trim(),
       birthYear: els.birthYear.value.trim(),
-      patientIdentifier: normalizeClinicalIdentifierText(els.patientIdentifier?.value || '', 80),
-      encounterId: normalizeClinicalIdentifierText(els.encounterId?.value || '', 80),
-      room: normalizeClinicalIdentifierText(els.patientRoom?.value || '', 40),
-      bed: normalizeClinicalIdentifierText(els.patientBed?.value || '', 40),
       diagnosis: normalizeClinicalDiagnosisText(els.diagnosis.value),
       allergies: normalizeLineBreaks(els.allergies?.value || ''),
       patientOrigin: normalizeLineBreaks(els.patientOrigin?.value || ''),
@@ -4763,10 +4759,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patientMode: getCurrentPatientMode(),
       fullName: '',
       birthYear: '',
-      patientIdentifier: '',
-      encounterId: '',
-      room: '',
-      bed: '',
       diagnosis: '',
       allergies: '',
       patientOrigin: '',
@@ -4821,10 +4813,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
     els.birthYear.value = data.birthYear || '';
-    if (els.patientIdentifier) els.patientIdentifier.value = data.patientIdentifier || '';
-    if (els.encounterId) els.encounterId.value = data.encounterId || '';
-    if (els.patientRoom) els.patientRoom.value = data.room || '';
-    if (els.patientBed) els.patientBed.value = data.bed || '';
     els.diagnosis.value = normalizeClinicalDiagnosisText(data.diagnosis || '');
     if (els.ambulatoryDiagnosis) els.ambulatoryDiagnosis.value = data.diagnosis || '';
     if (els.ambulatoryPasteBox && !isPatientDataDifferentFromEmpty(data)) els.ambulatoryPasteBox.value = '';
@@ -4873,11 +4861,11 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   const CLINICAL_PRINT_REVIEW_KEYS = Object.freeze({
-    identityEncounter: Object.freeze({
-      confirmed: 'identityEncounterConfirmed',
-      signature: 'identityEncounterSignature',
-      checkbox: 'confirmIdentityEncounter',
-      issue: 'izričita potvrda identiteta i encountera'
+    identityAdmission: Object.freeze({
+      confirmed: 'identityAdmissionConfirmed',
+      signature: 'identityAdmissionSignature',
+      checkbox: 'confirmIdentityAdmission',
+      issue: 'izričita potvrda identiteta i datuma prijema'
     }),
     allergyStatus: Object.freeze({
       confirmed: 'allergyStatusConfirmed',
@@ -4929,16 +4917,12 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function getClinicalPrintReviewSignatures(data = getFormData()) {
     const operatorName = getClinicalOperatorName();
     return {
-      identityEncounter: hashClinicalPrintReviewValue({
+      identityAdmission: hashClinicalPrintReviewValue({
         operatorName,
         patientMode: getPatientModeFromData(data),
         fullName: normalizeClinicalPrintReviewText(data.fullName),
         birthYear: normalizeClinicalPrintReviewText(data.birthYear),
-        patientIdentifier: normalizeClinicalPrintReviewText(data.patientIdentifier),
-        encounterId: normalizeClinicalPrintReviewText(data.encounterId),
-        admissionDate: normalizeAdmissionDateInput(data.admissionDate),
-        room: normalizeClinicalPrintReviewText(data.room),
-        bed: normalizeClinicalPrintReviewText(data.bed)
+        admissionDate: normalizeAdmissionDateInput(data.admissionDate)
       }),
       allergyStatus: hashClinicalPrintReviewValue({
         operatorName,
@@ -5070,22 +5054,12 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return normalizeLineBreaks(value || '').trim().slice(0, maxLength);
   }
 
-  function normalizeClinicalIdentifierText(value, maxLength = 80) {
+  function normalizeClinicalSingleLineText(value, maxLength = 80) {
     return String(value || '')
       .replace(/[\r\n\t]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, maxLength);
-  }
-
-  function buildClinicalPatientIdentifiers(data = {}) {
-    const identifier = normalizeClinicalIdentifierText(data.patientIdentifier, 80);
-    if (!identifier) return [];
-    return [{
-      system: 'urn:temperaturna-lista:local-patient-identifier',
-      value: identifier,
-      type: { text: 'MBO/MRN/bolnicki broj' }
-    }];
   }
 
   function makeFhirSafeId(value, fallback) {
@@ -5306,17 +5280,13 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patient: {
         fullName: normalizeClinicalText(data.fullName, 200),
         birthYear: normalizeClinicalText(data.birthYear, 4),
-        sex: '',
-        patientIdentifiers: buildClinicalPatientIdentifiers(data)
+        sex: ''
       },
       encounter: {
-        id: normalizeClinicalIdentifierText(data.encounterId, 80),
         admissionDate: normalizeClinicalText(data.admissionDate, 10),
         admissionTime: '',
         source: normalizeClinicalText(data.patientOrigin, 300),
         wardId: authContext.activeWardId || '',
-        room: normalizeClinicalIdentifierText(data.room, 40),
-        bed: normalizeClinicalIdentifierText(data.bed, 40),
         attendingPhysician: '',
         dayOfHospitalization: '',
         patientMode
@@ -5529,9 +5499,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function clinicalRecordToFhirBundle(record, options = {}) {
     const bundleId = options.id || `temperaturna-lista-${Date.now()}`;
     const exportTimestamp = options.timestamp || new Date().toISOString();
-    const patientIdentifierValue = record.patient?.patientIdentifiers?.[0]?.value || '';
-    const patientId = makeFhirSafeId(options.patientId || patientIdentifierValue, 'patient-1');
-    const encounterId = makeFhirSafeId(options.encounterId || record.encounter?.id || '', 'encounter-1');
+    const patientResourceId = makeFhirSafeId(options.patientResourceId, 'patient-1');
+    const encounterResourceId = makeFhirSafeId(options.encounterResourceId, 'encounter-1');
     const entries = [];
     const push = (resource) => {
       const profile = FHIR_RESOURCE_PROFILES[resource.resourceType];
@@ -5542,30 +5511,24 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     };
     push({
       resourceType: 'Patient',
-      id: patientId,
+      id: patientResourceId,
       name: record.patient?.fullName ? [{ text: record.patient.fullName }] : [],
-      birthDate: record.patient?.birthYear || undefined,
-      identifier: record.patient?.patientIdentifiers || []
+      birthDate: record.patient?.birthYear || undefined
     });
     push({
       resourceType: 'Encounter',
-      id: encounterId,
+      id: encounterResourceId,
       status: 'in-progress',
       class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: record.encounter?.patientMode === PATIENT_MODES.OUTPATIENT ? 'AMB' : 'IMP' },
-      subject: { reference: `Patient/${patientId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
       period: record.encounter?.admissionDate ? { start: record.encounter.admissionDate } : undefined,
-      serviceProvider: record.encounter?.wardId ? { display: record.encounter.wardId } : undefined,
-      location: [record.encounter?.room || record.encounter?.bed ? {
-        location: {
-          display: [record.encounter?.room ? `Soba ${record.encounter.room}` : '', record.encounter?.bed ? `Krevet ${record.encounter.bed}` : ''].filter(Boolean).join(', ')
-        }
-      } : null].filter(Boolean)
+      serviceProvider: record.encounter?.wardId ? { display: record.encounter.wardId } : undefined
     });
     (record.conditions || []).forEach((condition, index) => push({
       resourceType: 'Condition',
       id: condition.id || makeClinicalItemId('condition', index),
-      subject: { reference: `Patient/${patientId}` },
-      encounter: { reference: `Encounter/${encounterId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
+      encounter: { reference: `Encounter/${encounterResourceId}` },
       clinicalStatus: { text: condition.status || 'active' },
       code: { text: condition.text || '' },
       note: condition.note ? [{ text: condition.note }] : []
@@ -5573,7 +5536,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     (record.allergies || []).forEach((allergy, index) => push({
       resourceType: 'AllergyIntolerance',
       id: allergy.id || makeClinicalItemId('allergy', index),
-      patient: { reference: `Patient/${patientId}` },
+      patient: { reference: `Patient/${patientResourceId}` },
       clinicalStatus: { text: allergy.status || 'active' },
       code: { text: allergy.substance || '' },
       reaction: allergy.reaction ? [{ manifestation: [{ text: allergy.reaction }], description: allergy.reaction }] : []
@@ -5582,8 +5545,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       resourceType: 'MedicationStatement',
       id: medication.id || makeClinicalItemId('med', index),
       status: medication.stopDate ? 'stopped' : 'active',
-      subject: { reference: `Patient/${patientId}` },
-      context: { reference: `Encounter/${encounterId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
+      context: { reference: `Encounter/${encounterResourceId}` },
       medicationCodeableConcept: { text: medication.name || medication.sourceText || '' },
       dosage: [{ text: medication.sourceText || medication.scheduleText || '' }],
       note: medication.note ? [{ text: medication.note }] : []
@@ -5602,8 +5565,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
           status: 'final',
           category: [{ text: 'vital-signs' }],
           code: { text: label },
-          subject: { reference: `Patient/${patientId}` },
-          encounter: { reference: `Encounter/${encounterId}` },
+          subject: { reference: `Patient/${patientResourceId}` },
+          encounter: { reference: `Encounter/${encounterResourceId}` },
           effectiveDateTime: vital.measuredAt || record.encounter?.admissionDate || undefined,
           valueQuantity: { value: vital[field], unit }
         });
@@ -5617,8 +5580,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         status: 'final',
         category: [{ text: 'laboratory' }],
         code: { text: lab.analyte || '' },
-        subject: { reference: `Patient/${patientId}` },
-        encounter: { reference: `Encounter/${encounterId}` },
+        subject: { reference: `Patient/${patientResourceId}` },
+        encounter: { reference: `Encounter/${encounterResourceId}` },
         effectiveDateTime: lab.collectedAt || record.encounter?.admissionDate || undefined,
         valueQuantity: Number.isFinite(numeric) ? { value: numeric, unit: lab.unit || '' } : undefined,
         valueString: Number.isFinite(numeric) ? undefined : lab.value || lab.sourceText || ''
@@ -5630,8 +5593,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       status: micro.finalStatus === 'final' ? 'final' : 'registered',
       category: [{ text: 'microbiology' }],
       code: { text: micro.testType || micro.specimen || 'Microbiology' },
-      subject: { reference: `Patient/${patientId}` },
-      encounter: { reference: `Encounter/${encounterId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
+      encounter: { reference: `Encounter/${encounterResourceId}` },
       conclusion: micro.resultText || micro.sourceText || ''
     }));
     const provenanceTargets = entries.map(entry => ({ reference: entry.fullUrl }));
@@ -5650,17 +5613,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       },
       agent: [{
         type: { text: 'author' },
-        who: { display: normalizeClinicalIdentifierText(options.actorDisplay || record.metadata?.actor || 'Lokalni korisnik', 120) }
-      }],
-      entity: [{
-        role: 'source',
-        what: {
-          identifier: {
-            system: 'urn:temperaturna-lista:clinical-record-schema',
-            value: normalizeClinicalIdentifierText(record.schema || CLINICAL_RECORD_SCHEMA, 120)
-          },
-          display: `${record.metadata?.appVersion || APP_VERSION} / ${record.metadata?.buildSha || APP_BUILD_SHA}`
-        }
+        who: { display: normalizeClinicalSingleLineText(options.actorDisplay || record.metadata?.actor || 'Lokalni korisnik', 120) }
       }]
     });
     return {
@@ -5828,7 +5781,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       runMedicationSafetyChecks,
       clinicalRecordToFhirBundle,
       buildCurrentFhirBundle,
-      validateBasicFhirBundle
+      validateBasicFhirBundle,
+      sanitizeLegacyPatientDataForImport
     };
   }
 

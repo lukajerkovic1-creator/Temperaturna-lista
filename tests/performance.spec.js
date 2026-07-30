@@ -65,8 +65,6 @@ test.describe('Performance smoke tests', () => {
       const startedAt = performance.now();
       setValue('#fullName', 'Preview Performance Testic');
       setValue('#birthYear', '1975');
-      setValue('#patientIdentifier', 'SYNTH-PERF-001');
-      setValue('#encounterId', 'SYNTH-ENC-PERF-001');
       setValue('#admissionDate', '21.06.2026.');
       setValue('#diagnosis', 'Performance preview dijagnoza.');
       setValue('#allergies', 'nema');

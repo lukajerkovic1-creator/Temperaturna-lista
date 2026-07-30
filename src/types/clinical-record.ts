@@ -27,17 +27,10 @@ export interface AuthContext {
   hasValidClinicalContext: boolean;
 }
 
-export interface PatientIdentifier {
-  system: string;
-  value: string;
-  label?: string;
-}
-
 export interface PatientIdentity {
   fullName: string;
   birthYear?: number;
   sex?: "female" | "male" | "other" | "unknown";
-  patientIdentifiers: PatientIdentifier[];
 }
 
 export interface Encounter {
@@ -45,8 +38,6 @@ export interface Encounter {
   admissionTime?: string;
   source?: string;
   wardId?: string;
-  room?: string;
-  bed?: string;
   attendingPhysician?: string;
   dayOfHospitalization?: number;
   patientMode?: PatientMode;

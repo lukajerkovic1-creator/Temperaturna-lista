@@ -8,9 +8,7 @@ const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:8800/';
 
 const syntheticOhbpText = [
   'Nalaz hitne',
-  'Protokol broj: EVIDENCE-ENC-001',
   'TESTIĆ DOKAZ, rođen 10.10.1970, TESTNA 1, 47000 TESTGRAD',
-  'MBOO: EVIDENCE-MBO-001',
   'Datum nalaza: 16.07.2026.',
   'Dijagnoza: Sintetska pneumonija.',
   'Lijekovi: Sintetikin 500 mg 1,0,0 tbl p.o.',

@@ -8,8 +8,8 @@
   // ============================================================
   // VERZIJA APLIKACIJE — jedini izvor istine
   // ============================================================
-  const APP_VERSION = '0.4.0';
-  const APP_BUILD_SHA = '6eb4e1be6ad0';
+  const APP_VERSION = '0.5.0';
+  const APP_BUILD_SHA = 'a0978f975dc1';
   const PARSER_VERSION = 'temperaturna-lista-parser-v2';
   const PARSER_PROVENANCE_SCHEMA = 'temperaturna-lista-parser-provenance-v1';
   window.__TEMPERATURNA_LISTA_BUILD_SHA__ = APP_BUILD_SHA;
@@ -2501,10 +2501,6 @@
     appRoot: document.getElementById('appRoot'),
     fullName: document.getElementById('fullName'),
     birthYear: document.getElementById('birthYear'),
-    patientIdentifier: document.getElementById('patientIdentifier'),
-    encounterId: document.getElementById('encounterId'),
-    patientRoom: document.getElementById('patientRoom'),
-    patientBed: document.getElementById('patientBed'),
     diagnosis: document.getElementById('diagnosis'),
     diagnosisAutocompleteBox: document.getElementById('diagnosisAutocompleteBox'),
     allergies: document.getElementById('allergies'),
@@ -2645,7 +2641,7 @@
     parserProvenanceList: document.getElementById('parserProvenanceList'),
     clinicalPrintReview: document.getElementById('clinicalPrintReview'),
     printOperatorName: document.getElementById('printOperatorName'),
-    confirmIdentityEncounter: document.getElementById('confirmIdentityEncounter'),
+    confirmIdentityAdmission: document.getElementById('confirmIdentityAdmission'),
     confirmAllergyStatus: document.getElementById('confirmAllergyStatus'),
     confirmCriticalFields: document.getElementById('confirmCriticalFields'),
     clinicalPrintReviewStatus: document.getElementById('clinicalPrintReviewStatus'),
@@ -2988,10 +2984,10 @@
       saveInFlight: false
     },
     clinicalPrintReview: {
-      identityEncounterConfirmed: false,
+      identityAdmissionConfirmed: false,
       allergyStatusConfirmed: false,
       criticalFieldsConfirmed: false,
-      identityEncounterSignature: '',
+      identityAdmissionSignature: '',
       allergyStatusSignature: '',
       criticalFieldsSignature: '',
       confirmedAt: '',
@@ -7781,10 +7777,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patientMode: getCurrentPatientMode(),
       fullName: els.fullName.value.trim(),
       birthYear: els.birthYear.value.trim(),
-      patientIdentifier: normalizeClinicalIdentifierText(els.patientIdentifier?.value || '', 80),
-      encounterId: normalizeClinicalIdentifierText(els.encounterId?.value || '', 80),
-      room: normalizeClinicalIdentifierText(els.patientRoom?.value || '', 40),
-      bed: normalizeClinicalIdentifierText(els.patientBed?.value || '', 40),
       diagnosis: normalizeClinicalDiagnosisText(els.diagnosis.value),
       allergies: normalizeLineBreaks(els.allergies?.value || ''),
       patientOrigin: normalizeLineBreaks(els.patientOrigin?.value || ''),
@@ -7819,10 +7811,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patientMode: getCurrentPatientMode(),
       fullName: '',
       birthYear: '',
-      patientIdentifier: '',
-      encounterId: '',
-      room: '',
-      bed: '',
       diagnosis: '',
       allergies: '',
       patientOrigin: '',
@@ -7877,10 +7865,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
     els.birthYear.value = data.birthYear || '';
-    if (els.patientIdentifier) els.patientIdentifier.value = data.patientIdentifier || '';
-    if (els.encounterId) els.encounterId.value = data.encounterId || '';
-    if (els.patientRoom) els.patientRoom.value = data.room || '';
-    if (els.patientBed) els.patientBed.value = data.bed || '';
     els.diagnosis.value = normalizeClinicalDiagnosisText(data.diagnosis || '');
     if (els.ambulatoryDiagnosis) els.ambulatoryDiagnosis.value = data.diagnosis || '';
     if (els.ambulatoryPasteBox && !isPatientDataDifferentFromEmpty(data)) els.ambulatoryPasteBox.value = '';
@@ -7929,11 +7913,11 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   const CLINICAL_PRINT_REVIEW_KEYS = Object.freeze({
-    identityEncounter: Object.freeze({
-      confirmed: 'identityEncounterConfirmed',
-      signature: 'identityEncounterSignature',
-      checkbox: 'confirmIdentityEncounter',
-      issue: 'izričita potvrda identiteta i encountera'
+    identityAdmission: Object.freeze({
+      confirmed: 'identityAdmissionConfirmed',
+      signature: 'identityAdmissionSignature',
+      checkbox: 'confirmIdentityAdmission',
+      issue: 'izričita potvrda identiteta i datuma prijema'
     }),
     allergyStatus: Object.freeze({
       confirmed: 'allergyStatusConfirmed',
@@ -7985,16 +7969,12 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function getClinicalPrintReviewSignatures(data = getFormData()) {
     const operatorName = getClinicalOperatorName();
     return {
-      identityEncounter: hashClinicalPrintReviewValue({
+      identityAdmission: hashClinicalPrintReviewValue({
         operatorName,
         patientMode: getPatientModeFromData(data),
         fullName: normalizeClinicalPrintReviewText(data.fullName),
         birthYear: normalizeClinicalPrintReviewText(data.birthYear),
-        patientIdentifier: normalizeClinicalPrintReviewText(data.patientIdentifier),
-        encounterId: normalizeClinicalPrintReviewText(data.encounterId),
-        admissionDate: normalizeAdmissionDateInput(data.admissionDate),
-        room: normalizeClinicalPrintReviewText(data.room),
-        bed: normalizeClinicalPrintReviewText(data.bed)
+        admissionDate: normalizeAdmissionDateInput(data.admissionDate)
       }),
       allergyStatus: hashClinicalPrintReviewValue({
         operatorName,
@@ -8126,22 +8106,12 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return normalizeLineBreaks(value || '').trim().slice(0, maxLength);
   }
 
-  function normalizeClinicalIdentifierText(value, maxLength = 80) {
+  function normalizeClinicalSingleLineText(value, maxLength = 80) {
     return String(value || '')
       .replace(/[\r\n\t]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, maxLength);
-  }
-
-  function buildClinicalPatientIdentifiers(data = {}) {
-    const identifier = normalizeClinicalIdentifierText(data.patientIdentifier, 80);
-    if (!identifier) return [];
-    return [{
-      system: 'urn:temperaturna-lista:local-patient-identifier',
-      value: identifier,
-      type: { text: 'MBO/MRN/bolnicki broj' }
-    }];
   }
 
   function makeFhirSafeId(value, fallback) {
@@ -8362,17 +8332,13 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       patient: {
         fullName: normalizeClinicalText(data.fullName, 200),
         birthYear: normalizeClinicalText(data.birthYear, 4),
-        sex: '',
-        patientIdentifiers: buildClinicalPatientIdentifiers(data)
+        sex: ''
       },
       encounter: {
-        id: normalizeClinicalIdentifierText(data.encounterId, 80),
         admissionDate: normalizeClinicalText(data.admissionDate, 10),
         admissionTime: '',
         source: normalizeClinicalText(data.patientOrigin, 300),
         wardId: authContext.activeWardId || '',
-        room: normalizeClinicalIdentifierText(data.room, 40),
-        bed: normalizeClinicalIdentifierText(data.bed, 40),
         attendingPhysician: '',
         dayOfHospitalization: '',
         patientMode
@@ -8585,9 +8551,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function clinicalRecordToFhirBundle(record, options = {}) {
     const bundleId = options.id || `temperaturna-lista-${Date.now()}`;
     const exportTimestamp = options.timestamp || new Date().toISOString();
-    const patientIdentifierValue = record.patient?.patientIdentifiers?.[0]?.value || '';
-    const patientId = makeFhirSafeId(options.patientId || patientIdentifierValue, 'patient-1');
-    const encounterId = makeFhirSafeId(options.encounterId || record.encounter?.id || '', 'encounter-1');
+    const patientResourceId = makeFhirSafeId(options.patientResourceId, 'patient-1');
+    const encounterResourceId = makeFhirSafeId(options.encounterResourceId, 'encounter-1');
     const entries = [];
     const push = (resource) => {
       const profile = FHIR_RESOURCE_PROFILES[resource.resourceType];
@@ -8598,30 +8563,24 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     };
     push({
       resourceType: 'Patient',
-      id: patientId,
+      id: patientResourceId,
       name: record.patient?.fullName ? [{ text: record.patient.fullName }] : [],
-      birthDate: record.patient?.birthYear || undefined,
-      identifier: record.patient?.patientIdentifiers || []
+      birthDate: record.patient?.birthYear || undefined
     });
     push({
       resourceType: 'Encounter',
-      id: encounterId,
+      id: encounterResourceId,
       status: 'in-progress',
       class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: record.encounter?.patientMode === PATIENT_MODES.OUTPATIENT ? 'AMB' : 'IMP' },
-      subject: { reference: `Patient/${patientId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
       period: record.encounter?.admissionDate ? { start: record.encounter.admissionDate } : undefined,
-      serviceProvider: record.encounter?.wardId ? { display: record.encounter.wardId } : undefined,
-      location: [record.encounter?.room || record.encounter?.bed ? {
-        location: {
-          display: [record.encounter?.room ? `Soba ${record.encounter.room}` : '', record.encounter?.bed ? `Krevet ${record.encounter.bed}` : ''].filter(Boolean).join(', ')
-        }
-      } : null].filter(Boolean)
+      serviceProvider: record.encounter?.wardId ? { display: record.encounter.wardId } : undefined
     });
     (record.conditions || []).forEach((condition, index) => push({
       resourceType: 'Condition',
       id: condition.id || makeClinicalItemId('condition', index),
-      subject: { reference: `Patient/${patientId}` },
-      encounter: { reference: `Encounter/${encounterId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
+      encounter: { reference: `Encounter/${encounterResourceId}` },
       clinicalStatus: { text: condition.status || 'active' },
       code: { text: condition.text || '' },
       note: condition.note ? [{ text: condition.note }] : []
@@ -8629,7 +8588,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     (record.allergies || []).forEach((allergy, index) => push({
       resourceType: 'AllergyIntolerance',
       id: allergy.id || makeClinicalItemId('allergy', index),
-      patient: { reference: `Patient/${patientId}` },
+      patient: { reference: `Patient/${patientResourceId}` },
       clinicalStatus: { text: allergy.status || 'active' },
       code: { text: allergy.substance || '' },
       reaction: allergy.reaction ? [{ manifestation: [{ text: allergy.reaction }], description: allergy.reaction }] : []
@@ -8638,8 +8597,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       resourceType: 'MedicationStatement',
       id: medication.id || makeClinicalItemId('med', index),
       status: medication.stopDate ? 'stopped' : 'active',
-      subject: { reference: `Patient/${patientId}` },
-      context: { reference: `Encounter/${encounterId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
+      context: { reference: `Encounter/${encounterResourceId}` },
       medicationCodeableConcept: { text: medication.name || medication.sourceText || '' },
       dosage: [{ text: medication.sourceText || medication.scheduleText || '' }],
       note: medication.note ? [{ text: medication.note }] : []
@@ -8658,8 +8617,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
           status: 'final',
           category: [{ text: 'vital-signs' }],
           code: { text: label },
-          subject: { reference: `Patient/${patientId}` },
-          encounter: { reference: `Encounter/${encounterId}` },
+          subject: { reference: `Patient/${patientResourceId}` },
+          encounter: { reference: `Encounter/${encounterResourceId}` },
           effectiveDateTime: vital.measuredAt || record.encounter?.admissionDate || undefined,
           valueQuantity: { value: vital[field], unit }
         });
@@ -8673,8 +8632,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         status: 'final',
         category: [{ text: 'laboratory' }],
         code: { text: lab.analyte || '' },
-        subject: { reference: `Patient/${patientId}` },
-        encounter: { reference: `Encounter/${encounterId}` },
+        subject: { reference: `Patient/${patientResourceId}` },
+        encounter: { reference: `Encounter/${encounterResourceId}` },
         effectiveDateTime: lab.collectedAt || record.encounter?.admissionDate || undefined,
         valueQuantity: Number.isFinite(numeric) ? { value: numeric, unit: lab.unit || '' } : undefined,
         valueString: Number.isFinite(numeric) ? undefined : lab.value || lab.sourceText || ''
@@ -8686,8 +8645,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       status: micro.finalStatus === 'final' ? 'final' : 'registered',
       category: [{ text: 'microbiology' }],
       code: { text: micro.testType || micro.specimen || 'Microbiology' },
-      subject: { reference: `Patient/${patientId}` },
-      encounter: { reference: `Encounter/${encounterId}` },
+      subject: { reference: `Patient/${patientResourceId}` },
+      encounter: { reference: `Encounter/${encounterResourceId}` },
       conclusion: micro.resultText || micro.sourceText || ''
     }));
     const provenanceTargets = entries.map(entry => ({ reference: entry.fullUrl }));
@@ -8706,17 +8665,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       },
       agent: [{
         type: { text: 'author' },
-        who: { display: normalizeClinicalIdentifierText(options.actorDisplay || record.metadata?.actor || 'Lokalni korisnik', 120) }
-      }],
-      entity: [{
-        role: 'source',
-        what: {
-          identifier: {
-            system: 'urn:temperaturna-lista:clinical-record-schema',
-            value: normalizeClinicalIdentifierText(record.schema || CLINICAL_RECORD_SCHEMA, 120)
-          },
-          display: `${record.metadata?.appVersion || APP_VERSION} / ${record.metadata?.buildSha || APP_BUILD_SHA}`
-        }
+        who: { display: normalizeClinicalSingleLineText(options.actorDisplay || record.metadata?.actor || 'Lokalni korisnik', 120) }
       }]
     });
     return {
@@ -8863,7 +8812,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       runMedicationSafetyChecks,
       clinicalRecordToFhirBundle,
       buildCurrentFhirBundle,
-      validateBasicFhirBundle
+      validateBasicFhirBundle,
+      sanitizeLegacyPatientDataForImport
     };
   }
 
@@ -9108,7 +9058,7 @@ function normalizeOhbpFusedSectionLabels(value) {
 
     candidate = candidate.replace(/\s*(?:,|;)?\s*\bro(?:\u0111|đ)en[ao]?\b.*$/iu, '').trim();
 
-    const boundaryIndex = candidate.search(/\s*(?:,|;)?\s*\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|MBOO?|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b/iu);
+    const boundaryIndex = candidate.search(/\s*(?:,|;)?\s*\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b/iu);
     if (boundaryIndex >= 0) {
       candidate = candidate.slice(0, boundaryIndex).trim();
     }
@@ -9141,7 +9091,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       if (resolved) return resolved;
     }
 
-    const labelledCompactMatch = compact.match(/\bPrezime\s+i\s+ime\s*:\s*(.{2,160}?)(?=\s+\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|MBOO?|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b|$)/iu);
+    const labelledCompactMatch = compact.match(/\bPrezime\s+i\s+ime\s*:\s*(.{2,160}?)(?=\s+\b(?:ro(?:đ|d|dj|\?|\uFFFD)en[ao]?|datum\s+ro(?:đ|d|dj|\?|\uFFFD)enja|adresa|OIB|matični\s+list|primljen[ao]?|dijagnoza|pregled|podaci\s+sa\s+trijaže|glavna\s+tegoba|objektivna\s+procjena)\b|$)/iu);
     if (labelledCompactMatch) {
       const resolved = resolveOhbpPersonNameCandidate(labelledCompactMatch[1]);
       if (resolved) return resolved;
@@ -11039,7 +10989,6 @@ function normalizeOhbpFusedSectionLabels(value) {
       /\n\s*Datum\s+izdavanja\s*:/i,
       /\n\s*Umjesto\s+preporu[čc]enog\s+lijeka\b/i,
       /\n\s*-{5,}\s*(?:\n|$)/i,
-      /\n\s*MBOO\s*:/i,
       /\n\s*Dg\.\s*/i,
       /\n\s*Th\.?\s*:/i
     ];
@@ -11069,12 +11018,6 @@ function normalizeOhbpFusedSectionLabels(value) {
 
     const birthMatch = compact.match(/\bro(?:đ|d|dj|\?|\uFFFD)en[ao]?\s*:?\s*(\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+(\d{4}))/iu);
     if (birthMatch) data.birthYear = birthMatch[2];
-
-    const patientIdentifierMatch = compact.match(/\b(?:MBOO?|MBO|MRN|bolni[čc]ki\s+broj)\s*:\s*([A-Za-z0-9./-]{4,40})/iu);
-    if (patientIdentifierMatch) data.patientIdentifier = patientIdentifierMatch[1].trim();
-
-    const encounterIdMatch = compact.match(/\b(?:Protokol\s+broj|Broj\s+protokola|Encounter(?:\s+ID)?)\s*:\s*([A-Za-z0-9./-]{4,60})/iu);
-    if (encounterIdMatch) data.encounterId = encounterIdMatch[1].trim();
 
     const dateMatch = compact.match(/\bPrimljen[ao]?\s*:\s*(\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+\d{4})/i) ||
       compact.match(/\bDatum\s+(?:nalaza|pregleda|prijema)\s*:\s*(\d{1,2}[.\/\-\s]+\d{1,2}[.\/\-\s]+\d{4})/i);
@@ -11200,7 +11143,6 @@ function normalizeOhbpFusedSectionLabels(value) {
       /\bEKG\b/i,
       ...LAB_SECTION_START_PATTERNS,
       ...DIAGNOSIS_URINE_LAB_HARD_STOP_PATTERNS,
-      /\bMBOO\s*:/i,
       /\bDatum\s+(?:nalaza|pregleda|prijema)\s*:/i,
       /\bPrimljen[ao]?\s*:/i
     ]);
@@ -11355,11 +11297,9 @@ function normalizeOhbpFusedSectionLabels(value) {
   }
 
   const PARSER_PROVENANCE_FIELDS = Object.freeze({
-    fullName: Object.freeze({ label: 'Ime i prezime', group: 'identityEncounter', critical: true }),
-    birthYear: Object.freeze({ label: 'Godište', group: 'identityEncounter', critical: true }),
-    patientIdentifier: Object.freeze({ label: 'MBO/MRN', group: 'identityEncounter', critical: true }),
-    encounterId: Object.freeze({ label: 'Encounter/protokol', group: 'identityEncounter', critical: true }),
-    admissionDate: Object.freeze({ label: 'Datum prijema', group: 'identityEncounter', critical: true }),
+    fullName: Object.freeze({ label: 'Ime i prezime', group: 'identityAdmission', critical: true }),
+    birthYear: Object.freeze({ label: 'Godište', group: 'identityAdmission', critical: true }),
+    admissionDate: Object.freeze({ label: 'Datum prijema', group: 'identityAdmission', critical: true }),
     allergies: Object.freeze({ label: 'Alergije', group: 'allergyStatus', critical: true }),
     diagnosis: Object.freeze({ label: 'Dijagnoza', group: 'criticalFields', critical: true }),
     therapy: Object.freeze({ label: 'Kronična terapija', group: 'criticalFields', critical: true }),
@@ -11374,8 +11314,6 @@ function normalizeOhbpFusedSectionLabels(value) {
   const PARSER_PROVENANCE_SOURCE_PATTERNS = Object.freeze({
     fullName: /\b(?:rođen[ai]?|rodjen[ai]?|pacijent(?:ica)?)\b/i,
     birthYear: /\b(?:rođen[ai]?|rodjen[ai]?|godište)\b/i,
-    patientIdentifier: /\b(?:MBOO?|MRN|matični\s+broj|broj\s+osiguranika)\b/i,
-    encounterId: /\b(?:protokol\s+broj|broj\s+nalaza|encounter)\b/i,
     admissionDate: /\b(?:datum\s+(?:prijema|nalaza)|vrijeme\s+početka)\b/i,
     allergies: /\b(?:alergije|alergija|alergič)\b/i,
     diagnosis: /\b(?:dijagnoza|Dg\.?)(?:\s|:)/i,
@@ -11894,16 +11832,6 @@ function normalizeOhbpFusedSectionLabels(value) {
       markAutofilled(els.birthYear, true);
       changed = true;
     }
-    if (parsed.patientIdentifier && els.patientIdentifier) {
-      els.patientIdentifier.value = parsed.patientIdentifier;
-      markAutofilled(els.patientIdentifier, true);
-      changed = true;
-    }
-    if (parsed.encounterId && els.encounterId) {
-      els.encounterId.value = parsed.encounterId;
-      markAutofilled(els.encounterId, true);
-      changed = true;
-    }
     if (parsed.admissionDate) {
       els.admissionDate.value = formatIsoDateToCroatian(parsed.admissionDate);
       updateAdmissionDateInputValidity();
@@ -12049,16 +11977,6 @@ function normalizeOhbpFusedSectionLabels(value) {
     if (parsed.birthYear && els.birthYear) {
       els.birthYear.value = parsed.birthYear;
       markAutofilled(els.birthYear, true);
-      changed = true;
-    }
-    if (parsed.patientIdentifier && els.patientIdentifier) {
-      els.patientIdentifier.value = parsed.patientIdentifier;
-      markAutofilled(els.patientIdentifier, true);
-      changed = true;
-    }
-    if (parsed.encounterId && els.encounterId) {
-      els.encounterId.value = parsed.encounterId;
-      markAutofilled(els.encounterId, true);
       changed = true;
     }
     if (parsed.admissionDate && els.admissionDate) {
@@ -15247,10 +15165,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       patientMode: 20,
       fullName: 120,
       birthYear: 4,
-      patientIdentifier: 80,
-      encounterId: 80,
-      room: 40,
-      bed: 40,
       diagnosis: 5000,
       allergies: 1000,
       patientOrigin: 500,
@@ -15263,8 +15177,8 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       radiologyRaw: 12000,
       admissionDate: 10
     }),
-    allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'patientIdentifier', 'encounterId', 'room', 'bed', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
-    stringFields: Object.freeze(['patientMode', 'fullName', 'birthYear', 'patientIdentifier', 'encounterId', 'room', 'bed', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'labRaw', 'radiologyRaw', 'admissionDate']),
+    allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
+    stringFields: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'labRaw', 'radiologyRaw', 'admissionDate']),
     booleanFields: Object.freeze(['microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
     allowedEnvelopeKeys: Object.freeze(['version', 'appVersion', 'buildSha', 'exportedAt', 'data', 'parserProvenance']),
     allowedDowntimeBackupKeys: Object.freeze(['schema', 'version', 'appVersion', 'buildSha', 'exportedAt', 'expiresAt', 'cipher', 'kdf', 'salt', 'iv', 'payload'])
@@ -15303,16 +15217,56 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
   }
 
+  // Jedina dopuštena kompatibilnost sa starim ključevima: import ih tiho i nepovratno odbacuje.
+  function sanitizeLegacyPatientDataForImport(value) {
+    const discardedKeys = new Set([
+      'patientidentifier',
+      'patientidentifiers',
+      'mbo',
+      'mboo',
+      'mrn',
+      'hospitalnumber',
+      'hospitalid',
+      'patientnumber',
+      'encounterid',
+      'protocol',
+      'protocolid',
+      'protokol',
+      'room',
+      'roomnumber',
+      'patientroom',
+      'bed',
+      'bednumber',
+      'patientbed'
+    ]);
+
+    const sanitize = (entry) => {
+      if (Array.isArray(entry)) return entry.map(sanitize);
+      if (!isPlainJsonObject(entry)) return entry;
+
+      const resourceType = String(entry.resourceType || '');
+      const result = {};
+      Object.entries(entry).forEach(([key, child]) => {
+        const normalizedKey = key.toLowerCase();
+        const isLegacyVisitAlias = normalizedKey === 'encounter' && !isPlainJsonObject(child);
+        const isLegacyFhirField =
+          (resourceType === 'Patient' && normalizedKey === 'identifier') ||
+          (resourceType === 'Encounter' && (normalizedKey === 'identifier' || normalizedKey === 'location'));
+        if (discardedKeys.has(normalizedKey) || isLegacyVisitAlias || isLegacyFhirField) return;
+        result[key] = sanitize(child);
+      });
+      return result;
+    };
+
+    return sanitize(value);
+  }
+
   function validatePatientDataObject(candidate) {
     const errors = [];
     const sanitized = {
       patientMode: DEFAULT_PATIENT_MODE,
       fullName: '',
       birthYear: '',
-      patientIdentifier: '',
-      encounterId: '',
-      room: '',
-      bed: '',
       diagnosis: '',
       allergies: '',
       patientOrigin: '',
@@ -15344,6 +15298,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (!isPlainJsonObject(candidate)) {
       return { ok: false, errors: ['Podaci pacijenta moraju biti JSON objekt.'] };
     }
+    candidate = sanitizeLegacyPatientDataForImport(candidate);
 
     const unknownKeys = getUnknownKeys(candidate, PATIENT_JSON_SCHEMA.allowedPatientKeys);
     if (unknownKeys.length) {
@@ -15410,6 +15365,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (!isPlainJsonObject(parsed)) {
       return { ok: false, message: 'JSON podataka pacijenta mora biti objekt, a ne lista ili druga vrijednost.' };
     }
+    parsed = sanitizeLegacyPatientDataForImport(parsed);
 
     if (hasOwnKey(parsed, 'calibration')) {
       return { ok: false, message: 'Ovo izgleda kao JSON kalibracije, a ne JSON podataka pacijenta.' };
@@ -19706,7 +19662,7 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
 
     if (!fullName) issues.push('ime i prezime pacijenta');
     if (!/^(?:18|19|20)\d{2}$/.test(birthYear)) issues.push('valjano godiste pacijenta');
-    if (!admissionDate) issues.push('potvrden datum prijema / encounter');
+    if (!admissionDate) issues.push('potvrden datum prijema');
     if (!diagnosis) issues.push('potvrdena dijagnoza');
     if (!allergies) issues.push('eksplicitni alergijski status, npr. nema ili navesti alergiju');
     if (!therapy) issues.push('potvrdena terapija');
@@ -19725,32 +19681,6 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
     });
 
     return [...new Set(issues)];
-  }
-
-  function getClinicalPrintIdentifierWarnings() {
-    const data = getFormData();
-    const warnings = [];
-    if (!String(data.patientIdentifier || '').trim()) {
-      warnings.push('MBO/MRN ili bolnicki broj pacijenta');
-    }
-    if (!String(data.encounterId || '').trim()) {
-      warnings.push('encounter/protokol ID');
-    }
-    return warnings;
-  }
-
-  async function confirmPrintWithoutAvailableIdentifiers() {
-    const warnings = getClinicalPrintIdentifierWarnings();
-    if (!warnings.length) return true;
-
-    const message = `Upozorenje: nedostaje ${warnings.join(' i ')}. Ispis je moguc, ali prije nastavka provjerite da su ime, godiste i datum prijema tocni. Na ispisu ce nedostajuci identifikator biti jasno oznacen.`;
-    setStatus(message, true);
-    return showPrintConfirmDialog({
-      title: 'Nedostaju identifikacijski brojevi',
-      message,
-      proceedLabel: 'Nastavi bez broja',
-      cancelLabel: 'Vrati se i dopuni'
-    });
   }
 
   function getPrintOverrideWarnings() {
@@ -19796,11 +19726,6 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
 
     if (!(await confirmPrintWithChronicTherapyAdmissionWarning())) {
       setStatus('Ispis je otkazan. Upišite ispravan datum prijema kako bi se kronična terapija prikazala na listi.');
-      return;
-    }
-
-    if (!(await confirmPrintWithoutAvailableIdentifiers())) {
-      setStatus('Ispis je otkazan. Dopunite dostupni MBO/MRN, bolnicki broj ili encounter/protokol ID.');
       return;
     }
 
@@ -20460,13 +20385,13 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
   }
 
   function wireEvents() {
-    [els.fullName, els.birthYear, els.patientIdentifier, els.encounterId, els.patientRoom, els.patientBed, els.diagnosis, els.allergies, els.patientOrigin, els.therapy, els.ohbpTherapy, els.vitalSigns, els.followUpControlDate, els.followUpControl, els.microHemocultures, els.microUrineCulture, els.microStoolBacteriology, els.microStoolCdiff, els.microStoolVirology, els.labRaw, els.radiologyRaw, els.admissionDate, els.showTherapyMonday2, els.showDiagnosisOnList, els.showAllergiesOnList, els.showPatientOriginOnList, els.showTherapyOnList, els.showOhbpTherapyOnList, els.showVitalSignsOnList, els.showFollowUpControlOnList, els.showLabsOnList, els.showRadiologyOnList].filter(Boolean).forEach((element) => {
+    [els.fullName, els.birthYear, els.diagnosis, els.allergies, els.patientOrigin, els.therapy, els.ohbpTherapy, els.vitalSigns, els.followUpControlDate, els.followUpControl, els.microHemocultures, els.microUrineCulture, els.microStoolBacteriology, els.microStoolCdiff, els.microStoolVirology, els.labRaw, els.radiologyRaw, els.admissionDate, els.showTherapyMonday2, els.showDiagnosisOnList, els.showAllergiesOnList, els.showPatientOriginOnList, els.showTherapyOnList, els.showOhbpTherapyOnList, els.showVitalSignsOnList, els.showFollowUpControlOnList, els.showLabsOnList, els.showRadiologyOnList].filter(Boolean).forEach((element) => {
       const eventName = element.type === 'checkbox' ? 'change' : 'input';
       element.addEventListener(eventName, onFormChanged);
     });
 
     [
-      [els.confirmIdentityEncounter, 'identityEncounter'],
+      [els.confirmIdentityAdmission, 'identityAdmission'],
       [els.confirmAllergyStatus, 'allergyStatus'],
       [els.confirmCriticalFields, 'criticalFields']
     ].forEach(([checkbox, key]) => {

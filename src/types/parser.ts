@@ -8,7 +8,7 @@ export type ParserProvenanceConfirmationStatus =
 export interface ParserFieldProvenance {
   field: string;
   label: string;
-  group: "identityEncounter" | "allergyStatus" | "criticalFields";
+  group: "identityAdmission" | "allergyStatus" | "criticalFields";
   critical: boolean;
   sourceExcerpt: string;
   confidence: number;

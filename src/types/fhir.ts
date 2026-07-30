@@ -12,11 +12,6 @@ export type FhirResourceType =
   | "Provenance"
   | "Specimen";
 
-export interface FhirIdentifier {
-  system?: string;
-  value: string;
-}
-
 export interface FhirCoding {
   system?: string;
   code?: string;
@@ -48,7 +43,6 @@ export interface FhirResourceBase {
 
 export interface FhirPatient extends FhirResourceBase {
   resourceType: "Patient";
-  identifier?: FhirIdentifier[];
   name?: Array<{ text: string }>;
   gender?: "female" | "male" | "other" | "unknown";
   birthDate?: ISODateString;
@@ -124,7 +118,7 @@ export interface FhirProvenance extends FhirResourceBase {
   agent: Array<{ type?: FhirCodeableConcept; who: FhirReference }>;
   entity?: Array<{
     role: "derivation" | "revision" | "quotation" | "source" | "removal";
-    what: FhirReference & { identifier?: FhirIdentifier };
+    what: FhirReference;
   }>;
 }
 

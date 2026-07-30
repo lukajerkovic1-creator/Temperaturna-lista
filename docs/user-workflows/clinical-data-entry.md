@@ -2,7 +2,7 @@
 
 Status: working draft. The application helps format a temperature-list sheet; it does not make clinical decisions.
 
-## Identity And Encounter
+## Identity And Admission
 
 Enter only the minimum data needed for the list:
 
@@ -12,7 +12,7 @@ Enter only the minimum data needed for the list:
 - patient source/location;
 - active department/ward context.
 
-Do not put OIB, MBO, telephone number, address, or unneeded identifiers into free-text fields unless hospital policy explicitly requires it.
+Do not put insurance numbers, telephone numbers, addresses, or other unneeded identifiers into free-text fields.
 
 ## Diagnosis
 
@@ -55,4 +55,3 @@ Use the microbiology checkboxes for planned samples such as hemocultures, urine 
 ## Isolation And Epidemiology
 
 When isolation or epidemiology measures are present in the workflow, document only the relevant type, indication, and dates. The current structured model has an infection-control field, but local procedure determines what must be printed or saved.
-

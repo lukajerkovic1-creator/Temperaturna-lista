@@ -1232,10 +1232,6 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       patientMode: 20,
       fullName: 120,
       birthYear: 4,
-      patientIdentifier: 80,
-      encounterId: 80,
-      room: 40,
-      bed: 40,
       diagnosis: 5000,
       allergies: 1000,
       patientOrigin: 500,
@@ -1248,8 +1244,8 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       radiologyRaw: 12000,
       admissionDate: 10
     }),
-    allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'patientIdentifier', 'encounterId', 'room', 'bed', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
-    stringFields: Object.freeze(['patientMode', 'fullName', 'birthYear', 'patientIdentifier', 'encounterId', 'room', 'bed', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'labRaw', 'radiologyRaw', 'admissionDate']),
+    allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
+    stringFields: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'labRaw', 'radiologyRaw', 'admissionDate']),
     booleanFields: Object.freeze(['microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
     allowedEnvelopeKeys: Object.freeze(['version', 'appVersion', 'buildSha', 'exportedAt', 'data', 'parserProvenance']),
     allowedDowntimeBackupKeys: Object.freeze(['schema', 'version', 'appVersion', 'buildSha', 'exportedAt', 'expiresAt', 'cipher', 'kdf', 'salt', 'iv', 'payload'])
@@ -1288,16 +1284,56 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
   }
 
+  // Jedina dopuštena kompatibilnost sa starim ključevima: import ih tiho i nepovratno odbacuje.
+  function sanitizeLegacyPatientDataForImport(value) {
+    const discardedKeys = new Set([
+      'patientidentifier',
+      'patientidentifiers',
+      'mbo',
+      'mboo',
+      'mrn',
+      'hospitalnumber',
+      'hospitalid',
+      'patientnumber',
+      'encounterid',
+      'protocol',
+      'protocolid',
+      'protokol',
+      'room',
+      'roomnumber',
+      'patientroom',
+      'bed',
+      'bednumber',
+      'patientbed'
+    ]);
+
+    const sanitize = (entry) => {
+      if (Array.isArray(entry)) return entry.map(sanitize);
+      if (!isPlainJsonObject(entry)) return entry;
+
+      const resourceType = String(entry.resourceType || '');
+      const result = {};
+      Object.entries(entry).forEach(([key, child]) => {
+        const normalizedKey = key.toLowerCase();
+        const isLegacyVisitAlias = normalizedKey === 'encounter' && !isPlainJsonObject(child);
+        const isLegacyFhirField =
+          (resourceType === 'Patient' && normalizedKey === 'identifier') ||
+          (resourceType === 'Encounter' && (normalizedKey === 'identifier' || normalizedKey === 'location'));
+        if (discardedKeys.has(normalizedKey) || isLegacyVisitAlias || isLegacyFhirField) return;
+        result[key] = sanitize(child);
+      });
+      return result;
+    };
+
+    return sanitize(value);
+  }
+
   function validatePatientDataObject(candidate) {
     const errors = [];
     const sanitized = {
       patientMode: DEFAULT_PATIENT_MODE,
       fullName: '',
       birthYear: '',
-      patientIdentifier: '',
-      encounterId: '',
-      room: '',
-      bed: '',
       diagnosis: '',
       allergies: '',
       patientOrigin: '',
@@ -1329,6 +1365,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (!isPlainJsonObject(candidate)) {
       return { ok: false, errors: ['Podaci pacijenta moraju biti JSON objekt.'] };
     }
+    candidate = sanitizeLegacyPatientDataForImport(candidate);
 
     const unknownKeys = getUnknownKeys(candidate, PATIENT_JSON_SCHEMA.allowedPatientKeys);
     if (unknownKeys.length) {
@@ -1395,6 +1432,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
     if (!isPlainJsonObject(parsed)) {
       return { ok: false, message: 'JSON podataka pacijenta mora biti objekt, a ne lista ili druga vrijednost.' };
     }
+    parsed = sanitizeLegacyPatientDataForImport(parsed);
 
     if (hasOwnKey(parsed, 'calibration')) {
       return { ok: false, message: 'Ovo izgleda kao JSON kalibracije, a ne JSON podataka pacijenta.' };

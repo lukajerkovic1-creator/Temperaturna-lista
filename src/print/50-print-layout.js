@@ -251,7 +251,7 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
 
     if (!fullName) issues.push('ime i prezime pacijenta');
     if (!/^(?:18|19|20)\d{2}$/.test(birthYear)) issues.push('valjano godiste pacijenta');
-    if (!admissionDate) issues.push('potvrden datum prijema / encounter');
+    if (!admissionDate) issues.push('potvrden datum prijema');
     if (!diagnosis) issues.push('potvrdena dijagnoza');
     if (!allergies) issues.push('eksplicitni alergijski status, npr. nema ili navesti alergiju');
     if (!therapy) issues.push('potvrdena terapija');
@@ -270,32 +270,6 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
     });
 
     return [...new Set(issues)];
-  }
-
-  function getClinicalPrintIdentifierWarnings() {
-    const data = getFormData();
-    const warnings = [];
-    if (!String(data.patientIdentifier || '').trim()) {
-      warnings.push('MBO/MRN ili bolnicki broj pacijenta');
-    }
-    if (!String(data.encounterId || '').trim()) {
-      warnings.push('encounter/protokol ID');
-    }
-    return warnings;
-  }
-
-  async function confirmPrintWithoutAvailableIdentifiers() {
-    const warnings = getClinicalPrintIdentifierWarnings();
-    if (!warnings.length) return true;
-
-    const message = `Upozorenje: nedostaje ${warnings.join(' i ')}. Ispis je moguc, ali prije nastavka provjerite da su ime, godiste i datum prijema tocni. Na ispisu ce nedostajuci identifikator biti jasno oznacen.`;
-    setStatus(message, true);
-    return showPrintConfirmDialog({
-      title: 'Nedostaju identifikacijski brojevi',
-      message,
-      proceedLabel: 'Nastavi bez broja',
-      cancelLabel: 'Vrati se i dopuni'
-    });
   }
 
   function getPrintOverrideWarnings() {
@@ -341,11 +315,6 @@ Unesite datum prijema ili odustanite od ispisa. Želite li ipak nastaviti ispis?
 
     if (!(await confirmPrintWithChronicTherapyAdmissionWarning())) {
       setStatus('Ispis je otkazan. Upišite ispravan datum prijema kako bi se kronična terapija prikazala na listi.');
-      return;
-    }
-
-    if (!(await confirmPrintWithoutAvailableIdentifiers())) {
-      setStatus('Ispis je otkazan. Dopunite dostupni MBO/MRN, bolnicki broj ili encounter/protokol ID.');
       return;
     }
 

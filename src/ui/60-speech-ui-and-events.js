@@ -1111,13 +1111,13 @@ function getTherapySuggestionPanel(targetId) {
   }
 
   function wireEvents() {
-    [els.fullName, els.birthYear, els.patientIdentifier, els.encounterId, els.patientRoom, els.patientBed, els.diagnosis, els.allergies, els.patientOrigin, els.therapy, els.ohbpTherapy, els.vitalSigns, els.followUpControlDate, els.followUpControl, els.microHemocultures, els.microUrineCulture, els.microStoolBacteriology, els.microStoolCdiff, els.microStoolVirology, els.labRaw, els.radiologyRaw, els.admissionDate, els.showTherapyMonday2, els.showDiagnosisOnList, els.showAllergiesOnList, els.showPatientOriginOnList, els.showTherapyOnList, els.showOhbpTherapyOnList, els.showVitalSignsOnList, els.showFollowUpControlOnList, els.showLabsOnList, els.showRadiologyOnList].filter(Boolean).forEach((element) => {
+    [els.fullName, els.birthYear, els.diagnosis, els.allergies, els.patientOrigin, els.therapy, els.ohbpTherapy, els.vitalSigns, els.followUpControlDate, els.followUpControl, els.microHemocultures, els.microUrineCulture, els.microStoolBacteriology, els.microStoolCdiff, els.microStoolVirology, els.labRaw, els.radiologyRaw, els.admissionDate, els.showTherapyMonday2, els.showDiagnosisOnList, els.showAllergiesOnList, els.showPatientOriginOnList, els.showTherapyOnList, els.showOhbpTherapyOnList, els.showVitalSignsOnList, els.showFollowUpControlOnList, els.showLabsOnList, els.showRadiologyOnList].filter(Boolean).forEach((element) => {
       const eventName = element.type === 'checkbox' ? 'change' : 'input';
       element.addEventListener(eventName, onFormChanged);
     });
 
     [
-      [els.confirmIdentityEncounter, 'identityEncounter'],
+      [els.confirmIdentityAdmission, 'identityAdmission'],
       [els.confirmAllergyStatus, 'allergyStatus'],
       [els.confirmCriticalFields, 'criticalFields']
     ].forEach(([checkbox, key]) => {
