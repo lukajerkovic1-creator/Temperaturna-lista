@@ -9,6 +9,7 @@ const qaBundlePath = path.join(root, 'src', 'app', 'bootstrap.qa.js');
 const productionModules = [
   'src/app/00-core-ui-state.js',
   'src/clinical/10-therapy-validation.js',
+  'src/clinical/15-therapy-favorites.js',
   'src/parser/20-ohbp-parser.js',
   'src/parser/30-parser-tests.js',
   'src/ui/40-rendering-ui.js',
@@ -19,6 +20,7 @@ const productionModules = [
 const qaModules = [
   'src/app/00-core-ui-state.js',
   'src/clinical/10-therapy-validation.js',
+  'src/clinical/15-therapy-favorites.js',
   'src/parser/20-ohbp-parser.js',
   'src/parser/30-parser-tests.js',
   'src/ui/40-rendering-ui.js',

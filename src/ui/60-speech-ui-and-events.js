@@ -1467,6 +1467,7 @@ function getTherapySuggestionPanel(targetId) {
     initAppAvailabilityMonitoring();
     updateDowntimeBackupControls();
     expandDefaultTextFields();
+    initTherapyFavorites();
     wireEvents();
     exposeClinicalRecordHelpers();
     if (isCapabilityEnabled('parserTestCapture')) exposeParserTestCaptureHelpers();

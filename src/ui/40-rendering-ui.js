@@ -1320,7 +1320,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       'allergystatussignature',
       'reviewconfirmed',
       'criticalfieldsconfirmed',
-      'criticalfieldssignature'
+      'criticalfieldssignature',
+      'therapyautocompleteusage',
+      'therapyautocompleteusagerecords',
+      'learnedtherapies',
+      'learnedtherapysuggestions',
+      'personalautocomplete',
+      'personalsuggestions'
     ]);
 
     const sanitize = (entry) => {
@@ -2363,11 +2369,13 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
   function switchPersonalSuggestionsToUser(userId, options = {}) {
     const nextUserId = normalizePersonalStorageUserId(userId || 'local');
     activePersonalSuggestionsStorageUserId = nextUserId;
-    state.therapyAutocomplete.usage = loadTherapyAutocompleteUsageFromStorage();
     state.diagnosisAutocomplete.usage = loadDiagnosisAutocompleteUsageFromStorage();
     state.diagnosisAutocomplete.recordedKeys = new Set(Object.keys(state.diagnosisAutocomplete.usage || {}));
     if (nextUserId !== 'local') {
       applyPersonalAutocompletePayloadFromProfile(options.profile || state.firebasePatients.userProfile || {});
+    }
+    if (typeof loadTherapyFavoritesForCurrentUser === 'function') {
+      loadTherapyFavoritesForCurrentUser();
     }
     hideTherapyAutocomplete();
     hideDiagnosisAutocomplete();

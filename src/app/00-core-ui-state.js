@@ -2368,7 +2368,10 @@
     legacyPatientDraft: 'temperaturna_lista_pacijent_autosave_v1',
     therapyCsv: 'temperaturna_lista_lijekovi_csv_v1',
     therapyExceptions: 'temperaturna_lista_lijekovi_iznimke_v1',
-    therapyAutocompleteUsage: 'temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1',
+    legacyTherapyAutocompleteUsage: 'temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1',
+    therapyFavoritesPersonalCache: 'temperaturna_lista_osobne_terapije_cache_v1',
+    therapyFavoritesSharedCache: 'temperaturna_lista_zajednicke_terapije_cache_v1',
+    therapyFavoritesMigration: 'temperaturna_lista_terapije_migracija_v1',
     diagnosisAutocompleteUsage: 'temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1',
     parserTestCaptures: 'temperaturna_lista_parser_test_cases_v1',
     operationalAudit: 'temperaturna_lista_operativni_audit_v1'
@@ -2511,7 +2514,30 @@
     medicationSafetyPanel: document.getElementById('medicationSafetyPanel'),
     medicationSafetySummary: document.getElementById('medicationSafetySummary'),
     medicationSafetyDetails: document.getElementById('medicationSafetyDetails'),
-    rememberTherapyAutocompleteBtn: document.getElementById('rememberTherapyAutocompleteBtn'),
+    therapyFavoritesSettings: document.getElementById('therapyFavoritesSettings'),
+    therapyFavoritesSyncStatus: document.getElementById('therapyFavoritesSyncStatus'),
+    personalTherapyFavoritesList: document.getElementById('personalTherapyFavoritesList'),
+    sharedTherapyFavoritesList: document.getElementById('sharedTherapyFavoritesList'),
+    personalTherapyFavoriteForm: document.getElementById('personalTherapyFavoriteForm'),
+    sharedTherapyFavoriteForm: document.getElementById('sharedTherapyFavoriteForm'),
+    personalTherapyFavoriteName: document.getElementById('personalTherapyFavoriteName'),
+    personalTherapyFavoriteStrength: document.getElementById('personalTherapyFavoriteStrength'),
+    personalTherapyFavoriteFormText: document.getElementById('personalTherapyFavoriteFormText'),
+    personalTherapyFavoriteRegimen: document.getElementById('personalTherapyFavoriteRegimen'),
+    personalTherapyFavoritePreview: document.getElementById('personalTherapyFavoritePreview'),
+    personalTherapyFavoriteCancelBtn: document.getElementById('personalTherapyFavoriteCancelBtn'),
+    sharedTherapyFavoriteName: document.getElementById('sharedTherapyFavoriteName'),
+    sharedTherapyFavoriteStrength: document.getElementById('sharedTherapyFavoriteStrength'),
+    sharedTherapyFavoriteFormText: document.getElementById('sharedTherapyFavoriteFormText'),
+    sharedTherapyFavoriteRegimen: document.getElementById('sharedTherapyFavoriteRegimen'),
+    sharedTherapyFavoritePreview: document.getElementById('sharedTherapyFavoritePreview'),
+    sharedTherapyFavoriteCancelBtn: document.getElementById('sharedTherapyFavoriteCancelBtn'),
+    exportPersonalTherapyFavoritesBtn: document.getElementById('exportPersonalTherapyFavoritesBtn'),
+    importPersonalTherapyFavoritesBtn: document.getElementById('importPersonalTherapyFavoritesBtn'),
+    personalTherapyFavoritesInput: document.getElementById('personalTherapyFavoritesInput'),
+    exportSharedTherapyFavoritesBtn: document.getElementById('exportSharedTherapyFavoritesBtn'),
+    importSharedTherapyFavoritesBtn: document.getElementById('importSharedTherapyFavoritesBtn'),
+    sharedTherapyFavoritesInput: document.getElementById('sharedTherapyFavoritesInput'),
     therapyEditor: document.getElementById('therapyEditor'),
     therapyValidationControls: document.getElementById('therapyValidationControls'),
     therapyLoadCsvBtn: document.getElementById('therapyLoadCsvBtn'),
@@ -2914,11 +2940,24 @@
     therapyAutocomplete: {
       suggestions: [],
       activeIndex: 0,
-      schemeIndex: 0,
+      activeRegimenOverride: '',
       lineStart: 0,
       lineEnd: 0,
       cursor: 0,
-      usage: loadTherapyAutocompleteUsageFromStorage()
+      isCyclingRegimen: false
+    },
+    therapyFavorites: {
+      personal: [],
+      shared: [],
+      editingPersonalId: '',
+      editingSharedId: '',
+      initialized: false,
+      sync: {
+        available: false,
+        status: 'local-only',
+        lastSyncedAt: '',
+        lastError: 'Autentificirani backend za terapijske postavke nije konfiguriran.'
+      }
     },
     diagnosisAutocomplete: {
       suggestions: [],
@@ -3235,10 +3274,6 @@
     }
   }
 
-  function normalizeTherapyAutocompleteUsageKey(value) {
-    return therapyNormalizeText(value || '').slice(0, 180);
-  }
-
   function capitalizeClinicalTextItem(value) {
     const text = String(value || '');
     return text.replace(/[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/u, (letter) => letter.toLocaleUpperCase('hr-HR'));
@@ -3256,58 +3291,6 @@
       .split('\n')
       .map((line) => line.split(/([,;]\s*)/).map((part) => /^[,;]\s*$/.test(part) ? part : capitalizeClinicalTextItem(part)).join(''))
       .join('\n');
-  }
-
-  function normalizeTherapyAutocompleteUsageRecord(key, value) {
-    const rawLine = typeof value === 'object' && value ? value.line : key;
-    const cleanKey = normalizeTherapyAutocompleteUsageKey(rawLine || key);
-    const count = Math.max(0, Math.min(9999, Math.floor(Number(typeof value === 'object' && value ? value.count : value) || 0)));
-    if (!cleanKey || count <= 0) return null;
-    const lastUsedAt = typeof value === 'object' && value ? String(value.lastUsedAt || '') : '';
-    return {
-      key: cleanKey,
-      record: {
-        line: normalizeClinicalTherapyText(String(rawLine || '').replace(/\s+/g, ' ').trim()).slice(0, 180),
-        count,
-        lastUsedAt,
-        source: typeof value === 'object' && value?.source === 'custom' ? 'custom' : ''
-      }
-    };
-  }
-
-  function loadTherapyAutocompleteUsageFromStorage() {
-    clearLocalStorageKeysWithPrefix(STORAGE_KEYS.therapyAutocompleteUsage);
-    return {};
-  }
-
-  function buildTherapyAutocompleteUsagePayload() {
-    const records = {};
-    Object.entries(state.therapyAutocomplete.usage || {})
-      .map(([key, value]) => normalizeTherapyAutocompleteUsageRecord(key, value))
-      .filter(Boolean)
-      .sort((a, b) => {
-        if (b.record.count !== a.record.count) return b.record.count - a.record.count;
-        return (Date.parse(b.record.lastUsedAt || '') || 0) - (Date.parse(a.record.lastUsedAt || '') || 0);
-      })
-      .slice(0, 250)
-      .forEach(({ key, record }) => {
-        records[key] = record;
-      });
-    return {
-      storageVersion: 1,
-      savedAt: new Date().toISOString(),
-      records
-    };
-  }
-
-  function saveTherapyAutocompleteUsageToStorage() {
-    const payload = buildTherapyAutocompleteUsagePayload();
-    if (payload?.records) state.therapyAutocomplete.usage = payload.records;
-    clearLocalStorageKeysWithPrefix(STORAGE_KEYS.therapyAutocompleteUsage);
-    if (typeof schedulePersonalAutocompleteProfileSave === 'function') {
-      schedulePersonalAutocompleteProfileSave();
-    }
-    return true;
   }
 
   function normalizeDiagnosisAutocompleteLine(value) {
@@ -3390,25 +3373,6 @@
 
   const PERSONAL_AUTOCOMPLETE_SCHEMA = 'temperaturna-lista-personal-autocomplete-v1';
 
-  function normalizeTherapyAutocompleteUsagePayload(payload = {}) {
-    const records = {};
-    const source = payload && typeof payload === 'object'
-      ? (payload.records && typeof payload.records === 'object' ? payload.records : payload)
-      : {};
-    Object.entries(source || {})
-      .map(([key, value]) => normalizeTherapyAutocompleteUsageRecord(key, value))
-      .filter(Boolean)
-      .sort((a, b) => {
-        if (b.record.count !== a.record.count) return b.record.count - a.record.count;
-        return (Date.parse(b.record.lastUsedAt || '') || 0) - (Date.parse(a.record.lastUsedAt || '') || 0);
-      })
-      .slice(0, 250)
-      .forEach(({ key, record }) => {
-        records[key] = record;
-      });
-    return records;
-  }
-
   function normalizeDiagnosisAutocompleteUsagePayload(payload = {}) {
     const records = {};
     const source = payload && typeof payload === 'object'
@@ -3434,11 +3398,6 @@
       schema: PERSONAL_AUTOCOMPLETE_SCHEMA,
       storageVersion: 1,
       savedAt: String(source.savedAt || ''),
-      therapies: {
-        storageVersion: 1,
-        savedAt: String(source.therapies?.savedAt || source.savedAt || ''),
-        records: normalizeTherapyAutocompleteUsagePayload(source.therapies || {})
-      },
       diagnoses: {
         storageVersion: 1,
         savedAt: String(source.diagnoses?.savedAt || source.savedAt || ''),
@@ -3453,7 +3412,6 @@
 
   function applyPersonalAutocompletePayloadFromProfile(profile = {}) {
     const payload = getPersonalAutocompletePayloadFromProfile(profile);
-    state.therapyAutocomplete.usage = normalizeTherapyAutocompleteUsagePayload(payload.therapies || {});
     state.diagnosisAutocomplete.usage = normalizeDiagnosisAutocompleteUsagePayload(payload.diagnoses || {});
     state.diagnosisAutocomplete.recordedKeys = new Set(Object.keys(state.diagnosisAutocomplete.usage || {}));
     return payload;
@@ -3464,7 +3422,6 @@
       schema: PERSONAL_AUTOCOMPLETE_SCHEMA,
       storageVersion: 1,
       savedAt: new Date().toISOString(),
-      therapies: buildTherapyAutocompleteUsagePayload(),
       diagnoses: buildDiagnosisAutocompleteUsagePayload()
     };
   }

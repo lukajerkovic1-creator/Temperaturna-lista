@@ -1085,7 +1085,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   const THERAPY_AUTOCOMPLETE_MAX_ITEMS = 8;
   const THERAPY_AUTOCOMPLETE_MIN_CHARS = 2;
   const THERAPY_AUTOCOMPLETE_RANK_POOL = 80;
-  const THERAPY_AUTOCOMPLETE_DOSING_SCHEMES = Object.freeze(['1,0,0', '0,1,0', '0,0,1']);
+  const THERAPY_AUTOCOMPLETE_DOSING_SCHEMES = Object.freeze(['1,0,0', '0,1,0', '0,0,1', 'p.p.']);
   const THERAPY_AUTOCOMPLETE_FORM_PATTERN = '(?:tbl\\.?|tablete?|kaps\\.?|caps\\.?|inh\\.?|gtt\\.?|sir\\.?|amp\\.?|inj\\.?|i\\.?\\s*v\\.?|s\\.?\\s*c\\.?|p\\.?\\s*o\\.?|per\\s+os)';
   const THERAPY_AUTOCOMPLETE_STRENGTH_PATTERN = '(?:\\d+(?:[,.]\\d+)?\\s*(?:mg|mcg|Âµg|µg|ug|g|ml|mL|IU|i\\.j\\.|ij|mmol|%))';
 
@@ -1128,185 +1128,25 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function therapyAutocompleteUniquePush(items, item, seen) {
     const line = String(item?.line || '').replace(/\s+/g, ' ').trim();
     if (!line) return;
-    const key = therapyNormalizeText(line);
+    const key = item?.identityKey || getTherapyAutocompleteIdentityKeyFromLine(line);
     if (!key || seen.has(key)) return;
     seen.add(key);
     items.push({ ...item, line });
   }
 
-  function getTherapyAutocompleteUsageRecord(item) {
-    const key = normalizeTherapyAutocompleteUsageKey(item?.line || '');
-    return key ? state.therapyAutocomplete.usage?.[key] || null : null;
-  }
-
-  function normalizeTherapyAutocompleteComparableKey(value) {
-    let key = normalizeTherapyAutocompleteUsageKey(value || '');
-    if (!key) return '';
-    key = key
-      .replace(/\bi\s+v\b/g, 'iv')
-      .replace(/\bs\s+c\b/g, 'sc')
-      .replace(/\bp\s+o\b/g, 'po')
-      .replace(/\btablete?\b/g, 'tbl')
-      .replace(/\bkapsule?\b/g, 'kaps')
-      .replace(/\bampule?\b/g, 'amp')
-      .replace(/\binjekcija\b/g, 'inj')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return key.slice(0, 180);
-  }
-
-  function getTherapyAutocompleteComparableKeys(line) {
-    const keys = new Set();
-    const clean = String(line || '')
-      .replace(THERAPY_BULLET_PREFIX_RE, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const key = normalizeTherapyAutocompleteComparableKey(clean);
-    if (!key) return keys;
-    keys.add(key);
-    const withoutTerminalForm = key.replace(/\s+(?:tbl|kaps|caps)\s*$/i, '').trim();
-    if (withoutTerminalForm && withoutTerminalForm !== key) keys.add(withoutTerminalForm);
-    return keys;
-  }
-
-  function therapyAutocompleteKeySetsOverlap(left, right) {
-    for (const key of left || []) {
-      if (right?.has?.(key)) return true;
-    }
-    return false;
-  }
-
-  function findExistingTherapyAutocompleteUsageKeyForLine(line) {
-    const desiredKeys = getTherapyAutocompleteComparableKeys(line);
-    if (!desiredKeys.size) return '';
-    const exactKey = normalizeTherapyAutocompleteUsageKey(line || '');
-    if (exactKey && state.therapyAutocomplete.usage?.[exactKey]) return exactKey;
-    for (const [storedKey, value] of Object.entries(state.therapyAutocomplete.usage || {})) {
-      const normalized = normalizeTherapyAutocompleteUsageRecord(storedKey, value);
-      if (!normalized) continue;
-      const storedKeys = getTherapyAutocompleteComparableKeys(normalized.record.line || storedKey);
-      if (therapyAutocompleteKeySetsOverlap(desiredKeys, storedKeys)) return storedKey;
-    }
-    return '';
-  }
-
-  function hasTherapyAutocompleteUsageForLine(line) {
-    const key = normalizeTherapyAutocompleteUsageKey(line || '');
-    if (!key) return false;
-    if (normalizeTherapyAutocompleteUsageRecord(key, state.therapyAutocomplete.usage?.[key])) return true;
-    return Boolean(findExistingTherapyAutocompleteUsageKeyForLine(line));
-  }
-
-  function buildTherapyAutocompleteMeta(item, usageRecord) {
-    if (item?.kind === 'save-custom') return item.meta || 'spremi u moje prijedloge';
-    if (item?.source === 'custom') return 'moj spremljeni prijedlog';
-    const base = String(item?.meta || 'prijedlog').trim();
-    const count = Math.max(0, Number(usageRecord?.count || 0));
-    if (!count) return base;
-    return `često birano (${count}x) - ${base}`;
-  }
-
-  function rankTherapyAutocompleteSuggestions(query, suggestions) {
+  function getManagedTherapyAutocompleteSuggestions(query, scope) {
     const q = therapyNormalizeText(query);
-    return (suggestions || [])
-      .map((item, index) => {
-        const usageRecord = getTherapyAutocompleteUsageRecord(item);
-        const count = Math.max(0, Number(usageRecord?.count || 0));
-        const lastUsedMs = Date.parse(usageRecord?.lastUsedAt || '') || 0;
-        const lineNorm = therapyNormalizeText(item.line || '');
-        const matchScore = lineNorm.startsWith(q) ? 2 : (lineNorm.includes(` ${q}`) ? 1 : 0);
-        return {
-          ...item,
-          meta: buildTherapyAutocompleteMeta(item, usageRecord),
-          _rank: { index, count, lastUsedMs, matchScore }
-        };
-      })
-      .sort((a, b) => {
-        if (b._rank.count !== a._rank.count) return b._rank.count - a._rank.count;
-        if (b._rank.lastUsedMs !== a._rank.lastUsedMs) return b._rank.lastUsedMs - a._rank.lastUsedMs;
-        if (b._rank.matchScore !== a._rank.matchScore) return b._rank.matchScore - a._rank.matchScore;
-        return a._rank.index - b._rank.index;
-      })
-      .map(({ _rank, ...item }) => item);
-  }
-
-  function recordTherapyAutocompleteSelection(item, options = {}) {
-    const line = normalizeClinicalTherapyText(String(item?.line || '').replace(/\s+/g, ' ').trim()).slice(0, 180);
-    const key = findExistingTherapyAutocompleteUsageKeyForLine(line) || normalizeTherapyAutocompleteUsageKey(line);
-    if (!key) return;
-    const usage = state.therapyAutocomplete.usage || {};
-    const previous = usage[key] || {};
-    const source = options.source || item?.source || previous.source || '';
-    usage[key] = {
-      line,
-      count: Math.min(9999, Math.max(0, Number(previous.count || 0)) + 1),
-      lastUsedAt: new Date().toISOString(),
-      source: source === 'custom' ? 'custom' : ''
-    };
-    state.therapyAutocomplete.usage = usage;
-    saveTherapyAutocompleteUsageToStorage();
-  }
-
-  function getRememberableTherapyAutocompleteLine(textarea = els.therapy) {
-    if (!textarea) return '';
-    const ctx = getTherapyAutocompleteCurrentLine(textarea);
-    return normalizeClinicalTherapyText(String(ctx.fullLine || '')
-      .replace(THERAPY_BULLET_PREFIX_RE, '')
-      .replace(/\s+/g, ' ')
-      .trim())
-      .slice(0, 180);
-  }
-
-  function isRememberableTherapyAutocompleteLine(line) {
-    const clean = String(line || '').trim();
-    return clean.length >= 3 && /[A-Za-zČĆŽŠĐčćžšđ]/.test(clean);
-  }
-
-  function updateRememberTherapyAutocompleteButtonState() {
-    const button = els.rememberTherapyAutocompleteBtn;
-    if (!button) return;
-    const line = getRememberableTherapyAutocompleteLine();
-    const disabled = !els.therapy || els.therapy.readOnly || !isRememberableTherapyAutocompleteLine(line);
-    button.disabled = disabled;
-    button.title = disabled
-      ? 'Postavi kursor na redak kronične terapije koji želiš upamtiti.'
-      : `Upamti kao budući prijedlog: ${line}`;
-  }
-
-  function rememberCurrentTherapyAutocompleteLine() {
-    const line = getRememberableTherapyAutocompleteLine();
-    if (!isRememberableTherapyAutocompleteLine(line)) {
-      setStatus('Nema retka kronične terapije za pamćenje. Postavite kursor u redak koji želite upamtiti.', true);
-      updateRememberTherapyAutocompleteButtonState();
-      return false;
-    }
-    const alreadyStored = hasTherapyAutocompleteUsageForLine(line);
-    recordTherapyAutocompleteSelection({ line, source: 'custom' }, { source: 'custom' });
-    updateRememberTherapyAutocompleteButtonState();
-    setStatus(`${alreadyStored ? 'Osvježen' : 'Upamćen'} je lokalni prijedlog kronične terapije: ${line}`);
-    return true;
-  }
-
-  function deleteCustomTherapyAutocompleteSuggestion(index = state.therapyAutocomplete.activeIndex || 0) {
-    const suggestions = state.therapyAutocomplete.suggestions || [];
-    const item = suggestions[index];
-    const key = findExistingTherapyAutocompleteUsageKeyForLine(item?.line || '') || normalizeTherapyAutocompleteUsageKey(item?.line || '');
-    if (!key || item?.source !== 'custom' || state.therapyAutocomplete.usage?.[key]?.source !== 'custom') {
-      return false;
-    }
-    const line = String(state.therapyAutocomplete.usage[key]?.line || item.line || '').replace(/\s+/g, ' ').trim();
-    const confirmed = window.confirm(`Jeste li sigurni da želite obrisati spremljenu terapiju?\n\n${line}`);
-    if (!confirmed) {
-      if (els.therapy) els.therapy.focus();
-      return false;
-    }
-    delete state.therapyAutocomplete.usage[key];
-    saveTherapyAutocompleteUsageToStorage();
-    updateTherapyAutocomplete();
-    updateRememberTherapyAutocompleteButtonState();
-    if (els.therapy) els.therapy.focus();
-    setStatus(`Obrisan je lokalni prijedlog kronicne terapije: ${line}`);
-    return true;
+    if (q.length < THERAPY_AUTOCOMPLETE_MIN_CHARS) return [];
+    const list = scope === 'shared' ? state.therapyFavorites?.shared : state.therapyFavorites?.personal;
+    return (Array.isArray(list) ? list : [])
+      .filter((entry) => therapyNormalizeText(entry.name || '').startsWith(q))
+      .map((entry) => ({
+        line: buildTherapyFavoriteLine(entry),
+        source: scope,
+        favorite: { ...entry },
+        identityKey: buildTherapyFavoriteIdentityKey(entry),
+        meta: scope === 'shared' ? 'zajednička terapija' : 'moja terapija'
+      }));
   }
 
   function getSeedTherapyAutocompleteSuggestions(query) {
@@ -1321,48 +1161,12 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         return t.startsWith(q) || q.startsWith(t);
       });
       if (!lineNorm.startsWith(q) && !triggerMatch) return;
-      therapyAutocompleteUniquePush(out, { line: item.line, meta: item.meta || 'lokalni predložak' }, seen);
+      therapyAutocompleteUniquePush(out, {
+        line: normalizeClinicalTherapyText(item.line),
+        meta: item.meta || 'lokalni predložak'
+      }, seen);
     });
     return out;
-  }
-
-  function getPopularTherapyAutocompleteSuggestions(query) {
-    const q = therapyNormalizeText(query);
-    if (q.length < THERAPY_AUTOCOMPLETE_MIN_CHARS) return [];
-    return Object.entries(state.therapyAutocomplete.usage || {})
-      .map(([key, value]) => normalizeTherapyAutocompleteUsageRecord(key, value))
-      .filter(Boolean)
-      .filter(({ key, record }) => key.startsWith(q) || therapyNormalizeText(record.line || '').startsWith(q))
-      .sort((a, b) => {
-        if (b.record.count !== a.record.count) return b.record.count - a.record.count;
-        return (Date.parse(b.record.lastUsedAt || '') || 0) - (Date.parse(a.record.lastUsedAt || '') || 0);
-      })
-      .slice(0, THERAPY_AUTOCOMPLETE_MAX_ITEMS)
-      .map(({ record }) => ({
-        line: record.line,
-        source: record.source || '',
-        meta: record.source === 'custom' ? 'moj spremljeni prijedlog' : 'lokalno zapamćen prijedlog'
-      }));
-  }
-
-  function buildSaveCustomTherapyAutocompleteSuggestion(ctx, existingSuggestions) {
-    const line = normalizeClinicalTherapyText(String(ctx?.fullLine || '')
-      .replace(THERAPY_BULLET_PREFIX_RE, '')
-      .replace(/\s+/g, ' ')
-      .trim())
-      .slice(0, 180);
-    if (!isRememberableTherapyAutocompleteLine(line)) return null;
-    if (!/\s/.test(line) || line.length < 8) return null;
-    const key = normalizeTherapyAutocompleteUsageKey(line);
-    if (!key || hasTherapyAutocompleteUsageForLine(line)) return null;
-    const alreadySuggested = (existingSuggestions || []).some((item) => normalizeTherapyAutocompleteUsageKey(item?.line || '') === key);
-    if (alreadySuggested) return null;
-    return {
-      kind: 'save-custom',
-      source: 'custom',
-      line,
-      meta: 'Klikni za spremanje u moje prijedloge. Ne brise se kod uvoza sluzbene baze.'
-    };
   }
 
   function buildTherapyAutocompleteLineFromAlias(entry) {
@@ -1373,7 +1177,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return normalizeTherapySuggestionText([name, strength, routeOrForm].filter(Boolean).join(' '));
   }
 
-  function getTherapyAutocompleteScheme(index = state.therapyAutocomplete?.schemeIndex || 0) {
+  function getTherapyAutocompleteScheme(index = 0) {
     const schemes = THERAPY_AUTOCOMPLETE_DOSING_SCHEMES;
     const normalizedIndex = ((Number(index) || 0) % schemes.length + schemes.length) % schemes.length;
     return schemes[normalizedIndex] || schemes[0];
@@ -1400,8 +1204,20 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return normalizeTherapySuggestionText(text.replace(/\s+/g, ' ').trim());
   }
 
+  function getTherapyAutocompleteIdentityKeyFromLine(line) {
+    const clean = normalizeTherapySuggestionText(line || '');
+    if (!clean) return '';
+    const strengthMatch = clean.match(new RegExp(THERAPY_AUTOCOMPLETE_STRENGTH_PATTERN, 'i'));
+    const strength = strengthMatch?.[0] || '';
+    const strengthIndex = strengthMatch?.index ?? -1;
+    const name = strengthIndex >= 0 ? clean.slice(0, strengthIndex).replace(/\b\d+\s*x\s*$/i, '').trim() : stripTherapyAutocompleteDosingParts(clean);
+    const form = inferTherapyAutocompleteForm(clean);
+    return [name, strength, form]
+      .map((value) => therapyNormalizeText(value || '').replace(/\s+/g, ' ').trim())
+      .join('|');
+  }
+
   function shouldCycleTherapyAutocompleteDose(item) {
-    if (item?.kind === 'save-custom') return false;
     const line = String(item?.line || '');
     if (!line) return false;
     return new RegExp(THERAPY_AUTOCOMPLETE_STRENGTH_PATTERN, 'i').test(line)
@@ -1409,13 +1225,22 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       || /\b\d\s*[,./]\s*\d\s*[,./]\s*\d\b/.test(line);
   }
 
-  function buildTherapyAutocompleteDisplay(item, schemeIndex = state.therapyAutocomplete?.schemeIndex || 0) {
+  function buildTherapyAutocompleteDisplay(item, regimenOverride = '') {
     const rawLine = normalizeTherapySuggestionText(item?.line || '');
     if (!rawLine) return { line: '', canCycleDose: false, scheme: '', form: '' };
+    if (item?.favorite) {
+      const scheme = normalizeTherapyFavoriteRegimen(regimenOverride) || item.favorite.regimen;
+      return {
+        line: buildTherapyFavoriteLine({ ...item.favorite, regimen: scheme }),
+        canCycleDose: true,
+        scheme,
+        form: item.favorite.form
+      };
+    }
     if (!shouldCycleTherapyAutocompleteDose(item)) {
       return { line: rawLine, canCycleDose: false, scheme: '', form: '' };
     }
-    const scheme = getTherapyAutocompleteScheme(schemeIndex);
+    const scheme = normalizeTherapyFavoriteRegimen(regimenOverride) || getTherapyAutocompleteScheme(0);
     const form = inferTherapyAutocompleteForm(rawLine);
     const base = stripTherapyAutocompleteDosingParts(rawLine);
     const line = normalizeTherapySuggestionText([base, scheme, form].filter(Boolean).join(' '));
@@ -1452,18 +1277,19 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   function getTherapyAutocompleteSuggestions(query) {
     const seen = new Set();
     const out = [];
-    getPopularTherapyAutocompleteSuggestions(query).forEach((item) => therapyAutocompleteUniquePush(out, item, seen));
+    getManagedTherapyAutocompleteSuggestions(query, 'personal').forEach((item) => therapyAutocompleteUniquePush(out, item, seen));
+    getManagedTherapyAutocompleteSuggestions(query, 'shared').forEach((item) => therapyAutocompleteUniquePush(out, item, seen));
     getSeedTherapyAutocompleteSuggestions(query).forEach((item) => therapyAutocompleteUniquePush(out, item, seen));
     getCsvTherapyAutocompleteSuggestions(query, THERAPY_AUTOCOMPLETE_RANK_POOL).forEach((item) => {
       therapyAutocompleteUniquePush(out, item, seen);
     });
-    return rankTherapyAutocompleteSuggestions(query, out).slice(0, THERAPY_AUTOCOMPLETE_MAX_ITEMS);
+    return out.slice(0, THERAPY_AUTOCOMPLETE_MAX_ITEMS);
   }
 
   function hideTherapyAutocomplete() {
     state.therapyAutocomplete.suggestions = [];
     state.therapyAutocomplete.activeIndex = 0;
-    state.therapyAutocomplete.schemeIndex = 0;
+    state.therapyAutocomplete.activeRegimenOverride = '';
     if (els.therapyAutocompleteBox) {
       els.therapyAutocompleteBox.classList.add('hidden');
       els.therapyAutocompleteBox.classList.remove('side-flyout');
@@ -1657,17 +1483,11 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     state.therapyAutocomplete.activeIndex = activeIndex;
     box.innerHTML = suggestions.map((item, index) => {
       const active = index === activeIndex;
-      const display = buildTherapyAutocompleteDisplay(item);
+      const display = buildTherapyAutocompleteDisplay(item, active ? state.therapyAutocomplete.activeRegimenOverride : '');
       const doseRow = display.canCycleDose
-        ? `<div class="therapy-autocomplete-dose-row"><span>←/→ shema</span><strong>${therapyEscapeHtml(display.scheme)} ${therapyEscapeHtml(display.form)}</strong></div>`
+        ? `<div class="therapy-autocomplete-dose-row"><span>Page Up/Down režim</span><strong>${therapyEscapeHtml(display.scheme)} ${therapyEscapeHtml(display.form)}</strong></div>`
         : '';
-      const isStoredCustom = item.kind !== 'save-custom' && item.source === 'custom';
-      const customClass = `${item.kind === 'save-custom' ? ' is-save-custom' : ''}${isStoredCustom ? ' is-user-custom' : ''}`;
-      const mainText = item.kind === 'save-custom' ? `+ Spremi moj unos: ${display.line || item.line}` : (display.line || item.line);
-      const deleteAction = isStoredCustom
-        ? `<button type="button" class="therapy-autocomplete-delete" data-therapy-autocomplete-delete="${index}" aria-label="Obriši moj spremljeni prijedlog: ${therapyEscapeHtml(display.line || item.line)}">Obriši</button>`
-        : '';
-      return `<div id="therapyAutocompleteOption${index}" class="therapy-autocomplete-option${active ? ' is-active' : ''}${customClass}" role="option" aria-selected="${active ? 'true' : 'false'}" data-therapy-autocomplete-index="${index}"><div class="therapy-autocomplete-text"><div class="therapy-autocomplete-main">${therapyEscapeHtml(mainText)}</div>${doseRow}<div class="therapy-autocomplete-meta">${therapyEscapeHtml(item.meta || 'prijedlog')}</div></div>${deleteAction}</div>`;
+      return `<div id="therapyAutocompleteOption${index}" class="therapy-autocomplete-option${active ? ' is-active' : ''}" role="option" aria-selected="${active ? 'true' : 'false'}" data-therapy-autocomplete-index="${index}"><div class="therapy-autocomplete-text"><div class="therapy-autocomplete-main">${therapyEscapeHtml(display.line || item.line)}</div>${doseRow}<div class="therapy-autocomplete-meta">${therapyEscapeHtml(item.meta || 'prijedlog')}</div></div></div>`;
     }).join('');
     box.classList.remove('hidden');
     scheduleTherapyAutocompletePosition();
@@ -1680,22 +1500,19 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     const ctx = getTherapyAutocompleteCurrentLine(els.therapy);
     const query = ctx.query;
     const canSearch = query.length >= THERAPY_AUTOCOMPLETE_MIN_CHARS && !/\s/.test(query) && !/[0-9,./]\s*$/.test(query);
-    if (!canSearch && !buildSaveCustomTherapyAutocompleteSuggestion(ctx, [])) {
+    if (!canSearch) {
       hideTherapyAutocomplete();
       return;
     }
     const suggestions = canSearch ? getTherapyAutocompleteSuggestions(query) : [];
-    const saveCustomSuggestion = buildSaveCustomTherapyAutocompleteSuggestion(ctx, suggestions);
-    if (saveCustomSuggestion) suggestions.unshift(saveCustomSuggestion);
-    const usage = state.therapyAutocomplete.usage || {};
     state.therapyAutocomplete = {
       suggestions,
       activeIndex: 0,
-      schemeIndex: 0,
+      activeRegimenOverride: '',
       lineStart: ctx.lineStart,
       lineEnd: ctx.lineEnd,
       cursor: ctx.cursor,
-      usage
+      isCyclingRegimen: false
     };
     renderTherapyAutocomplete();
   }
@@ -1705,27 +1522,18 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     const suggestions = state.therapyAutocomplete.suggestions || [];
     const item = suggestions[index];
     if (!textarea || !item) return false;
-    if (item.kind === 'save-custom') {
-      recordTherapyAutocompleteSelection({ line: item.line, source: 'custom' }, { source: 'custom' });
-      hideTherapyAutocomplete();
-      updateRememberTherapyAutocompleteButtonState();
-      textarea.focus();
-      setStatus(`UpamÄ‡en je lokalni prijedlog kroniÄne terapije: ${item.line}`);
-      return true;
-    }
     const ctx = getTherapyAutocompleteCurrentLine(textarea);
     const value = String(textarea.value || '');
     const prefix = value.slice(0, ctx.lineStart);
     const suffix = value.slice(ctx.lineEnd);
     const bullet = (ctx.fullLine.match(THERAPY_BULLET_PREFIX_RE) || [''])[0];
-    const display = buildTherapyAutocompleteDisplay(item);
+    const display = buildTherapyAutocompleteDisplay(item, state.therapyAutocomplete.activeRegimenOverride);
     const replacement = `${bullet}${display.line || item.line}`.trimStart();
     textarea.value = `${prefix}${replacement}${suffix}`;
     const nextCursor = prefix.length + replacement.length;
     textarea.focus();
     textarea.setSelectionRange(nextCursor, nextCursor);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    recordTherapyAutocompleteSelection({ ...item, line: display.line || item.line });
     hideTherapyAutocomplete();
     setStatus('Prijedlog terapije je upisan. Provjerite dozu, put primjene, bubrežnu funkciju i indikaciju prije ispisa.');
     return true;
@@ -1736,17 +1544,114 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (!suggestions.length) return false;
     const next = (state.therapyAutocomplete.activeIndex + delta + suggestions.length) % suggestions.length;
     state.therapyAutocomplete.activeIndex = next;
+    state.therapyAutocomplete.activeRegimenOverride = '';
     renderTherapyAutocomplete();
     return true;
   }
 
-  function moveTherapyAutocompleteDoseScheme(delta) {
+  function findTherapyRegimenToken(line) {
+    const text = String(line || '');
+    const patterns = [
+      { regimen: '1,0,0', regex: /\b(?:1\s*[, -]\s*0\s*[, -]\s*0|ujutro)\b/i },
+      { regimen: '0,1,0', regex: /\b(?:0\s*[, -]\s*1\s*[, -]\s*0|podne)\b/i },
+      { regimen: '0,0,1', regex: /\b(?:0\s*[, -]\s*0\s*[, -]\s*1|nave(?:č|c)er)\b/i },
+      { regimen: 'p.p.', regex: /(?:\bp\s*\.?\s*p(?:\s*\.)?(?!\w)|\bpo potrebi\b)/i }
+    ];
+    for (const candidate of patterns) {
+      const match = candidate.regex.exec(text);
+      if (match) return { regimen: candidate.regimen, start: match.index, end: match.index + match[0].length };
+    }
+    return null;
+  }
+
+  function getNextTherapyRegimen(currentRegimen, delta) {
+    const currentIndex = THERAPY_AUTOCOMPLETE_DOSING_SCHEMES.indexOf(currentRegimen);
+    if (currentIndex < 0) return delta > 0 ? '1,0,0' : 'p.p.';
+    return THERAPY_AUTOCOMPLETE_DOSING_SCHEMES[
+      (currentIndex + delta + THERAPY_AUTOCOMPLETE_DOSING_SCHEMES.length) % THERAPY_AUTOCOMPLETE_DOSING_SCHEMES.length
+    ];
+  }
+
+  function insertTherapyRegimenBeforeTerminalForm(line, regimen) {
+    const text = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const terminalForm = new RegExp(`\\s+(${THERAPY_AUTOCOMPLETE_FORM_PATTERN})\\s*$`, 'i').exec(text);
+    if (!terminalForm) return `${text} ${regimen}`;
+    const beforeForm = text.slice(0, terminalForm.index).trimEnd();
+    return `${beforeForm} ${regimen} ${terminalForm[1]}`;
+  }
+
+  function cycleTherapyLineRegimen(line, delta) {
+    const normalizedLine = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!normalizedLine) return null;
+    const token = findTherapyRegimenToken(normalizedLine);
+    const regimen = getNextTherapyRegimen(token?.regimen || '', delta);
+    const nextLine = token
+      ? `${normalizedLine.slice(0, token.start)}${regimen}${normalizedLine.slice(token.end)}`
+      : insertTherapyRegimenBeforeTerminalForm(normalizedLine, regimen);
+    return { line: normalizeClinicalTherapyText(nextLine.replace(/\s+/g, ' ').trim()), regimen };
+  }
+
+  function setTherapyLineRegimen(line, regimen) {
+    const normalizedLine = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!normalizedLine) return null;
+    const token = findTherapyRegimenToken(normalizedLine);
+    const nextLine = token
+      ? `${normalizedLine.slice(0, token.start)}${regimen}${normalizedLine.slice(token.end)}`
+      : insertTherapyRegimenBeforeTerminalForm(normalizedLine, regimen);
+    return { line: normalizeClinicalTherapyText(nextLine.replace(/\s+/g, ' ').trim()), regimen };
+  }
+
+  function therapySelectionSpansMultipleLines(textarea) {
+    const value = String(textarea?.value || '');
+    const start = Number(textarea?.selectionStart || 0);
+    const end = Number(textarea?.selectionEnd || start);
+    return start !== end && value.slice(start, end).includes('\n');
+  }
+
+  function replaceTherapyActiveLine(textarea, ctx, replacement) {
+    const bullet = (String(ctx.fullLine || '').match(THERAPY_BULLET_PREFIX_RE) || [''])[0];
+    const nextLine = `${bullet}${replacement}`;
+    textarea.value = `${ctx.value.slice(0, ctx.lineStart)}${nextLine}${ctx.value.slice(ctx.lineEnd)}`;
+    const nextCursor = ctx.lineStart + nextLine.length;
+    textarea.setSelectionRange(nextCursor, nextCursor);
+    state.therapyAutocomplete.lineStart = ctx.lineStart;
+    state.therapyAutocomplete.lineEnd = ctx.lineStart + nextLine.length;
+    state.therapyAutocomplete.cursor = nextCursor;
+    return nextCursor;
+  }
+
+  function cycleTherapyRegimenFromKeyboard(event, delta) {
+    const textarea = els.therapy;
+    if (!textarea || event.target !== textarea) return false;
+    event.preventDefault();
+    if (therapySelectionSpansMultipleLines(textarea)) return true;
+
+    const ctx = getTherapyAutocompleteCurrentLine(textarea);
     const suggestions = state.therapyAutocomplete.suggestions || [];
-    if (!suggestions.length) return false;
-    const schemes = THERAPY_AUTOCOMPLETE_DOSING_SCHEMES;
-    const current = Number(state.therapyAutocomplete.schemeIndex || 0);
-    state.therapyAutocomplete.schemeIndex = (current + delta + schemes.length) % schemes.length;
-    renderTherapyAutocomplete();
+    const dropdownOpen = Boolean(suggestions.length && !els.therapyAutocompleteBox?.classList.contains('hidden'));
+    const activeItem = dropdownOpen ? suggestions[state.therapyAutocomplete.activeIndex || 0] : null;
+    const activeDisplay = activeItem
+      ? buildTherapyAutocompleteDisplay(activeItem, state.therapyAutocomplete.activeRegimenOverride)
+      : null;
+    const currentLine = String(ctx.fullLine || '').replace(THERAPY_BULLET_PREFIX_RE, '').trim();
+    const currentToken = findTherapyRegimenToken(currentLine);
+    const sourceLine = activeItem && (!currentLine || ctx.query.length < String(activeItem.line || '').length)
+      ? (activeDisplay?.line || activeItem.line)
+      : currentLine;
+    const cycled = activeItem && !currentToken
+      ? setTherapyLineRegimen(sourceLine, delta > 0 ? '1,0,0' : 'p.p.')
+      : cycleTherapyLineRegimen(sourceLine, delta);
+    if (!cycled) return true;
+
+    state.therapyAutocomplete.isCyclingRegimen = true;
+    replaceTherapyActiveLine(textarea, ctx, cycled.line);
+    state.therapyAutocomplete.activeRegimenOverride = cycled.regimen;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    state.therapyAutocomplete.isCyclingRegimen = false;
+    if (dropdownOpen) renderTherapyAutocomplete();
+    else hideTherapyAutocomplete();
+    textarea.focus();
     return true;
   }
 
@@ -1768,32 +1673,31 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     els.therapy.setAttribute('aria-controls', 'therapyAutocompleteBox');
 
     els.therapy.addEventListener('input', () => {
-      updateTherapyAutocomplete();
-      updateRememberTherapyAutocompleteButtonState();
+      if (!state.therapyAutocomplete.isCyclingRegimen) updateTherapyAutocomplete();
     });
     els.therapy.addEventListener('click', () => {
       updateTherapyAutocomplete();
-      updateRememberTherapyAutocompleteButtonState();
     });
     els.therapy.addEventListener('focus', () => {
       hideDiagnosisAutocomplete();
       scheduleTherapyAutocompletePosition();
-      updateRememberTherapyAutocompleteButtonState();
     });
     els.therapy.addEventListener('scroll', positionTherapyAutocompleteBox);
     els.therapy.addEventListener('keyup', (event) => {
       if (isTabNavigationKey(event)) return;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].includes(event.key)) return;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Enter', 'Escape'].includes(event.key)) return;
       updateTherapyAutocomplete();
-      updateRememberTherapyAutocompleteButtonState();
     });
     els.therapy.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.altKey && event.code === 'KeyM') {
-        event.preventDefault();
-        rememberCurrentTherapyAutocompleteLine();
+      if (moveTherapyFocusWithTab(event)) return;
+      if (event.key === 'PageDown') {
+        cycleTherapyRegimenFromKeyboard(event, 1);
         return;
       }
-      if (moveTherapyFocusWithTab(event)) return;
+      if (event.key === 'PageUp') {
+        cycleTherapyRegimenFromKeyboard(event, -1);
+        return;
+      }
       const hasSuggestions = Boolean(state.therapyAutocomplete.suggestions?.length);
       if (!hasSuggestions) return;
       if (event.key === 'ArrowDown') {
@@ -1802,12 +1706,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       } else if (event.key === 'ArrowUp') {
         event.preventDefault();
         moveTherapyAutocompleteSelection(-1);
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        moveTherapyAutocompleteDoseScheme(1);
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        moveTherapyAutocompleteDoseScheme(-1);
       } else if (event.key === 'Enter') {
         event.preventDefault();
         acceptTherapyAutocomplete();
@@ -1818,32 +1716,14 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     });
 
     els.therapyAutocompleteBox.addEventListener('mousedown', (event) => {
-      const deleteButton = event.target.closest('[data-therapy-autocomplete-delete]');
-      if (deleteButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        deleteCustomTherapyAutocompleteSuggestion(Number(deleteButton.dataset.therapyAutocompleteDelete || 0));
-        return;
-      }
       const option = event.target.closest('[data-therapy-autocomplete-index]');
       if (!option) return;
       event.preventDefault();
       acceptTherapyAutocomplete(Number(option.dataset.therapyAutocompleteIndex || 0));
     });
 
-    if (els.rememberTherapyAutocompleteBtn) {
-      els.rememberTherapyAutocompleteBtn.addEventListener('mousedown', (event) => {
-        event.preventDefault();
-      });
-      els.rememberTherapyAutocompleteBtn.addEventListener('click', () => {
-        const remembered = rememberCurrentTherapyAutocompleteLine();
-        if (remembered) els.therapy.focus();
-      });
-      updateRememberTherapyAutocompleteButtonState();
-    }
-
     document.addEventListener('mousedown', (event) => {
-      if (event.target === els.therapy || event.target === els.rememberTherapyAutocompleteBtn || els.therapyAutocompleteBox.contains(event.target)) return;
+      if (event.target === els.therapy || els.therapyAutocompleteBox.contains(event.target)) return;
       hideTherapyAutocomplete();
     });
     window.addEventListener('scroll', positionTherapyAutocompleteBox, true);
@@ -4348,7 +4228,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     textarea.setAttribute('aria-disabled', inactive ? 'true' : 'false');
     if (textarea.id === 'therapy') {
       updateTherapyEditorDisabled();
-      updateRememberTherapyAutocompleteButtonState();
     }
     if (textarea.id === 'followUpControl') {
       document.querySelectorAll('[data-followup-lab-option]').forEach((input) => {
@@ -5612,6 +5491,15 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       validateEncounter,
       getMedicationAutocompleteSuggestions,
       insertMedicationSuggestion,
+      getTherapyFavorites: () => ({
+        personal: (state.therapyFavorites?.personal || []).map((item) => ({ ...item })),
+        shared: (state.therapyFavorites?.shared || []).map((item) => ({ ...item }))
+      }),
+      normalizeTherapyFavoriteEntry,
+      normalizeTherapyFavoriteList,
+      buildTherapyFavoriteLine,
+      cycleTherapyLineRegimen,
+      sanitizeTherapyFavoritesBackup,
       validateCurrentTherapy: () => validateTherapyField({ source: 'clinical-helper' }),
       runMedicationSafetyChecks,
       clinicalRecordToFhirBundle,

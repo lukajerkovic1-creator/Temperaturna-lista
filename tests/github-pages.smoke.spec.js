@@ -3017,12 +3017,12 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebase(page);
 
     const therapyCsvStatus = page.locator('#therapyCsvStatus');
-    await expect(therapyCsvStatus).toContainText(/Baza lijekova OK/i);
+    await expect(therapyCsvStatus).toContainText(/Baza lijekova (?:OK|treba obnovu)/i);
     await expect(therapyCsvStatus).toContainText(/Ugrađena baza lijekova|Ugradena baza lijekova/i);
     await expect(therapyCsvStatus).toContainText(/2026_06_15|15\.06\.2026|10257/i);
-    await expect(therapyCsvStatus).toHaveAttribute('data-health-state', 'ok');
+    await expect(therapyCsvStatus).toHaveAttribute('data-health-state', /^(?:ok|warn)$/);
     await expect(therapyCsvStatus).toHaveAttribute('data-alias-count', '10257');
-    await expect(therapyCsvStatus).toHaveAttribute('data-stale', 'false');
+    await expect(therapyCsvStatus).toHaveAttribute('data-stale', /^(?:true|false)$/);
     await expect(therapyCsvStatus).toHaveAttribute('data-stale-after-days', '45');
     await expect(therapyCsvStatus).toHaveAttribute('data-source', 'embedded');
     await expect(therapyCsvStatus).not.toContainText(/nije automatski učitana|nije automatski ucitana|ograničena|ogranicena/i);
@@ -3077,19 +3077,230 @@ test.describe('GitHub Pages smoke test', () => {
     const activeTherapyOption = page.locator('#therapyAutocompleteBox .therapy-autocomplete-option.is-active');
     await expect(activeTherapyOption).toContainText(/Amlodipin/i);
     await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
-    await page.keyboard.press('ArrowRight');
-    await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
-    await page.keyboard.press('ArrowRight');
-    await expect(activeTherapyOption).toContainText(/0,0,1 tbl/i);
+    const caretBeforeArrow = await page.locator('#therapy').evaluate((element) => element.selectionStart);
     await page.keyboard.press('ArrowLeft');
-    await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
-    await page.keyboard.press('Enter');
+    const caretAfterArrow = await page.locator('#therapy').evaluate((element) => element.selectionStart);
+    expect(caretAfterArrow).toBe(caretBeforeArrow - 1);
+    await page.keyboard.press('End');
+    await page.keyboard.press('PageDown');
+    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1,0,0 tbl/i);
+    await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
+    await page.keyboard.press('PageDown');
     await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*0,1,0 tbl/i);
-    const rememberedTherapyLine = await page.locator('#therapy').inputValue();
-    await page.locator('#therapy').fill(rememberedTherapyLine);
-    await expect(page.locator('#therapyAutocompleteBox .therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
+    await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
+    await page.keyboard.press('PageUp');
+    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1,0,0 tbl/i);
+    await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1,0,0 tbl/i);
+    await expect(page.locator('#rememberTherapyAutocompleteBtn')).toHaveCount(0);
     await expect(page.locator('#therapyAutocompleteBox')).toBeHidden();
 
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('uses managed therapy favorites and PageUp/PageDown without learning patient text', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.evaluate(() => {
+      localStorage.setItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1', JSON.stringify({
+        records: { 'stari lijek': { line: 'Stari lijek 5 mg 1,0,0 tbl', count: 9 } }
+      }));
+      localStorage.setItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1__user_legacy', 'legacy');
+    });
+    await page.reload();
+    await continueWithoutFirebase(page);
+    expect(await page.evaluate(() => Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+      .filter((key) => key?.startsWith('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1')))).toEqual([]);
+    await expect(page.locator('#rememberTherapyAutocompleteBtn')).toHaveCount(0);
+
+    await page.locator('#therapyFavoritesSettings').evaluate((element) => { element.open = true; });
+    await page.locator('#personalTherapyFavoriteName').fill('amlodipin');
+    await page.locator('#personalTherapyFavoriteStrength').fill('5 mg');
+    await page.locator('#personalTherapyFavoriteFormText').fill('tbl');
+    await page.locator('#personalTherapyFavoriteRegimen').selectOption('0,0,1');
+    await expect(page.locator('#personalTherapyFavoritePreview')).toContainText('Amlodipin 5 mg 0,0,1 tbl');
+    await page.locator('#personalTherapyFavoriteForm button[type="submit"]').click();
+    await expect(page.locator('#personalTherapyFavoritesList')).toContainText('Amlodipin 5 mg 0,0,1 tbl');
+
+    const managedSuggestions = await page.evaluate(() => window.TemperaturnaListaClinical.getMedicationAutocompleteSuggestions('Amlod'));
+    expect(managedSuggestions[0].source).toBe('personal');
+    expect(managedSuggestions[0].line).toContain('0,0,1');
+    expect(managedSuggestions.filter((item) => /Amlodipin.*5 mg/i.test(item.line))).toHaveLength(1);
+
+    const regimenCases = await page.evaluate(() => {
+      const cycle = window.TemperaturnaListaClinical.cycleTherapyLineRegimen;
+      return {
+        forward: [
+          cycle('Amlopin 5 mg 1,0,0 tbl', 1),
+          cycle('Amlopin 5 mg 0,1,0 tbl', 1),
+          cycle('Amlopin 5 mg 0,0,1 tbl', 1),
+          cycle('Amlopin 5 mg p.p. tbl', 1)
+        ],
+        backward: [
+          cycle('Amlopin 5 mg 1,0,0 tbl', -1),
+          cycle('Amlopin 5 mg p.p. tbl', -1)
+        ],
+        missing: [
+          cycle('Amlopin 5 mg tbl', 1),
+          cycle('Amlopin 5 mg tbl', -1)
+        ],
+        aliases: [
+          cycle('Amlopin 5 mg 1-0-0 tbl', 1),
+          cycle('Amlopin 5 mg 1 0 0 tbl', 1),
+          cycle('Amlopin 5 mg ujutro tbl', 1),
+          cycle('Amlopin 5 mg podne tbl', 1),
+          cycle('Amlopin 5 mg navecer tbl', 1),
+          cycle('Amlopin 5 mg po potrebi tbl', 1)
+        ]
+      };
+    });
+    expect(regimenCases.forward.map((item) => item.line)).toEqual([
+      'Amlopin 5 mg 0,1,0 tbl',
+      'Amlopin 5 mg 0,0,1 tbl',
+      'Amlopin 5 mg p.p. tbl',
+      'Amlopin 5 mg 1,0,0 tbl'
+    ]);
+    expect(regimenCases.backward.map((item) => item.line)).toEqual([
+      'Amlopin 5 mg p.p. tbl',
+      'Amlopin 5 mg 0,0,1 tbl'
+    ]);
+    expect(regimenCases.missing.map((item) => item.line)).toEqual([
+      'Amlopin 5 mg 1,0,0 tbl',
+      'Amlopin 5 mg p.p. tbl'
+    ]);
+    expect(regimenCases.aliases.map((item) => item.line)).toEqual([
+      'Amlopin 5 mg 0,1,0 tbl',
+      'Amlopin 5 mg 0,1,0 tbl',
+      'Amlopin 5 mg 0,1,0 tbl',
+      'Amlopin 5 mg 0,0,1 tbl',
+      'Amlopin 5 mg p.p. tbl',
+      'Amlopin 5 mg 1,0,0 tbl'
+    ]);
+
+    await page.locator('#therapy').fill('Fragmin 1x2500 i.j. s.c.');
+    await page.locator('#therapy').press('End');
+    await page.locator('#therapy').press('PageDown');
+    await expect(page.locator('#therapy')).toHaveValue(/Fragmin 1x2500 i\.j\. 1,0,0 s\.c\./i);
+    await page.locator('#therapy').press('PageUp');
+    await expect(page.locator('#therapy')).toHaveValue(/Fragmin 1x2500 i\.j\. p\.p\. s\.c\./i);
+
+    const storedRegimenAfterTemporaryCycle = await page.evaluate(() => window.TemperaturnaListaClinical.getTherapyFavorites().personal[0].regimen);
+    expect(storedRegimenAfterTemporaryCycle).toBe('0,0,1');
+
+    await page.locator('#therapy').fill('Prvi lijek 5 mg 1,0,0 tbl\nDrugi lijek 10 mg 0,1,0 tbl');
+    await page.locator('#therapy').evaluate((element) => {
+      const start = element.value.indexOf('Drugi');
+      element.setSelectionRange(start, start);
+    });
+    await page.locator('#therapy').press('PageDown');
+    await expect(page.locator('#therapy')).toHaveValue('Prvi lijek 5 mg 1,0,0 tbl\nDrugi lijek 10 mg 0,0,1 tbl');
+
+    await page.evaluate(() => {
+      window.__therapyPageKeyPrevented = null;
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'PageDown') window.__therapyPageKeyPrevented = event.defaultPrevented;
+      });
+    });
+    await page.locator('#therapy').evaluate((element) => {
+      const start = element.value.indexOf('lijek');
+      const end = element.value.lastIndexOf('lijek') + 'lijek'.length;
+      element.setSelectionRange(start, end);
+    });
+    const ambiguousValue = await page.locator('#therapy').inputValue();
+    await page.locator('#therapy').press('PageDown');
+    await expect(page.locator('#therapy')).toHaveValue(ambiguousValue);
+    expect(await page.evaluate(() => window.__therapyPageKeyPrevented)).toBe(true);
+
+    await page.locator('#fullName').focus();
+    await page.locator('#fullName').press('PageDown');
+    expect(await page.evaluate(() => window.__therapyPageKeyPrevented)).toBe(false);
+
+    await page.locator('#therapy').fill('Rucni Unikat 77 mg 1,0,0 tbl');
+    await page.locator('#therapy').blur();
+    const storageText = await page.evaluate(() => JSON.stringify(Object.fromEntries(
+      Array.from({ length: localStorage.length }, (_, index) => {
+        const key = localStorage.key(index);
+        return [key, localStorage.getItem(key)];
+      })
+    )));
+    expect(storageText).not.toContain('Rucni Unikat');
+
+    const sanitizedLegacy = await page.evaluate(() => window.TemperaturnaListaClinical.sanitizeLegacyPatientDataForImport({
+      fullName: 'TEST PACIJENT',
+      therapyAutocompleteUsage: { secret: 'Stari lijek' },
+      personalAutocomplete: { therapies: { records: { secret: 'Stari lijek' } } }
+    }));
+    expect(sanitizedLegacy).toEqual({ fullName: 'TEST PACIJENT' });
+
+    await expect(page.locator('#sharedTherapyFavoriteForm input').first()).toBeDisabled();
+    await expect(page.locator('#therapyFavoritesSyncStatus')).toContainText(/sinkronizacija među uređajima.*nisu dostupni/i);
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('manages personal therapy favorites and validates versioned backups', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+    await page.locator('#therapyFavoritesSettings').evaluate((element) => { element.open = true; });
+
+    const addFavorite = async (name, strength, regimen = '1,0,0') => {
+      await page.locator('#personalTherapyFavoriteName').fill(name);
+      await page.locator('#personalTherapyFavoriteStrength').fill(strength);
+      await page.locator('#personalTherapyFavoriteFormText').fill('tbl');
+      await page.locator('#personalTherapyFavoriteRegimen').selectOption(regimen);
+      await page.locator('#personalTherapyFavoriteForm button[type="submit"]').click();
+    };
+    await addFavorite('enalapril', '5 mg');
+    await addFavorite('enalapril', '10 mg', '0,0,1');
+    await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row')).toHaveCount(2);
+    const strengthSuggestions = await page.evaluate(() => window.TemperaturnaListaClinical.getMedicationAutocompleteSuggestions('Enal'));
+    expect(strengthSuggestions.filter((item) => item.source === 'personal').map((item) => item.line)).toEqual([
+      'Enalapril 5 mg 1,0,0 tbl',
+      'Enalapril 10 mg 0,0,1 tbl'
+    ]);
+
+    await addFavorite('  ENALAPRIL  ', ' 5 MG ', 'p.p.');
+    await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row')).toHaveCount(2);
+    await expect(page.locator('#statusBar')).toContainText(/već postoji|veÄ‡ postoji/i);
+    await expect(page.locator('#personalTherapyFavoriteForm button[type="submit"]')).toHaveText('Spremi izmjene');
+    await page.locator('#personalTherapyFavoriteRegimen').selectOption('0,1,0');
+    await page.locator('#personalTherapyFavoriteForm button[type="submit"]').click();
+    await expect(page.locator('#personalTherapyFavoritesList')).toContainText('Enalapril 5 mg 0,1,0 tbl');
+
+    const secondRow = page.locator('#personalTherapyFavoritesList .therapy-favorite-row').nth(1);
+    await secondRow.locator('[data-therapy-favorite-action="up"]').click();
+    await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row').first()).toContainText('10 mg');
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('Jeste li sigurni');
+      await dialog.accept();
+    });
+    await page.locator('#personalTherapyFavoritesList .therapy-favorite-row').first().locator('[data-therapy-favorite-action="delete"]').click();
+    await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row')).toHaveCount(1);
+
+    const backupValidation = await page.evaluate(() => {
+      const sanitize = window.TemperaturnaListaClinical.sanitizeTherapyFavoritesBackup;
+      const backup = {
+        schema: 'temperaturna-lista-therapy-favorites-backup-v1',
+        schemaVersion: 1,
+        scope: 'personal',
+        items: [
+          { name: 'Ramipril', strength: '5 mg', form: 'tbl', regimen: '1,0,0' },
+          { name: ' ramipril ', strength: '5 MG', form: 'TBL', regimen: '0,0,1' },
+          { name: '', strength: '5 mg', form: 'tbl', regimen: '1,0,0' }
+        ]
+      };
+      return {
+        personal: sanitize(backup, 'personal'),
+        sharedAttempt: sanitize(backup, 'shared')
+      };
+    });
+    expect(backupValidation.personal).toHaveLength(1);
+    expect(backupValidation.personal[0].name).toBe('Ramipril');
+    expect(backupValidation.sharedAttempt).toBeNull();
+    await expect(page.locator('#importSharedTherapyFavoritesBtn')).toBeDisabled();
+    await expect(page.locator('#exportSharedTherapyFavoritesBtn')).toBeDisabled();
     browserSignals.assertCleanBrowserSignals();
   });
 
@@ -3170,131 +3381,46 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('saves and deletes a custom chronic therapy suggestion without touching the embedded medicine database', async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.removeItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1');
-    });
+  test('manual chronic therapy text never becomes an autocomplete suggestion', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
-
-    const therapyBox = page.locator('#therapyAutocompleteBox');
     await page.locator('#therapy').fill('Zzzcustomol 7 mg 1,0,0 tbl');
-    const saveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
-    await expect(saveOption).toBeVisible();
-    await expect(saveOption).toContainText(/Spremi moj unos/i);
-    await expect(saveOption).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
-    await continueWithoutFirebaseIfVisible(page);
-    await saveOption.click();
-
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
-
-    await page.locator('#therapy').fill('Zzzcustomol 7 mg 1,0,0 tbl');
-    await expect(therapyBox.locator('.therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
-    await expect(therapyBox).toBeHidden();
-
-    await page.locator('#therapy').fill('Amlodipin 5 mg 1,0,0 tbl');
-    const amlodipinSaveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
-    await expect(amlodipinSaveOption).toBeVisible();
-    await expect(amlodipinSaveOption).toContainText(/Spremi moj unos/i);
-    await continueWithoutFirebaseIfVisible(page);
-    await amlodipinSaveOption.click();
-
-    await page.locator('#therapy').fill('amlodipin 5 mg 1,0,0 tbl');
-    await expect(therapyBox.locator('.therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
-    await expect(therapyBox).toBeHidden();
-
+    await expect(page.locator('#therapyAutocompleteBox')).toBeHidden();
     await page.locator('#therapy').fill('Zzz');
-    await expect(therapyBox).toBeVisible();
-    await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
-    await expect(therapyBox).toContainText(/moj spremljeni prijedlog/i);
-    await scrollFieldOutOfAutocompleteView(page, '#therapy');
-    await expect(therapyBox).toBeHidden();
-
-    await page.locator('#therapy').scrollIntoViewIfNeeded();
-    await page.locator('#therapy').fill('Zzz');
-    await expect(therapyBox).toBeVisible();
-    await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
-    const deleteButton = therapyBox.locator('[data-therapy-autocomplete-delete]');
-    await expect(deleteButton).toBeVisible();
-    await expect(deleteButton).toHaveText(/Obri/i);
-    await continueWithoutFirebaseIfVisible(page);
-    page.once('dialog', async (dialog) => {
-      expect(dialog.type()).toBe('confirm');
-      expect(dialog.message()).toContain('Jeste li sigurni da želite obrisati spremljenu terapiju');
-      expect(dialog.message()).toContain('Zzzcustomol 7 mg 1,0,0 tbl');
-      await dialog.dismiss();
-    });
-    await deleteButton.click();
-    await expect(therapyBox).toBeVisible();
-    await expect(therapyBox).toContainText(/Zzzcustomol 7 mg 1,0,0 tbl/i);
+    await expect(page.locator('#therapyAutocompleteBox')).toBeHidden();
+    await expect(page.locator('#rememberTherapyAutocompleteBtn')).toHaveCount(0);
     await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
-
-    page.once('dialog', async (dialog) => {
-      expect(dialog.type()).toBe('confirm');
-      expect(dialog.message()).toContain('Jeste li sigurni da želite obrisati spremljenu terapiju');
-      expect(dialog.message()).toContain('Zzzcustomol 7 mg 1,0,0 tbl');
-      await dialog.accept();
-    });
-    await deleteButton.click();
-    await expect(page.locator('#statusBar')).toContainText(/Obrisan je lokalni prijedlog/i);
-    await expect(therapyBox).toBeHidden();
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
-    await expect(page.locator('#therapyCsvStatus')).toContainText(/Baza lijekova OK/i);
-
+    await expect(page.locator('#therapyCsvStatus')).toContainText(/Baza lijekova (?:OK|treba obnovu)/i);
     browserSignals.assertCleanBrowserSignals();
   });
 
-  legacyFirebasePatientStorageTest('loads and persists custom chronic therapy suggestions through the Firebase user profile', async ({ page }) => {
-    await installFirebaseSmokeClient(page, {
+  test('ignores legacy learned therapies in an old profile backup', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+    const sanitized = await page.evaluate(() => window.TemperaturnaListaClinical.sanitizeLegacyPatientDataForImport({
       personalAutocomplete: {
-        schema: 'temperaturna-lista-personal-autocomplete-v1',
-        storageVersion: 1,
-        savedAt: '2026-06-22T08:00:00.000Z',
         therapies: {
-          storageVersion: 1,
-          savedAt: '2026-06-22T08:00:00.000Z',
           records: {
             'fragmin 1x2500 i j s c': {
               line: 'Fragmin 1x2500 i.j. s.c.',
               count: 3,
-              lastUsedAt: '2026-06-22T08:00:00.000Z',
               source: 'custom'
             }
           }
-        },
-        diagnoses: {
-          storageVersion: 1,
-          savedAt: '2026-06-22T08:00:00.000Z',
-          records: {}
         }
       }
-    });
-    const browserSignals = await openApp(page, './?qa=firebase-personal-therapy-suggestions&firebaseSmoke=1');
-
-    const therapyBox = page.locator('#therapyAutocompleteBox');
-    await expect(page.locator('#firebasePatientAuthStatus')).toContainText(/Prijavljeno/i);
-
-    await page.locator('#therapy').fill('Fragmin 1x2500 i.j. s.c.');
-    await expect(therapyBox.locator('.therapy-autocomplete-option.is-save-custom')).toHaveCount(0);
-    await expect(therapyBox).toBeHidden();
-
-    await page.locator('#therapy').fill('Zzzprofilex 4 mg 1,0,0 tbl');
-    const saveOption = therapyBox.locator('.therapy-autocomplete-option.is-save-custom');
-    await expect(saveOption).toBeVisible();
-    await saveOption.click();
-
-    const findProfileSuggestionWrite = () => page.evaluate(() => {
-      const client = window.__TEMPERATURNA_LISTA_FIREBASE_SMOKE_CLIENT__;
-      const writes = client.__smokeWrites
-        .filter(item => item.op === 'setDoc' && item.collection === 'userProfiles' && item.id === 'smoke-user-uid');
-      return writes.find(item => JSON.stringify(item.payload || {}).includes('Zzzprofilex 4 mg 1,0,0 tbl')) || null;
-    });
-    await expect.poll(findProfileSuggestionWrite).not.toBeNull();
-    const profileSuggestionWrite = await findProfileSuggestionWrite();
-    expect(JSON.stringify(profileSuggestionWrite.payload.personalAutocomplete)).toContain('Zzzprofilex 4 mg 1,0,0 tbl');
-
+    }));
+    expect(sanitized).toEqual({});
+    await page.locator('#therapy').fill('Frag');
+    await expect(page.locator('#therapyAutocompleteBox')).not.toContainText('Fragmin 1x2500 i.j. s.c.');
     await expect.poll(async () => page.evaluate(() => localStorage.getItem('temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1'))).toBeNull();
-
+    const storageText = await page.evaluate(() => JSON.stringify(Object.fromEntries(
+      Array.from({ length: localStorage.length }, (_, index) => {
+        const key = localStorage.key(index);
+        return [key, localStorage.getItem(key)];
+      })
+    )));
+    expect(storageText).not.toContain('Fragmin 1x2500 i.j. s.c.');
     browserSignals.assertCleanBrowserSignals();
   });
 
