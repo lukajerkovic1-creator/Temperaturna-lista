@@ -2,6 +2,26 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isTherapySettingsAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'luka.jerkovic1@gmail.com';
+    }
+
+    // Non-clinical shared therapy templates only. No patient document is
+    // readable or writable through these rules.
+    match /appConfig/sharedTherapyFavoritesV2 {
+      allow read: if true;
+      allow create, update: if isTherapySettingsAdmin()
+        && request.resource.data.keys().hasOnly([
+          'schema', 'schemaVersion', 'appVersion', 'updatedAt', 'updatedBy', 'items'
+        ])
+        && request.resource.data.schema == 'temperaturna-lista-therapy-favorites-v2'
+        && request.resource.data.schemaVersion == 2
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 250;
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

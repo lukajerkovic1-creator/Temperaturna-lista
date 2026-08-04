@@ -9,8 +9,10 @@ versioning such as `v0.1.0`.
 
 ### Added
 
-- Added explicitly managed personal and shared chronic-therapy favorite lists with structured name, strength, form and default-regimen fields, duplicate prevention, manual ordering, previews and separate versioned backup controls.
-- Added `Page Up`/`Page Down` regimen cycling for the active chronic-therapy line, including safe normalization of common morning/noon/evening/as-needed variants.
+- Added a permanent two-field therapy editor (`Naziv lijeka` + `Nastavak terapije`) with free-text continuation suggestions, keyboard selection and immediate synchronization of an edited patient line with the live preview.
+- Added versioned, idempotent v1-to-v2 therapy-template and patient-line migration with an untouched legacy backup before conversion.
+- Added isolated cross-device synchronization for non-clinical shared therapy templates in `appConfig/sharedTherapyFavoritesV2`; patient Firebase storage remains disabled and denied by Firestore rules.
+- Added explicitly managed personal and shared chronic-therapy favorite lists with `medicationName` and `continuation` fields, normalized duplicate prevention, alphabetical ordering, previews and versioned backup controls.
 - CI workflow for pull requests and pushes to `main`.
 - Release workflow for version tags.
 - Static app validation and basic security smoke checks.
@@ -23,9 +25,11 @@ versioning such as `v0.1.0`.
 - Fingerprinted static asset boundary for the application icon, blank form background and local medication database, including file-signature, load-order, decoded-byte and size-budget validation.
 ### Changed
 
-- Chronic-therapy autocomplete now prioritizes personal favorites, then shared favorites, then the embedded medicine catalog, deduplicating by normalized medicine name, strength and pharmaceutical form.
-- `Arrow Left` and `Arrow Right` in chronic therapy again provide native caret movement. Temporary regimen changes update an open autocomplete menu without changing the favorite's saved default.
-- Application version now comes from `package.json` (`0.7.0`), and the build injects one deterministic 12-character source fingerprint into the production and QA artifacts. The same version/build identity is shown in the UI and carried by local JSON, encrypted recovery, local operational audit and ClinicalRecordV1 metadata.
+- Therapy favorites now store `medicationName` and `continuation`, allow multiple regimens for one medicine, reject only fully identical normalized duplicates and sort alphabetically by name and continuation.
+- `Page Up`/`Page Down` now operate only in `Nastavak terapije`, cycle `1x1..4x1` or `1,0,0 / 0,1,0 / 0,0,1`, and preserve all remaining text such as `kroz 7 dana`.
+- Chronic-therapy autocomplete now prioritizes personal favorites, then shared favorites, then the embedded medicine catalog, deduplicating by the normalized full therapy line.
+- `Arrow Left` and `Arrow Right` retain native caret movement. `Page Up` and `Page Down` change only a recognized regimen in the focused continuation field without modifying the saved template.
+- Application version now comes from `package.json` (`0.8.0`), and the build injects one deterministic 12-character source fingerprint into the production and QA artifacts. The same version/build identity is shown in the UI and carried by local JSON, encrypted recovery, local operational audit and ClinicalRecordV1 metadata.
 - The generated browser bootstrap is split into a clinical production bundle and an explicit localhost QA bundle. Admin/calibration, parser-test capture, speech recognition and FHIR clipboard implementation code exists only in the QA artifact.
 - Medication lines without a recognizable dose or route are critical validation findings. Common oral dosage forms such as tablets and capsules imply the oral route for validation purposes.
 - Local JSON-only availability status now explicitly identifies offline operation and instructs the user to save patient data manually to JSON; Firebase patient storage remains identified as disabled rather than unavailable.
@@ -60,6 +64,7 @@ versioning such as `v0.1.0`.
 
 ### Security
 
+- Firestore remains fail-closed for patient and every unrelated collection. Public reads and administrator-only writes are opened solely for the non-clinical shared therapy-template document.
 - Shared therapy editing and cross-device synchronization fail closed because the current production build has no authenticated settings backend. The UI reports this infrastructure gap and does not imitate shared synchronization through browser storage.
 - Release candidates now run a basic secret/credential smoke check before a
   GitHub release is created.

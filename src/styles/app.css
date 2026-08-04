@@ -2197,6 +2197,57 @@
     margin: 0;
   }
 
+  .therapy-entry-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 7px;
+    margin-bottom: 8px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 9px;
+    background: #f8fbff;
+  }
+
+  .therapy-entry-editor label {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .therapy-entry-editor input {
+    min-width: 0;
+    min-height: 36px;
+    padding: 7px 8px;
+    font-size: 13px;
+  }
+
+  .therapy-entry-editor-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 7px;
+  }
+
+  .therapy-entry-editor-actions button {
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 11.5px;
+  }
+
+  .therapy-entry-editor-status {
+    grid-column: 1 / -1;
+    min-height: 16px;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .therapy-entry-suggestions {
+    max-height: 220px;
+  }
+
   .therapy-autocomplete-box.side-flyout {
     width: min(360px, calc(100vw - 24px));
     max-height: 280px;
@@ -2415,6 +2466,7 @@
   }
 
   @media (max-width: 560px) {
+    .therapy-entry-editor { grid-template-columns: minmax(0, 1fr); }
     .therapy-favorite-form { grid-template-columns: minmax(0, 1fr); }
     .therapy-favorite-row { grid-template-columns: minmax(0, 1fr); }
     .therapy-favorite-row-actions { justify-content: flex-start; }

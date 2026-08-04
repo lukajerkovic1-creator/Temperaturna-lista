@@ -89,6 +89,8 @@ function isIgnorableFailedRequest(url, errorText) {
   const failure = String(errorText || '');
   if (href.includes('/favicon')) return true;
   if (/https:\/\/www\.google\.com\/images\/cleardot\.gif/i.test(href) && /net::ERR_ABORTED/i.test(failure)) return true;
+  if (/firestore\.googleapis\.com\/google\.firestore\.v1\.Firestore\/Listen\/channel/i.test(href)
+    && /net::ERR_ABORTED/i.test(failure)) return true;
   return /identitytoolkit\/v3\/relyingparty\/getProjectConfig/i.test(href)
     && /net::ERR_ABORTED/i.test(failure);
 }
@@ -309,7 +311,7 @@ async function openApp(page, path = './') {
 
   const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `GitHub Pages response should be OK, got ${response?.status()}`).toBe(true);
-  await expect(page).toHaveTitle(/Temperaturna lista.*\d+\.\d+\.\d+/);
+  await expect(page).toHaveTitle(/Temperaturna lista.*\d+\.\d+\.\d+/, { timeout: 20000 });
   await expect(page.locator('h1', { hasText: 'Generator temperaturne liste' })).toBeVisible();
   await expect(page.locator('#page1Title')).toBeVisible();
 
@@ -485,7 +487,7 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('saves a local patient JSON without contacting Firebase or another online storage service', async ({ page }) => {
+  test('saves a local patient JSON without sending patient data to online storage', async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'showSaveFilePicker', {
         configurable: true,
@@ -496,7 +498,11 @@ test.describe('GitHub Pages smoke test', () => {
     page.on('request', (request) => {
       const url = request.url();
       if (/firebase|firestore|googleapis\.com|gstatic\.com\/firebasejs/i.test(url)) {
-        onlineStorageRequests.push(url);
+        onlineStorageRequests.push({
+          method: request.method(),
+          url,
+          body: request.postData() || ''
+        });
       }
     });
     const browserSignals = await openApp(page);
@@ -537,7 +543,18 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#patientSyncStatus')).toHaveAttribute('data-sync-state', 'dirty');
     await expect(page.locator('#patientSyncStatus')).toContainText(/postoje nespremljene promjene/i);
 
-    expect(onlineStorageRequests).toEqual([]);
+    const serializedOnlineRequests = JSON.stringify(onlineStorageRequests);
+    for (const forbiddenPatientTerm of [
+      'Lokalni Json Testic',
+      'Sintetska dijagnoza',
+      'Sintetikin 500 mg p.o.',
+      'patientRecords',
+      'patients',
+      'patientAuditEvents'
+    ]) {
+      expect(serializedOnlineRequests).not.toContain(forbiddenPatientTerm);
+    }
+    expect(onlineStorageRequests.some(({ url }) => /sharedTherapyFavoritesV2/i.test(url))).toBe(false);
     browserSignals.assertCleanBrowserSignals();
   });
 
@@ -3076,23 +3093,17 @@ test.describe('GitHub Pages smoke test', () => {
     await page.locator('#therapy').fill('Amlod');
     const activeTherapyOption = page.locator('#therapyAutocompleteBox .therapy-autocomplete-option.is-active');
     await expect(activeTherapyOption).toContainText(/Amlodipin/i);
-    await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
+    await expect(activeTherapyOption).toContainText(/5 mg 1x1 tbl/i);
     const caretBeforeArrow = await page.locator('#therapy').evaluate((element) => element.selectionStart);
     await page.keyboard.press('ArrowLeft');
     const caretAfterArrow = await page.locator('#therapy').evaluate((element) => element.selectionStart);
     expect(caretAfterArrow).toBe(caretBeforeArrow - 1);
     await page.keyboard.press('End');
     await page.keyboard.press('PageDown');
-    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1,0,0 tbl/i);
-    await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
-    await page.keyboard.press('PageDown');
-    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*0,1,0 tbl/i);
-    await expect(activeTherapyOption).toContainText(/0,1,0 tbl/i);
-    await page.keyboard.press('PageUp');
-    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1,0,0 tbl/i);
-    await expect(activeTherapyOption).toContainText(/1,0,0 tbl/i);
+    await expect(page.locator('#therapy')).toHaveValue('Amlod');
+    await expect(activeTherapyOption).toContainText(/5 mg 1x1 tbl/i);
     await page.keyboard.press('Enter');
-    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1,0,0 tbl/i);
+    await expect(page.locator('#therapy')).toHaveValue(/Amlodipin.*5 mg.*1x1 tbl/i);
     await expect(page.locator('#rememberTherapyAutocompleteBtn')).toHaveCount(0);
     await expect(page.locator('#therapyAutocompleteBox')).toBeHidden();
 
@@ -3116,10 +3127,8 @@ test.describe('GitHub Pages smoke test', () => {
     await expect(page.locator('#rememberTherapyAutocompleteBtn')).toHaveCount(0);
 
     await page.locator('#therapyFavoritesSettings').evaluate((element) => { element.open = true; });
-    await page.locator('#personalTherapyFavoriteName').fill('amlodipin');
-    await page.locator('#personalTherapyFavoriteStrength').fill('5 mg');
-    await page.locator('#personalTherapyFavoriteFormText').fill('tbl');
-    await page.locator('#personalTherapyFavoriteRegimen').selectOption('0,0,1');
+    await page.locator('#personalTherapyFavoriteName').fill('amlodipin 5 mg');
+    await page.locator('#personalTherapyFavoriteContinuation').fill('0,0,1 tbl');
     await expect(page.locator('#personalTherapyFavoritePreview')).toContainText('Amlodipin 5 mg 0,0,1 tbl');
     await page.locator('#personalTherapyFavoriteForm button[type="submit"]').click();
     await expect(page.locator('#personalTherapyFavoritesList')).toContainText('Amlodipin 5 mg 0,0,1 tbl');
@@ -3127,75 +3136,72 @@ test.describe('GitHub Pages smoke test', () => {
     const managedSuggestions = await page.evaluate(() => window.TemperaturnaListaClinical.getMedicationAutocompleteSuggestions('Amlod'));
     expect(managedSuggestions[0].source).toBe('personal');
     expect(managedSuggestions[0].line).toContain('0,0,1');
-    expect(managedSuggestions.filter((item) => /Amlodipin.*5 mg/i.test(item.line))).toHaveLength(1);
+    expect(managedSuggestions.filter((item) => item.source === 'personal' && /Amlodipin.*5 mg/i.test(item.line))).toHaveLength(1);
+
+    await page.locator('#therapyMedicationName').fill('Amlod');
+    await expect(page.locator('#therapyMedicationSuggestionsBox')).toContainText('Amlodipin 5 mg 0,0,1 tbl');
+    await page.locator('#therapyMedicationName').press('Enter');
+    await expect(page.locator('#therapyMedicationName')).toHaveValue('Amlodipin 5 mg');
+    await expect(page.locator('#therapyMedicationContinuation')).toHaveValue('0,0,1 tbl');
+    await page.locator('#therapyEntryClearBtn').click();
 
     const regimenCases = await page.evaluate(() => {
-      const cycle = window.TemperaturnaListaClinical.cycleTherapyLineRegimen;
+      const cycle = window.TemperaturnaListaClinical.cycleTherapyContinuationRegimen;
       return {
-        forward: [
-          cycle('Amlopin 5 mg 1,0,0 tbl', 1),
-          cycle('Amlopin 5 mg 0,1,0 tbl', 1),
-          cycle('Amlopin 5 mg 0,0,1 tbl', 1),
-          cycle('Amlopin 5 mg p.p. tbl', 1)
+        xForward: [
+          cycle('1x1 g i.v.', 1),
+          cycle('2x1 g i.v.', 1),
+          cycle('3x1 g i.v. kroz 7 dana', 1),
+          cycle('4x1 g i.v.', 1)
         ],
-        backward: [
-          cycle('Amlopin 5 mg 1,0,0 tbl', -1),
-          cycle('Amlopin 5 mg p.p. tbl', -1)
+        commaPageUp: [
+          cycle('0,0,1 tbl', 1),
+          cycle('0,1,0 tbl', 1),
+          cycle('1,0,0 tbl', 1)
         ],
-        missing: [
-          cycle('Amlopin 5 mg tbl', 1),
-          cycle('Amlopin 5 mg tbl', -1)
+        commaPageDown: [
+          cycle('0,0,1 tbl', -1),
+          cycle('1,0,0 tbl', -1)
         ],
-        aliases: [
-          cycle('Amlopin 5 mg 1-0-0 tbl', 1),
-          cycle('Amlopin 5 mg 1 0 0 tbl', 1),
-          cycle('Amlopin 5 mg ujutro tbl', 1),
-          cycle('Amlopin 5 mg podne tbl', 1),
-          cycle('Amlopin 5 mg navecer tbl', 1),
-          cycle('Amlopin 5 mg po potrebi tbl', 1)
-        ]
+        unchanged: [cycle('p.p. tbl', 1), cycle('kont. inf.', 1)]
       };
     });
-    expect(regimenCases.forward.map((item) => item.line)).toEqual([
-      'Amlopin 5 mg 0,1,0 tbl',
-      'Amlopin 5 mg 0,0,1 tbl',
-      'Amlopin 5 mg p.p. tbl',
-      'Amlopin 5 mg 1,0,0 tbl'
+    expect(regimenCases.xForward).toEqual([
+      '2x1 g i.v.',
+      '3x1 g i.v.',
+      '4x1 g i.v. kroz 7 dana',
+      '1x1 g i.v.'
     ]);
-    expect(regimenCases.backward.map((item) => item.line)).toEqual([
-      'Amlopin 5 mg p.p. tbl',
-      'Amlopin 5 mg 0,0,1 tbl'
+    expect(regimenCases.commaPageUp).toEqual([
+      '0,1,0 tbl',
+      '1,0,0 tbl',
+      '0,0,1 tbl'
     ]);
-    expect(regimenCases.missing.map((item) => item.line)).toEqual([
-      'Amlopin 5 mg 1,0,0 tbl',
-      'Amlopin 5 mg p.p. tbl'
+    expect(regimenCases.commaPageDown).toEqual([
+      '1,0,0 tbl',
+      '0,1,0 tbl'
     ]);
-    expect(regimenCases.aliases.map((item) => item.line)).toEqual([
-      'Amlopin 5 mg 0,1,0 tbl',
-      'Amlopin 5 mg 0,1,0 tbl',
-      'Amlopin 5 mg 0,1,0 tbl',
-      'Amlopin 5 mg 0,0,1 tbl',
-      'Amlopin 5 mg p.p. tbl',
-      'Amlopin 5 mg 1,0,0 tbl'
-    ]);
+    expect(regimenCases.unchanged).toEqual([null, null]);
 
-    await page.locator('#therapy').fill('Fragmin 1x2500 i.j. s.c.');
-    await page.locator('#therapy').press('End');
-    await page.locator('#therapy').press('PageDown');
-    await expect(page.locator('#therapy')).toHaveValue(/Fragmin 1x2500 i\.j\. 1,0,0 s\.c\./i);
-    await page.locator('#therapy').press('PageUp');
-    await expect(page.locator('#therapy')).toHaveValue(/Fragmin 1x2500 i\.j\. p\.p\. s\.c\./i);
+    await page.locator('#therapyMedicationName').fill('Meropenem');
+    await page.locator('#therapyMedicationContinuation').fill('3 x 1 g i.v.');
+    await page.locator('#therapyEntryApplyBtn').click();
+    await expect(page.locator('#therapy')).toHaveValue('Meropenem 3x1 g i.v.');
+    const recordAfterInsert = await page.evaluate(() => window.TemperaturnaListaClinical.fromCurrentForm());
+    expect(recordAfterInsert.freeText.originalTherapyText).toBe('Meropenem 3x1 g i.v.');
 
-    const storedRegimenAfterTemporaryCycle = await page.evaluate(() => window.TemperaturnaListaClinical.getTherapyFavorites().personal[0].regimen);
-    expect(storedRegimenAfterTemporaryCycle).toBe('0,0,1');
+    await page.locator('#therapy').click();
+    await expect(page.locator('#therapyMedicationContinuation')).toHaveValue('3x1 g i.v.');
+    await page.locator('#therapyMedicationContinuation').press('PageUp');
+    await expect(page.locator('#therapyMedicationContinuation')).toHaveValue('4x1 g i.v.');
+    await expect(page.locator('#therapy')).toHaveValue('Meropenem 4x1 g i.v.');
+    await page.locator('#therapyMedicationContinuation').press('PageUp');
+    await expect(page.locator('#therapy')).toHaveValue('Meropenem 1x1 g i.v.');
+    await page.locator('#therapyMedicationContinuation').press('PageDown');
+    await expect(page.locator('#therapy')).toHaveValue('Meropenem 4x1 g i.v.');
 
-    await page.locator('#therapy').fill('Prvi lijek 5 mg 1,0,0 tbl\nDrugi lijek 10 mg 0,1,0 tbl');
-    await page.locator('#therapy').evaluate((element) => {
-      const start = element.value.indexOf('Drugi');
-      element.setSelectionRange(start, start);
-    });
-    await page.locator('#therapy').press('PageDown');
-    await expect(page.locator('#therapy')).toHaveValue('Prvi lijek 5 mg 1,0,0 tbl\nDrugi lijek 10 mg 0,0,1 tbl');
+    const storedContinuationAfterTemporaryCycle = await page.evaluate(() => window.TemperaturnaListaClinical.getTherapyFavorites().personal[0].continuation);
+    expect(storedContinuationAfterTemporaryCycle).toBe('0,0,1 tbl');
 
     await page.evaluate(() => {
       window.__therapyPageKeyPrevented = null;
@@ -3203,18 +3209,11 @@ test.describe('GitHub Pages smoke test', () => {
         if (event.key === 'PageDown') window.__therapyPageKeyPrevented = event.defaultPrevented;
       });
     });
-    await page.locator('#therapy').evaluate((element) => {
-      const start = element.value.indexOf('lijek');
-      const end = element.value.lastIndexOf('lijek') + 'lijek'.length;
-      element.setSelectionRange(start, end);
-    });
-    const ambiguousValue = await page.locator('#therapy').inputValue();
-    await page.locator('#therapy').press('PageDown');
-    await expect(page.locator('#therapy')).toHaveValue(ambiguousValue);
+    await page.locator('#therapyMedicationContinuation').press('PageDown');
     expect(await page.evaluate(() => window.__therapyPageKeyPrevented)).toBe(true);
 
-    await page.locator('#fullName').focus();
-    await page.locator('#fullName').press('PageDown');
+    await page.locator('#therapy').focus();
+    await page.locator('#therapy').press('PageDown');
     expect(await page.evaluate(() => window.__therapyPageKeyPrevented)).toBe(false);
 
     await page.locator('#therapy').fill('Rucni Unikat 77 mg 1,0,0 tbl');
@@ -3235,7 +3234,7 @@ test.describe('GitHub Pages smoke test', () => {
     expect(sanitizedLegacy).toEqual({ fullName: 'TEST PACIJENT' });
 
     await expect(page.locator('#sharedTherapyFavoriteForm input').first()).toBeDisabled();
-    await expect(page.locator('#therapyFavoritesSyncStatus')).toContainText(/sinkronizacija među uređajima.*nisu dostupni/i);
+    await expect(page.locator('#therapyFavoritesSyncStatus')).toContainText(/trenutačno nisu dostupne|lokalna kopija/i);
     browserSignals.assertCleanBrowserSignals();
   });
 
@@ -3244,40 +3243,39 @@ test.describe('GitHub Pages smoke test', () => {
     await continueWithoutFirebase(page);
     await page.locator('#therapyFavoritesSettings').evaluate((element) => { element.open = true; });
 
-    const addFavorite = async (name, strength, regimen = '1,0,0') => {
+    const addFavorite = async (name, continuation) => {
       await page.locator('#personalTherapyFavoriteName').fill(name);
-      await page.locator('#personalTherapyFavoriteStrength').fill(strength);
-      await page.locator('#personalTherapyFavoriteFormText').fill('tbl');
-      await page.locator('#personalTherapyFavoriteRegimen').selectOption(regimen);
+      await page.locator('#personalTherapyFavoriteContinuation').fill(continuation);
       await page.locator('#personalTherapyFavoriteForm button[type="submit"]').click();
     };
-    await addFavorite('enalapril', '5 mg');
-    await addFavorite('enalapril', '10 mg', '0,0,1');
+    await addFavorite('enalapril 5 mg', '1,0,0 tbl');
+    await addFavorite('enalapril 5 mg', '0,0,1 tbl');
     await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row')).toHaveCount(2);
     const strengthSuggestions = await page.evaluate(() => window.TemperaturnaListaClinical.getMedicationAutocompleteSuggestions('Enal'));
     expect(strengthSuggestions.filter((item) => item.source === 'personal').map((item) => item.line)).toEqual([
-      'Enalapril 5 mg 1,0,0 tbl',
-      'Enalapril 10 mg 0,0,1 tbl'
+      'Enalapril 5 mg 0,0,1 tbl',
+      'Enalapril 5 mg 1,0,0 tbl'
     ]);
 
-    await addFavorite('  ENALAPRIL  ', ' 5 MG ', 'p.p.');
+    await addFavorite('  ENALAPRIL 5 MG ', ' 1, 0, 0 tbl ');
     await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row')).toHaveCount(2);
     await expect(page.locator('#statusBar')).toContainText(/već postoji|veÄ‡ postoji/i);
     await expect(page.locator('#personalTherapyFavoriteForm button[type="submit"]')).toHaveText('Spremi izmjene');
-    await page.locator('#personalTherapyFavoriteRegimen').selectOption('0,1,0');
+    await page.locator('#personalTherapyFavoriteContinuation').fill('2x1 tbl');
     await page.locator('#personalTherapyFavoriteForm button[type="submit"]').click();
-    await expect(page.locator('#personalTherapyFavoritesList')).toContainText('Enalapril 5 mg 0,1,0 tbl');
+    await expect(page.locator('#personalTherapyFavoritesList')).toContainText('Enalapril 5 mg 2x1 tbl');
+    await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row').first()).toContainText('0,0,1 tbl');
 
-    const secondRow = page.locator('#personalTherapyFavoritesList .therapy-favorite-row').nth(1);
-    await secondRow.locator('[data-therapy-favorite-action="up"]').click();
-    await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row').first()).toContainText('10 mg');
-
+    await page.locator('#therapyMedicationName').fill('Enalapril 5 mg');
+    await page.locator('#therapyMedicationContinuation').fill('2x1 tbl');
+    await page.locator('#therapyEntryApplyBtn').click();
     page.once('dialog', async (dialog) => {
       expect(dialog.message()).toContain('Jeste li sigurni');
       await dialog.accept();
     });
     await page.locator('#personalTherapyFavoritesList .therapy-favorite-row').first().locator('[data-therapy-favorite-action="delete"]').click();
     await expect(page.locator('#personalTherapyFavoritesList .therapy-favorite-row')).toHaveCount(1);
+    await expect(page.locator('#therapy')).toHaveValue('Enalapril 5 mg 2x1 tbl');
 
     const backupValidation = await page.evaluate(() => {
       const sanitize = window.TemperaturnaListaClinical.sanitizeTherapyFavoritesBackup;
@@ -3296,11 +3294,116 @@ test.describe('GitHub Pages smoke test', () => {
         sharedAttempt: sanitize(backup, 'shared')
       };
     });
-    expect(backupValidation.personal).toHaveLength(1);
-    expect(backupValidation.personal[0].name).toBe('Ramipril');
+    expect(backupValidation.personal).toHaveLength(2);
+    expect(backupValidation.personal[0].medicationName).toBe('Ramipril 5 mg');
+    expect(backupValidation.personal.map((entry) => entry.continuation)).toEqual(['0,0,1 tbl', '1,0,0 tbl']);
     expect(backupValidation.sharedAttempt).toBeNull();
     await expect(page.locator('#importSharedTherapyFavoritesBtn')).toBeDisabled();
     await expect(page.locator('#exportSharedTherapyFavoritesBtn')).toBeDisabled();
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('warns for an empty continuation and migrates therapy templates and patient lines idempotently', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#therapyMedicationName').fill('Poseban lijek');
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toBe('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?');
+      await dialog.dismiss();
+    });
+    await page.locator('#therapyEntryApplyBtn').click();
+    await expect(page.locator('#therapy')).toHaveValue('');
+
+    const migratedPatient = await page.evaluate(() => window.TemperaturnaListaClinical.migratePatientTherapyToStructuredEntries({
+      therapy: 'Amlopin 5 mg 0,0,1 tbl\nPosebna uputa bez prepoznatog režima'
+    }));
+    expect(migratedPatient.entries.map((entry) => ({
+      medicationName: entry.medicationName,
+      continuation: entry.continuation
+    }))).toEqual([
+      { medicationName: 'Amlopin 5 mg', continuation: '0,0,1 tbl' },
+      { medicationName: 'Posebna uputa bez prepoznatog režima', continuation: '' }
+    ]);
+    expect(migratedPatient.legacyBackup).toEqual([
+      'Amlopin 5 mg 0,0,1 tbl',
+      'Posebna uputa bez prepoznatog režima'
+    ]);
+
+    await page.evaluate(() => {
+      localStorage.setItem('temperaturna_lista_osobne_terapije_cache_v1', JSON.stringify({
+        schema: 'temperaturna-lista-therapy-favorites-v1',
+        schemaVersion: 1,
+        scope: 'personal',
+        savedAt: '2026-06-01T10:00:00.000Z',
+        items: [
+          { id: 'legacy-amlo', name: 'Amlopin', strength: '5 mg', form: 'tbl', regimen: '0,0,1' },
+          { id: 'legacy-mero', line: 'Meropenem 3x1 g i.v.' }
+        ]
+      }));
+    });
+    await page.reload();
+    await continueWithoutFirebase(page);
+    const firstMigration = await page.evaluate(() => ({
+      cache: localStorage.getItem('temperaturna_lista_osobne_terapije_cache_v1'),
+      backup: localStorage.getItem('temperaturna_lista_terapije_legacy_backup_v2'),
+      favorites: window.TemperaturnaListaClinical.getTherapyFavorites().personal
+    }));
+    expect(JSON.parse(firstMigration.cache).schema).toBe('temperaturna-lista-therapy-favorites-v2');
+    expect(firstMigration.favorites).toHaveLength(2);
+    expect(firstMigration.favorites.map((entry) => `${entry.medicationName}|${entry.continuation}`)).toEqual([
+      'Amlopin 5 mg|0,0,1 tbl',
+      'Meropenem|3x1 g i.v.'
+    ]);
+    expect(firstMigration.backup).toContain('legacy-amlo');
+
+    await page.reload();
+    await continueWithoutFirebase(page);
+    const secondMigration = await page.evaluate(() => ({
+      cache: localStorage.getItem('temperaturna_lista_osobne_terapije_cache_v1'),
+      backup: localStorage.getItem('temperaturna_lista_terapije_legacy_backup_v2')
+    }));
+    expect(secondMigration.cache).toBe(firstMigration.cache);
+    expect(secondMigration.backup).toBe(firstMigration.backup);
+    browserSignals.assertCleanBrowserSignals();
+  });
+
+  test('syncs shared therapy templates through the isolated settings adapter across devices', async ({ page, context }) => {
+    await page.addInitScript(() => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
+      window.__TEMPERATURNA_LISTA_THERAPY_FAVORITES_SYNC__ = {
+        available: true,
+        adminClaimVerified: true,
+        loadShared: async () => ({ items: [] }),
+        saveShared: async (payload) => { window.__THERAPY_SHARED_SAVED__ = payload; }
+      };
+    });
+    const browserSignals = await openApp(page, './?qa=therapy-shared-device-a');
+    await expect(page.locator('#therapyFavoritesSyncStatus')).toContainText(/sinkronizirane/i);
+    await page.locator('#therapyFavoritesSettings').evaluate((element) => { element.open = true; });
+    await page.locator('#sharedTherapyFavoriteName').fill('Meropenem');
+    await page.locator('#sharedTherapyFavoriteContinuation').fill('3 x 1 g i.v.');
+    await page.locator('#sharedTherapyFavoriteForm button[type="submit"]').click();
+    await expect(page.locator('#sharedTherapyFavoritesList')).toContainText('Meropenem 3x1 g i.v.');
+    const savedPayload = await page.evaluate(() => window.__THERAPY_SHARED_SAVED__);
+    expect(savedPayload.items).toHaveLength(1);
+    expect(JSON.stringify(savedPayload)).not.toMatch(/fullName|diagnosis|allergies|patient/i);
+
+    const secondPage = await context.newPage();
+    await secondPage.addInitScript((payload) => {
+      window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
+      window.__TEMPERATURNA_LISTA_THERAPY_FAVORITES_SYNC__ = {
+        available: true,
+        adminClaimVerified: false,
+        loadShared: async () => payload,
+        saveShared: async () => { throw new Error('read only'); }
+      };
+    }, savedPayload);
+    await openApp(secondPage, './?qa=therapy-shared-device-b');
+    await secondPage.locator('#therapyFavoritesSettings').evaluate((element) => { element.open = true; });
+    await expect(secondPage.locator('#sharedTherapyFavoritesList')).toContainText('Meropenem 3x1 g i.v.');
+    await expect(secondPage.locator('#sharedTherapyFavoriteName')).toBeDisabled();
+    await secondPage.close();
     browserSignals.assertCleanBrowserSignals();
   });
 

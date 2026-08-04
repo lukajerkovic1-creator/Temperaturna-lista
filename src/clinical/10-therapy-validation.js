@@ -1102,15 +1102,15 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     { line: 'azitromicin 1x500 mg p.o.', triggers: ['azi', 'azit', 'azitromicin'], meta: 'predložak — provjeriti QT/interakcije' },
     { line: 'moksifloksacin 1x400 mg p.o.', triggers: ['mok', 'moksi', 'moksifloksacin'], meta: 'predložak — provjeriti QT/tetive' },
     { line: 'metronidazol 3x500 mg i.v.', triggers: ['met', 'metro', 'metronidazol'], meta: 'predložak' },
-    { line: 'pantoprazol 1x40 mg p.o.', triggers: ['pan', 'panto', 'pantoprazol', 'zipantola', 'controloc'], meta: 'česti PPI predložak' },
-    { line: 'amlodipin 1x5 mg p.o.', triggers: ['aml', 'amlo', 'amlodipin'], meta: 'česti kronični lijek' },
-    { line: 'bisoprolol 1x2,5 mg p.o.', triggers: ['bis', 'biso', 'bisoprolol', 'concor'], meta: 'česti kronični lijek' },
-    { line: 'ramipril 1x5 mg p.o.', triggers: ['ram', 'rami', 'ramipril'], meta: 'česti kronični lijek' },
-    { line: 'atorvastatin 1x20 mg p.o.', triggers: ['ato', 'ator', 'atorvastatin'], meta: 'česti kronični lijek' },
-    { line: 'metformin 2x1000 mg p.o.', triggers: ['metf', 'metformin'], meta: 'česti kronični lijek — provjeriti eGFR' },
-    { line: 'levotiroksin 1x50 mcg p.o.', triggers: ['lev', 'levo', 'levotiroksin', 'euthyrox'], meta: 'česti kronični lijek' },
-    { line: 'apiksaban 2x5 mg p.o.', triggers: ['api', 'apik', 'apiksaban', 'eliquis'], meta: 'česti kronični lijek — provjeriti dozu' },
-    { line: 'rivaroksaban 1x20 mg p.o.', triggers: ['riv', 'riva', 'rivaroksaban', 'xarelto'], meta: 'česti kronični lijek — provjeriti dozu' }
+    { line: 'pantoprazol 40 mg 1x1 tbl', triggers: ['pan', 'panto', 'pantoprazol', 'zipantola', 'controloc'], meta: 'česti PPI predložak' },
+    { line: 'amlodipin 5 mg 1x1 tbl', triggers: ['aml', 'amlo', 'amlodipin'], meta: 'česti kronični lijek' },
+    { line: 'bisoprolol 2,5 mg 1x1 tbl', triggers: ['bis', 'biso', 'bisoprolol', 'concor'], meta: 'česti kronični lijek' },
+    { line: 'ramipril 5 mg 1x1 tbl', triggers: ['ram', 'rami', 'ramipril'], meta: 'česti kronični lijek' },
+    { line: 'atorvastatin 20 mg 1x1 tbl', triggers: ['ato', 'ator', 'atorvastatin'], meta: 'česti kronični lijek' },
+    { line: 'metformin 1000 mg 2x1 tbl', triggers: ['metf', 'metformin'], meta: 'česti kronični lijek — provjeriti eGFR' },
+    { line: 'levotiroksin 50 mcg 1x1 tbl', triggers: ['lev', 'levo', 'levotiroksin', 'euthyrox'], meta: 'česti kronični lijek' },
+    { line: 'apiksaban 5 mg 2x1 tbl', triggers: ['api', 'apik', 'apiksaban', 'eliquis'], meta: 'česti kronični lijek — provjeriti dozu' },
+    { line: 'rivaroksaban 20 mg 1x1 tbl', triggers: ['riv', 'riva', 'rivaroksaban', 'xarelto'], meta: 'česti kronični lijek — provjeriti dozu' }
   ]);
 
   function getTherapyAutocompleteCurrentLine(textarea) {
@@ -1139,7 +1139,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (q.length < THERAPY_AUTOCOMPLETE_MIN_CHARS) return [];
     const list = scope === 'shared' ? state.therapyFavorites?.shared : state.therapyFavorites?.personal;
     return (Array.isArray(list) ? list : [])
-      .filter((entry) => therapyNormalizeText(entry.name || '').startsWith(q))
+      .filter((entry) => therapyNormalizeText(entry.medicationName || entry.name || '').startsWith(q))
       .map((entry) => ({
         line: buildTherapyFavoriteLine(entry),
         source: scope,
@@ -1229,22 +1229,14 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     const rawLine = normalizeTherapySuggestionText(item?.line || '');
     if (!rawLine) return { line: '', canCycleDose: false, scheme: '', form: '' };
     if (item?.favorite) {
-      const scheme = normalizeTherapyFavoriteRegimen(regimenOverride) || item.favorite.regimen;
       return {
-        line: buildTherapyFavoriteLine({ ...item.favorite, regimen: scheme }),
-        canCycleDose: true,
-        scheme,
-        form: item.favorite.form
+        line: buildTherapyFavoriteLine(item.favorite),
+        canCycleDose: false,
+        scheme: '',
+        form: ''
       };
     }
-    if (!shouldCycleTherapyAutocompleteDose(item)) {
-      return { line: rawLine, canCycleDose: false, scheme: '', form: '' };
-    }
-    const scheme = normalizeTherapyFavoriteRegimen(regimenOverride) || getTherapyAutocompleteScheme(0);
-    const form = inferTherapyAutocompleteForm(rawLine);
-    const base = stripTherapyAutocompleteDosingParts(rawLine);
-    const line = normalizeTherapySuggestionText([base, scheme, form].filter(Boolean).join(' '));
-    return { line, canCycleDose: true, scheme, form };
+    return { line: rawLine, canCycleDose: false, scheme: '', form: '' };
   }
 
   function getCsvTherapyAutocompleteSuggestions(query, maxItems) {
@@ -1648,6 +1640,9 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     replaceTherapyActiveLine(textarea, ctx, cycled.line);
     state.therapyAutocomplete.activeRegimenOverride = cycled.regimen;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    if (typeof setTherapyEditorFromLine === 'function') {
+      setTherapyEditorFromLine(display.line || item.line, ctx.lineStart, ctx.lineStart + replacement.length);
+    }
     state.therapyAutocomplete.isCyclingRegimen = false;
     if (dropdownOpen) renderTherapyAutocomplete();
     else hideTherapyAutocomplete();
@@ -1690,14 +1685,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     });
     els.therapy.addEventListener('keydown', (event) => {
       if (moveTherapyFocusWithTab(event)) return;
-      if (event.key === 'PageDown') {
-        cycleTherapyRegimenFromKeyboard(event, 1);
-        return;
-      }
-      if (event.key === 'PageUp') {
-        cycleTherapyRegimenFromKeyboard(event, -1);
-        return;
-      }
       const hasSuggestions = Boolean(state.therapyAutocomplete.suggestions?.length);
       if (!hasSuggestions) return;
       if (event.key === 'ArrowDown') {
@@ -4615,6 +4602,14 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function getFormData() {
+    const therapyText = normalizeClinicalTherapyText(els.therapy.value);
+    const structuredTherapy = typeof migratePatientTherapyToStructuredEntries === 'function'
+      ? migratePatientTherapyToStructuredEntries({ therapy: therapyText })
+      : { entries: [], legacyBackup: [] };
+    const therapyLegacyBackup = Array.isArray(state.therapyEntryEditor?.patientLegacyBackup)
+      && state.therapyEntryEditor.patientLegacyBackup.length
+      ? state.therapyEntryEditor.patientLegacyBackup.slice()
+      : structuredTherapy.legacyBackup;
     return {
       patientMode: getCurrentPatientMode(),
       fullName: els.fullName.value.trim(),
@@ -4622,7 +4617,13 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       diagnosis: normalizeClinicalDiagnosisText(els.diagnosis.value),
       allergies: normalizeLineBreaks(els.allergies?.value || ''),
       patientOrigin: normalizeLineBreaks(els.patientOrigin?.value || ''),
-      therapy: normalizeClinicalTherapyText(els.therapy.value),
+      therapy: therapyText,
+      therapyEntries: structuredTherapy.entries.map((entry) => ({
+        medicationName: entry.medicationName,
+        continuation: entry.continuation
+      })),
+      therapyEntriesMigrationVersion: 2,
+      therapyEntriesLegacyBackup: therapyLegacyBackup,
       ohbpTherapy: normalizeClinicalTherapyText(els.ohbpTherapy.value),
       vitalSigns: normalizeLineBreaks(els.vitalSigns?.value || ''),
       followUpControlDate: normalizeAdmissionDateInput(els.followUpControlDate?.value || ''),
@@ -4713,7 +4714,19 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     if (typeof setAmbulatoryParseStatus === 'function') setAmbulatoryParseStatus('');
     if (els.allergies) els.allergies.value = data.allergies || '';
     if (els.patientOrigin) els.patientOrigin.value = data.patientOrigin || '';
-    els.therapy.value = normalizeClinicalTherapyText(data.therapy || '');
+    const migratedTherapy = typeof migratePatientTherapyToStructuredEntries === 'function'
+      ? migratePatientTherapyToStructuredEntries(data)
+      : { entries: [] };
+    if (state.therapyEntryEditor) {
+      state.therapyEntryEditor.patientLegacyBackup = migratedTherapy.legacyBackup.slice();
+      state.therapyEntryEditor.patientMigrationVersion = 2;
+    }
+    const structuredTherapyText = migratedTherapy.entries
+      .map((entry) => buildTherapyFavoriteLine(entry))
+      .filter(Boolean)
+      .join('\n');
+    els.therapy.value = normalizeClinicalTherapyText(structuredTherapyText || data.therapy || '');
+    if (typeof clearTherapyEntryEditor === 'function') clearTherapyEntryEditor({ focus: false });
     els.ohbpTherapy.value = normalizeClinicalTherapyText(data.ohbpTherapy || '');
     if (els.vitalSigns) els.vitalSigns.value = data.vitalSigns || '';
     if (els.followUpControlDate) els.followUpControlDate.value = formatIsoDateToCroatian(data.followUpControlDate || '');
@@ -5498,6 +5511,10 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       normalizeTherapyFavoriteEntry,
       normalizeTherapyFavoriteList,
       buildTherapyFavoriteLine,
+      splitTherapyLineIntoFields,
+      normalizeTherapyContinuation,
+      cycleTherapyContinuationRegimen,
+      migratePatientTherapyToStructuredEntries,
       cycleTherapyLineRegimen,
       sanitizeTherapyFavoritesBackup,
       validateCurrentTherapy: () => validateTherapyField({ source: 'clinical-helper' }),

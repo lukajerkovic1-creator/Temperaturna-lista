@@ -2371,7 +2371,8 @@
     legacyTherapyAutocompleteUsage: 'temperaturna_lista_kronicna_terapija_autocomplete_ucestalost_v1',
     therapyFavoritesPersonalCache: 'temperaturna_lista_osobne_terapije_cache_v1',
     therapyFavoritesSharedCache: 'temperaturna_lista_zajednicke_terapije_cache_v1',
-    therapyFavoritesMigration: 'temperaturna_lista_terapije_migracija_v1',
+    therapyFavoritesMigration: 'temperaturna_lista_terapije_migracija_v2',
+    therapyFavoritesLegacyBackup: 'temperaturna_lista_terapije_legacy_backup_v2',
     diagnosisAutocompleteUsage: 'temperaturna_lista_dijagnoze_autocomplete_ucestalost_v1',
     parserTestCaptures: 'temperaturna_lista_parser_test_cases_v1',
     operationalAudit: 'temperaturna_lista_operativni_audit_v1'
@@ -2510,6 +2511,14 @@
     patientOrigin: document.getElementById('patientOrigin'),
     therapy: document.getElementById('therapy'),
     therapyAutocompleteBox: document.getElementById('therapyAutocompleteBox'),
+    therapyEntryEditor: document.getElementById('therapyEntryEditor'),
+    therapyMedicationName: document.getElementById('therapyMedicationName'),
+    therapyMedicationContinuation: document.getElementById('therapyMedicationContinuation'),
+    therapyEntryApplyBtn: document.getElementById('therapyEntryApplyBtn'),
+    therapyEntryClearBtn: document.getElementById('therapyEntryClearBtn'),
+    therapyEntryEditorStatus: document.getElementById('therapyEntryEditorStatus'),
+    therapyMedicationSuggestionsBox: document.getElementById('therapyMedicationSuggestionsBox'),
+    therapyContinuationSuggestionsBox: document.getElementById('therapyContinuationSuggestionsBox'),
     medicationAutocompleteDisclaimer: document.getElementById('medicationAutocompleteDisclaimer'),
     medicationSafetyPanel: document.getElementById('medicationSafetyPanel'),
     medicationSafetySummary: document.getElementById('medicationSafetySummary'),
@@ -2521,15 +2530,11 @@
     personalTherapyFavoriteForm: document.getElementById('personalTherapyFavoriteForm'),
     sharedTherapyFavoriteForm: document.getElementById('sharedTherapyFavoriteForm'),
     personalTherapyFavoriteName: document.getElementById('personalTherapyFavoriteName'),
-    personalTherapyFavoriteStrength: document.getElementById('personalTherapyFavoriteStrength'),
-    personalTherapyFavoriteFormText: document.getElementById('personalTherapyFavoriteFormText'),
-    personalTherapyFavoriteRegimen: document.getElementById('personalTherapyFavoriteRegimen'),
+    personalTherapyFavoriteContinuation: document.getElementById('personalTherapyFavoriteContinuation'),
     personalTherapyFavoritePreview: document.getElementById('personalTherapyFavoritePreview'),
     personalTherapyFavoriteCancelBtn: document.getElementById('personalTherapyFavoriteCancelBtn'),
     sharedTherapyFavoriteName: document.getElementById('sharedTherapyFavoriteName'),
-    sharedTherapyFavoriteStrength: document.getElementById('sharedTherapyFavoriteStrength'),
-    sharedTherapyFavoriteFormText: document.getElementById('sharedTherapyFavoriteFormText'),
-    sharedTherapyFavoriteRegimen: document.getElementById('sharedTherapyFavoriteRegimen'),
+    sharedTherapyFavoriteContinuation: document.getElementById('sharedTherapyFavoriteContinuation'),
     sharedTherapyFavoritePreview: document.getElementById('sharedTherapyFavoritePreview'),
     sharedTherapyFavoriteCancelBtn: document.getElementById('sharedTherapyFavoriteCancelBtn'),
     exportPersonalTherapyFavoritesBtn: document.getElementById('exportPersonalTherapyFavoritesBtn'),
@@ -2538,6 +2543,8 @@
     exportSharedTherapyFavoritesBtn: document.getElementById('exportSharedTherapyFavoritesBtn'),
     importSharedTherapyFavoritesBtn: document.getElementById('importSharedTherapyFavoritesBtn'),
     sharedTherapyFavoritesInput: document.getElementById('sharedTherapyFavoritesInput'),
+    therapyFavoritesSignInBtn: document.getElementById('therapyFavoritesSignInBtn'),
+    refreshSharedTherapyFavoritesBtn: document.getElementById('refreshSharedTherapyFavoritesBtn'),
     therapyEditor: document.getElementById('therapyEditor'),
     therapyValidationControls: document.getElementById('therapyValidationControls'),
     therapyLoadCsvBtn: document.getElementById('therapyLoadCsvBtn'),
@@ -2946,6 +2953,15 @@
       cursor: 0,
       isCyclingRegimen: false
     },
+    therapyEntryEditor: {
+      lineStart: -1,
+      lineEnd: -1,
+      activeSuggestionIndex: 0,
+      continuationSuggestionIndex: 0,
+      syncing: false,
+      patientLegacyBackup: [],
+      patientMigrationVersion: 2
+    },
     therapyFavorites: {
       personal: [],
       shared: [],
@@ -2954,9 +2970,12 @@
       initialized: false,
       sync: {
         available: false,
-        status: 'local-only',
+        status: 'loading',
         lastSyncedAt: '',
-        lastError: 'Autentificirani backend za terapijske postavke nije konfiguriran.'
+        lastError: '',
+        client: null,
+        user: null,
+        authResolved: false
       }
     },
     diagnosisAutocomplete: {

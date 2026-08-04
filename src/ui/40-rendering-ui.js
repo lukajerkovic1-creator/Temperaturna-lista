@@ -1243,7 +1243,7 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       radiologyRaw: 12000,
       admissionDate: 10
     }),
-    allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
+    allowedPatientKeys: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'therapyEntries', 'therapyEntriesMigrationVersion', 'therapyEntriesLegacyBackup', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'labRaw', 'radiologyRaw', 'admissionDate', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
     stringFields: Object.freeze(['patientMode', 'fullName', 'birthYear', 'diagnosis', 'allergies', 'patientOrigin', 'therapy', 'ohbpTherapy', 'vitalSigns', 'followUpControlDate', 'followUpControl', 'labRaw', 'radiologyRaw', 'admissionDate']),
     booleanFields: Object.freeze(['microHemocultures', 'microUrineCulture', 'microStoolBacteriology', 'microStoolCdiff', 'microStoolVirology', 'showTherapyMonday2', 'showDiagnosisOnList', 'showAllergiesOnList', 'showPatientOriginOnList', 'showTherapyOnList', 'showOhbpTherapyOnList', 'showVitalSignsOnList', 'showFollowUpControlOnList', 'showLabsOnList', 'showRadiologyOnList']),
     allowedEnvelopeKeys: Object.freeze(['version', 'appVersion', 'buildSha', 'exportedAt', 'data', 'parserProvenance']),
@@ -1367,6 +1367,9 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       allergies: '',
       patientOrigin: '',
       therapy: '',
+      therapyEntries: [],
+      therapyEntriesMigrationVersion: 2,
+      therapyEntriesLegacyBackup: [],
       ohbpTherapy: '',
       vitalSigns: '',
       followUpControlDate: '',
@@ -1429,6 +1432,35 @@ function drawPreviewErrorFallback(canvas, pageLabel, error) {
       }
       sanitized[key] = candidate[key];
     });
+
+    if (hasOwnKey(candidate, 'therapyEntries')) {
+      if (!Array.isArray(candidate.therapyEntries) || candidate.therapyEntries.length > 200) {
+        errors.push('Polje "therapyEntries" mora biti popis s najviše 200 terapija.');
+      } else {
+        sanitized.therapyEntries = candidate.therapyEntries.map((entry) => {
+          if (!isPlainJsonObject(entry)) return null;
+          const medicationName = normalizeTherapyMedicationName(entry.medicationName || '');
+          if (!medicationName) return null;
+          return {
+            medicationName,
+            continuation: normalizeTherapyContinuation(entry.continuation || '')
+          };
+        }).filter(Boolean);
+      }
+    }
+    if (hasOwnKey(candidate, 'therapyEntriesMigrationVersion')) {
+      if (Number(candidate.therapyEntriesMigrationVersion) !== 2) errors.push('Nepodržana verzija strukturirane terapije.');
+      else sanitized.therapyEntriesMigrationVersion = 2;
+    }
+    if (hasOwnKey(candidate, 'therapyEntriesLegacyBackup')) {
+      if (!Array.isArray(candidate.therapyEntriesLegacyBackup) || candidate.therapyEntriesLegacyBackup.length > 200) {
+        errors.push('Sigurnosna kopija stare terapije nije valjana.');
+      } else {
+        sanitized.therapyEntriesLegacyBackup = candidate.therapyEntriesLegacyBackup
+          .filter((line) => typeof line === 'string')
+          .map((line) => normalizeTherapyFavoriteWhitespace(line, 340));
+      }
+    }
 
     if (hasOwnKey(candidate, 'patientMode')) {
       const mode = normalizePatientMode(sanitized.patientMode);

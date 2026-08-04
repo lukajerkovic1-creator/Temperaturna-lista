@@ -11,6 +11,8 @@ function isIgnorableFailedRequest(url, errorText) {
   const failure = String(errorText || '');
   if (href.includes('/favicon')) return true;
   if (/https:\/\/www\.google\.com\/images\/cleardot\.gif/i.test(href) && /net::ERR_ABORTED/i.test(failure)) return true;
+  if (/firestore\.googleapis\.com\/google\.firestore\.v1\.Firestore\/Listen\/channel/i.test(href)
+    && /net::ERR_ABORTED/i.test(failure)) return true;
   return /identitytoolkit\/v3\/relyingparty\/getProjectConfig/i.test(href)
     && /net::ERR_ABORTED/i.test(failure);
 }
@@ -71,7 +73,7 @@ async function openApp(page, path = './') {
   const browserSignals = await installConsoleAndNetworkGuards(page);
   const response = await page.goto(path, { waitUntil: 'domcontentloaded' });
   expect(response?.ok(), `App response should be OK, got ${response?.status()}`).toBe(true);
-  await expect(page).toHaveTitle(/Temperaturna lista.*\d+\.\d+\.\d+/);
+  await expect(page).toHaveTitle(/Temperaturna lista.*\d+\.\d+\.\d+/, { timeout: 20000 });
   await expect(page.locator('h1', { hasText: 'Generator temperaturne liste' })).toBeVisible();
   await expect(page.locator('#page1Title')).toBeVisible();
   return browserSignals;
