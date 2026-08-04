@@ -3368,7 +3368,8 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
-  test('syncs shared therapy templates through the isolated settings adapter across devices', async ({ page, context }) => {
+  test('syncs shared therapy templates through the isolated settings adapter across devices', async ({ page, context, baseURL }) => {
+    test.skip(!isLocalBaseUrl(baseURL), 'Uses the localhost-only injected therapy-settings adapter.');
     await page.addInitScript(() => {
       window.__TEMPERATURNA_LISTA_ENABLE_QA_HOOKS__ = true;
       window.__TEMPERATURNA_LISTA_THERAPY_FAVORITES_SYNC__ = {
