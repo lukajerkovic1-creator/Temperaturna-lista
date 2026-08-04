@@ -2227,6 +2227,7 @@
   .therapy-entry-editor-actions {
     grid-column: 1 / -1;
     display: flex;
+    flex-wrap: wrap;
     gap: 7px;
   }
 
@@ -2234,6 +2235,16 @@
     min-height: 34px;
     padding: 7px 10px;
     font-size: 11.5px;
+  }
+
+  .therapy-entry-editor-actions .therapy-entry-remember-btn {
+    border-color: #15803d;
+    color: #166534;
+    background: #f0fdf4;
+  }
+
+  .therapy-entry-editor-actions .therapy-entry-remember-btn:hover {
+    background: #dcfce7;
   }
 
   .therapy-entry-editor-status {

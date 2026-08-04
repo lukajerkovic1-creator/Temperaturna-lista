@@ -3303,6 +3303,36 @@ test.describe('GitHub Pages smoke test', () => {
     browserSignals.assertCleanBrowserSignals();
   });
 
+  test('remembers an explicitly saved therapy for every next patient', async ({ page }) => {
+    const browserSignals = await openApp(page);
+    await continueWithoutFirebase(page);
+
+    await page.locator('#therapyMedicationName').fill('Cesti testni lijek 25 mg');
+    await page.locator('#therapyMedicationContinuation').fill('1,0,0 tbl');
+    await page.locator('#therapyEntryRememberBtn').click();
+
+    await expect(page.locator('#therapy')).toHaveValue('Cesti testni lijek 25 mg 1,0,0 tbl');
+    await expect(page.locator('#statusBar')).toContainText(/zapamćena za sve sljedeće pacijente|zapamÄ‡ena za sve sljedeÄ‡e pacijente/i);
+    expect(await page.evaluate(() => window.TemperaturnaListaClinical.getTherapyFavorites().personal
+      .some((entry) => entry.medicationName === 'Cesti testni lijek 25 mg' && entry.continuation === '1,0,0 tbl'))).toBe(true);
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('nema ime');
+      await dialog.accept();
+    });
+    await page.locator('#newPatientEntryBtn').click();
+    await expect(page.locator('#therapy')).toHaveValue('');
+
+    await page.locator('#therapyMedicationName').fill('Cesti testni');
+    await expect(page.locator('#therapyMedicationSuggestionsBox')).toContainText('Cesti testni lijek 25 mg 1,0,0 tbl');
+
+    await page.reload();
+    await continueWithoutFirebase(page);
+    await page.locator('#therapyMedicationName').fill('Cesti testni');
+    await expect(page.locator('#therapyMedicationSuggestionsBox')).toContainText('Cesti testni lijek 25 mg 1,0,0 tbl');
+    browserSignals.assertCleanBrowserSignals();
+  });
+
   test('warns for an empty continuation and migrates therapy templates and patient lines idempotently', async ({ page }) => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);

@@ -2515,6 +2515,7 @@
     therapyMedicationName: document.getElementById('therapyMedicationName'),
     therapyMedicationContinuation: document.getElementById('therapyMedicationContinuation'),
     therapyEntryApplyBtn: document.getElementById('therapyEntryApplyBtn'),
+    therapyEntryRememberBtn: document.getElementById('therapyEntryRememberBtn'),
     therapyEntryClearBtn: document.getElementById('therapyEntryClearBtn'),
     therapyEntryEditorStatus: document.getElementById('therapyEntryEditorStatus'),
     therapyMedicationSuggestionsBox: document.getElementById('therapyMedicationSuggestionsBox'),

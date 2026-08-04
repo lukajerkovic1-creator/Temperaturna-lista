@@ -43,6 +43,10 @@ Isti lijek može imati više nastavaka. Potpuno isti normalizirani zapis sprema 
 
 Osobni predlošci ostaju lokalna korisnička lista. Zajednički predlošci čitaju se sa svih uređaja iz izdvojenog Firestore dokumenta `appConfig/sharedTherapyFavoritesV2`. Samo potvrđeni administrator može pisati taj dokument. Firestore pravila i produkcijski klijent i dalje ne dopuštaju online spremanje pacijenata; sinkronizira se isključivo neklinička lista terapijskih predložaka.
 
+### Brzo pamćenje za sljedeće pacijente
+
+Gumb **Dodaj u terapiju** unosi redak samo trenutačnom pacijentu. Gumb **Dodaj i zapamti** istodobno unosi redak i sprema ga u osobne predloške. Tako ostaje dostupan u autocompleteu nakon gumba **Novi unos**, za svakog sljedećeg pacijenta i nakon ponovnog otvaranja aplikacije na istom uređaju i korisničkom profilu. Pacijentni podatci pritom se ne spremaju u preglednik niti šalju online.
+
 ## Migracija
 
 Pri prvom čitanju stare v1 liste aplikacija:

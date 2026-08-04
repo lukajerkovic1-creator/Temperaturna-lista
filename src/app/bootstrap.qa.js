@@ -8,8 +8,8 @@
   // ============================================================
   // VERZIJA APLIKACIJE — jedini izvor istine
   // ============================================================
-  const APP_VERSION = '0.8.0';
-  const APP_BUILD_SHA = '1fb5797a51c1';
+  const APP_VERSION = '0.8.1';
+  const APP_BUILD_SHA = '81409717dbc7';
   const PARSER_VERSION = 'temperaturna-lista-parser-v2';
   const PARSER_PROVENANCE_SCHEMA = 'temperaturna-lista-parser-provenance-v1';
   window.__TEMPERATURNA_LISTA_BUILD_SHA__ = APP_BUILD_SHA;
@@ -2515,6 +2515,7 @@
     therapyMedicationName: document.getElementById('therapyMedicationName'),
     therapyMedicationContinuation: document.getElementById('therapyMedicationContinuation'),
     therapyEntryApplyBtn: document.getElementById('therapyEntryApplyBtn'),
+    therapyEntryRememberBtn: document.getElementById('therapyEntryRememberBtn'),
     therapyEntryClearBtn: document.getElementById('therapyEntryClearBtn'),
     therapyEntryEditorStatus: document.getElementById('therapyEntryEditorStatus'),
     therapyMedicationSuggestionsBox: document.getElementById('therapyMedicationSuggestionsBox'),
@@ -9802,7 +9803,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return true;
   }
 
-  function applyTherapyEntryEditor() {
+  function applyTherapyEntryEditor(options = {}) {
     const medicationName = normalizeTherapyMedicationName(els.therapyMedicationName?.value || '');
     const continuation = normalizeTherapyContinuation(els.therapyMedicationContinuation?.value || '');
     if (!medicationName) {
@@ -9810,7 +9811,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       els.therapyMedicationName?.focus();
       return false;
     }
-    if (!continuation && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
+    if (!continuation && !options.skipContinuationConfirmation
+      && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
     const line = buildTherapyFavoriteLine({ medicationName, continuation });
     if (state.therapyEntryEditor.lineStart >= 0) {
       replaceTherapyEditorBoundLine();
@@ -9821,9 +9823,41 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         els.therapy.dispatchEvent(new Event('input', { bubbles: true }));
       }
     }
-    setStatus('Terapija je unesena. Provjerite dozu, put primjene, bubrežnu funkciju i indikaciju prije ispisa.');
+    setStatus(options.statusMessage
+      || 'Terapija je unesena. Provjerite dozu, put primjene, bubrežnu funkciju i indikaciju prije ispisa.');
     clearTherapyEntryEditor({ focus: false });
     return true;
+  }
+
+  function rememberTherapyEntryForFuturePatients() {
+    const draft = normalizeTherapyFavoriteEntry({
+      medicationName: els.therapyMedicationName?.value || '',
+      continuation: els.therapyMedicationContinuation?.value || ''
+    }, { updatedBy: getTherapyFavoritesActorId() });
+    if (!draft) {
+      setStatus('Terapija nije spremljena. Upišite naziv lijeka.', true);
+      els.therapyMedicationName?.focus();
+      return false;
+    }
+    if (!draft.continuation && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
+
+    const list = getTherapyFavoritesList('personal').slice();
+    const existing = list.find((entry) => buildTherapyFavoriteIdentityKey(entry) === buildTherapyFavoriteIdentityKey(draft));
+    if (!existing) {
+      list.push({ ...draft, id: createTherapyFavoriteId() });
+      if (!writeTherapyFavoritesCache('personal', list)) {
+        setStatus('Terapija nije zapamćena jer lokalna pohrana nije dostupna.', true);
+        return false;
+      }
+      renderTherapyFavoritesSettings();
+    }
+
+    return applyTherapyEntryEditor({
+      skipContinuationConfirmation: true,
+      statusMessage: existing
+        ? 'Terapija je dodana pacijentu i već je dostupna za sljedeće pacijente.'
+        : 'Terapija je dodana pacijentu i zapamćena za sve sljedeće pacijente na ovom uređaju.'
+    });
   }
 
   function selectTherapyMedicationSuggestion(index) {
@@ -9903,6 +9937,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
 
   function wireTherapyEntryEditor() {
     els.therapyEntryApplyBtn?.addEventListener('click', applyTherapyEntryEditor);
+    els.therapyEntryRememberBtn?.addEventListener('click', rememberTherapyEntryForFuturePatients);
     els.therapyEntryClearBtn?.addEventListener('click', () => clearTherapyEntryEditor());
     els.therapy?.addEventListener('click', syncTherapyEntryEditorFromTextarea);
     els.therapy?.addEventListener('keyup', (event) => {

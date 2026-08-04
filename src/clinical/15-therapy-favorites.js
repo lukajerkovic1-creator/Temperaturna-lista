@@ -707,7 +707,7 @@
     return true;
   }
 
-  function applyTherapyEntryEditor() {
+  function applyTherapyEntryEditor(options = {}) {
     const medicationName = normalizeTherapyMedicationName(els.therapyMedicationName?.value || '');
     const continuation = normalizeTherapyContinuation(els.therapyMedicationContinuation?.value || '');
     if (!medicationName) {
@@ -715,7 +715,8 @@
       els.therapyMedicationName?.focus();
       return false;
     }
-    if (!continuation && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
+    if (!continuation && !options.skipContinuationConfirmation
+      && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
     const line = buildTherapyFavoriteLine({ medicationName, continuation });
     if (state.therapyEntryEditor.lineStart >= 0) {
       replaceTherapyEditorBoundLine();
@@ -726,9 +727,41 @@
         els.therapy.dispatchEvent(new Event('input', { bubbles: true }));
       }
     }
-    setStatus('Terapija je unesena. Provjerite dozu, put primjene, bubrežnu funkciju i indikaciju prije ispisa.');
+    setStatus(options.statusMessage
+      || 'Terapija je unesena. Provjerite dozu, put primjene, bubrežnu funkciju i indikaciju prije ispisa.');
     clearTherapyEntryEditor({ focus: false });
     return true;
+  }
+
+  function rememberTherapyEntryForFuturePatients() {
+    const draft = normalizeTherapyFavoriteEntry({
+      medicationName: els.therapyMedicationName?.value || '',
+      continuation: els.therapyMedicationContinuation?.value || ''
+    }, { updatedBy: getTherapyFavoritesActorId() });
+    if (!draft) {
+      setStatus('Terapija nije spremljena. Upišite naziv lijeka.', true);
+      els.therapyMedicationName?.focus();
+      return false;
+    }
+    if (!draft.continuation && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
+
+    const list = getTherapyFavoritesList('personal').slice();
+    const existing = list.find((entry) => buildTherapyFavoriteIdentityKey(entry) === buildTherapyFavoriteIdentityKey(draft));
+    if (!existing) {
+      list.push({ ...draft, id: createTherapyFavoriteId() });
+      if (!writeTherapyFavoritesCache('personal', list)) {
+        setStatus('Terapija nije zapamćena jer lokalna pohrana nije dostupna.', true);
+        return false;
+      }
+      renderTherapyFavoritesSettings();
+    }
+
+    return applyTherapyEntryEditor({
+      skipContinuationConfirmation: true,
+      statusMessage: existing
+        ? 'Terapija je dodana pacijentu i već je dostupna za sljedeće pacijente.'
+        : 'Terapija je dodana pacijentu i zapamćena za sve sljedeće pacijente na ovom uređaju.'
+    });
   }
 
   function selectTherapyMedicationSuggestion(index) {
@@ -808,6 +841,7 @@
 
   function wireTherapyEntryEditor() {
     els.therapyEntryApplyBtn?.addEventListener('click', applyTherapyEntryEditor);
+    els.therapyEntryRememberBtn?.addEventListener('click', rememberTherapyEntryForFuturePatients);
     els.therapyEntryClearBtn?.addEventListener('click', () => clearTherapyEntryEditor());
     els.therapy?.addEventListener('click', syncTherapyEntryEditorFromTextarea);
     els.therapy?.addEventListener('keyup', (event) => {

@@ -9,6 +9,7 @@ versioning such as `v0.1.0`.
 
 ### Added
 
+- Added a visible `Dodaj i zapamti` action that inserts a therapy for the current patient and explicitly stores it as a reusable personal template for every subsequent patient on the same device/profile.
 - Added a permanent two-field therapy editor (`Naziv lijeka` + `Nastavak terapije`) with free-text continuation suggestions, keyboard selection and immediate synchronization of an edited patient line with the live preview.
 - Added versioned, idempotent v1-to-v2 therapy-template and patient-line migration with an untouched legacy backup before conversion.
 - Added isolated cross-device synchronization for non-clinical shared therapy templates in `appConfig/sharedTherapyFavoritesV2`; patient Firebase storage remains disabled and denied by Firestore rules.
