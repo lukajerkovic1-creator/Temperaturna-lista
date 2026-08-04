@@ -3234,7 +3234,7 @@ test.describe('GitHub Pages smoke test', () => {
     expect(sanitizedLegacy).toEqual({ fullName: 'TEST PACIJENT' });
 
     await expect(page.locator('#sharedTherapyFavoriteForm input').first()).toBeDisabled();
-    await expect(page.locator('#therapyFavoritesSyncStatus')).toContainText(/trenutačno nisu dostupne|lokalna kopija/i);
+    await expect(page.locator('#therapyFavoritesSyncStatus')).toContainText(/Podatci pacijenata (?:ne šalju se online|nisu poslani online)/i);
     browserSignals.assertCleanBrowserSignals();
   });
 
