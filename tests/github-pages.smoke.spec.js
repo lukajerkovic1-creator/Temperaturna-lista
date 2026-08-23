@@ -957,6 +957,8 @@ test.describe('GitHub Pages smoke test', () => {
     const browserSignals = await openApp(page);
     await continueWithoutFirebase(page);
 
+    await expect(page.locator('#parserProvenancePanel')).toHaveClass(/hidden/);
+
     await page.locator('#ohbpPasteBox').fill([
       'Nalaz hitne',
       'Protokol broj: TEST-ENC-20260716',
@@ -972,18 +974,36 @@ test.describe('GitHub Pages smoke test', () => {
 
     await expect(page.locator('#fullName')).toHaveValue(/Provenijencija Testić/i);
     await expect(page.locator('#parserProvenancePanel')).toBeVisible();
+    await expect(page.locator('#parserProvenancePanel')).toHaveClass(/no-print/);
+    await expect(page.locator('#parserProvenancePanel')).not.toHaveAttribute('open', '');
+    await expect(page.locator('#parserProvenanceToggle')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#parserProvenanceToggle')).toContainText('Detalji parsiranja');
+    await expect(page.locator('#parserProvenanceSummary')).toContainText(/\d+ parsiranih polja/i);
+    await expect(page.locator('#parserProvenanceSummary')).not.toContainText(/0 polja za provjeru/i);
 
     const nameProvenance = page.locator('.parser-provenance-item[data-field="fullName"]');
+    await expect(nameProvenance).not.toBeVisible();
+    await page.locator('#parserProvenanceToggle').click();
+    await expect(page.locator('#parserProvenancePanel')).toHaveAttribute('open', '');
+    await expect(page.locator('#parserProvenanceToggle')).toHaveAttribute('aria-expanded', 'true');
     await expect(nameProvenance).toBeVisible();
+    await expect(nameProvenance.locator('.parser-provenance-field-details')).not.toHaveAttribute('open', '');
+    await expect(nameProvenance.locator('.parser-provenance-excerpt')).not.toBeVisible();
+    await nameProvenance.locator('.parser-provenance-field-summary').click();
     await expect(nameProvenance.locator('.parser-provenance-excerpt')).toContainText(/TESTIĆ PROVENIJENCIJA/i);
     await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/\d+%.*automatski prepoznato/i);
-    await expect(page.locator('#parserProvenanceSummary')).toContainText(/parser-v2/i);
     await expect(nameProvenance).not.toHaveAttribute('data-confirmed', /.+/);
     await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'available');
 
-    await page.locator('#fullName').fill('Izmijenjeni Testić');
-    await expect(nameProvenance.locator('.parser-provenance-meta')).toContainText(/automatski prepoznato/i);
-    await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'available');
+    await page.locator('#ohbpPasteBox').fill([
+      'Nalaz hitne',
+      'NOVI TESTIĆ, rođen 02.02.1972, TESTNA 2, 47000 TESTGRAD',
+      'Datum nalaza: 17.07.2026.',
+      'Dijagnoza: Nova sintetska dijagnoza.',
+      'Alergije na lijekove: nema.'
+    ].join('\n'));
+    await expect(page.locator('#parserProvenancePanel')).not.toHaveAttribute('open', '');
+    await expect(page.locator('#parserProvenanceToggle')).toHaveAttribute('aria-expanded', 'false');
 
     browserSignals.assertCleanBrowserSignals();
   });
@@ -1009,7 +1029,8 @@ test.describe('GitHub Pages smoke test', () => {
       'Alergije na lijekove: nema.',
       'Th: Testamicin 1 g i.v.'
     ].join('\n'));
-    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toBeVisible();
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toBeAttached();
+    await expect(page.locator('#parserProvenancePanel')).not.toHaveAttribute('open', '');
     page.once('dialog', async (dialog) => {
       expect(dialog.type()).toBe('prompt');
       await dialog.accept('TL_PARSER_PROVENANCE_TEST');
@@ -1030,13 +1051,21 @@ test.describe('GitHub Pages smoke test', () => {
     expect(savedEnvelope.parserProvenance.fields.fullName).not.toHaveProperty('confirmedAt');
     expect(savedEnvelope.parserProvenance.fields.fullName).not.toHaveProperty('confirmedBy');
 
+    savedEnvelope.parserProvenance.fields.fullName.status = 'uncertain';
+    const restoreJsonText = JSON.stringify(savedEnvelope);
     await page.locator('#loadDataInput').setInputFiles({
       name: 'TL_PARSER_PROVENANCE_TEST.json',
       mimeType: 'application/json',
-      buffer: Buffer.from(savedJsonText, 'utf8')
+      buffer: Buffer.from(restoreJsonText, 'utf8')
     });
     await expect(page.locator('#statusBar')).toContainText(/Podaci pacijenta učitani su iz JSON datoteke/i);
     await expect(page.locator('#fullName')).toHaveValue(/Provenijencija Json/i);
+    await expect(page.locator('#parserProvenancePanel')).not.toHaveAttribute('open', '');
+    await expect(page.locator('#parserProvenanceSummary')).toContainText(/1 polje za provjeru/i);
+    await page.locator('#parserProvenanceToggle').click();
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).toHaveAttribute('data-review', 'required');
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"] .parser-provenance-field-details')).toHaveAttribute('open', '');
+    await expect(page.locator('.parser-provenance-item[data-field="fullName"] .parser-provenance-excerpt')).toBeVisible();
     await expect(page.locator('.parser-provenance-item[data-field="fullName"]')).not.toHaveAttribute('data-confirmed', /.+/);
     await expect(page.locator('#parserProvenanceSummary')).toHaveAttribute('data-state', 'available');
     await expect.poll(async () => page.evaluate(() => {

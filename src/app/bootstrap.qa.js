@@ -9,7 +9,7 @@
   // VERZIJA APLIKACIJE — jedini izvor istine
   // ============================================================
   const APP_VERSION = '0.8.1';
-  const APP_BUILD_SHA = '0b7480a353fa';
+  const APP_BUILD_SHA = '5134b98ed0ca';
   const PARSER_VERSION = 'temperaturna-lista-parser-v2';
   const PARSER_PROVENANCE_SCHEMA = 'temperaturna-lista-parser-provenance-v1';
   window.__TEMPERATURNA_LISTA_BUILD_SHA__ = APP_BUILD_SHA;
@@ -2660,6 +2660,8 @@
     firebasePatientShowArchivedFilter: document.getElementById('firebasePatientShowArchivedFilter'),
     firebasePatientShowArchivedToggle: document.getElementById('firebasePatientShowArchivedToggle'),
     parserProvenancePanel: document.getElementById('parserProvenancePanel'),
+    parserProvenanceToggle: document.getElementById('parserProvenanceToggle'),
+    parserProvenanceContent: document.getElementById('parserProvenanceContent'),
     parserProvenanceSummary: document.getElementById('parserProvenanceSummary'),
     parserProvenanceList: document.getElementById('parserProvenanceList'),
     printBtn: document.getElementById('printBtn'),
@@ -12739,8 +12741,38 @@ function normalizeOhbpFusedSectionLabels(value) {
     };
   }
 
+  function normalizeParserProvenanceStatus(value) {
+    const status = String(value || '').trim().toLowerCase();
+    return ['safe', 'uncertain', 'blocked'].includes(status) ? status : 'parsed';
+  }
+
+  function parserProvenanceRequiresReview(entry) {
+    return ['uncertain', 'blocked'].includes(normalizeParserProvenanceStatus(entry?.status));
+  }
+
+  function syncParserProvenanceExpandedState() {
+    if (!els.parserProvenancePanel || !els.parserProvenanceToggle) return;
+    const expanded = Boolean(els.parserProvenancePanel.open);
+    els.parserProvenanceToggle.setAttribute('aria-expanded', String(expanded));
+    const chevron = els.parserProvenanceToggle.querySelector('.parser-provenance-chevron');
+    if (chevron) chevron.textContent = expanded ? '▲' : '▼';
+  }
+
+  function collapseParserProvenance() {
+    if (!els.parserProvenancePanel) return;
+    els.parserProvenancePanel.open = false;
+    syncParserProvenanceExpandedState();
+  }
+
+  function ensureParserProvenanceToggleBinding() {
+    if (!els.parserProvenancePanel || els.parserProvenancePanel.dataset.toggleBound === 'true') return;
+    els.parserProvenancePanel.dataset.toggleBound = 'true';
+    els.parserProvenancePanel.addEventListener('toggle', syncParserProvenanceExpandedState);
+  }
+
   function clearCurrentParserProvenance(options = {}) {
     state.parserProvenance = createEmptyParserProvenance();
+    collapseParserProvenance();
     if (options.render !== false) renderParserProvenance();
   }
 
@@ -12760,7 +12792,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt,
         confidence: getParserFieldConfidence(parsed, fieldName, sourceExcerpt, parsedValue),
         valueHash: hashParserProvenanceValue(parsedValue),
-        status: 'parsed'
+        status: normalizeParserProvenanceStatus(parsed?.clinicalSafety?.[fieldName]?.status)
       };
     });
     state.parserProvenance = {
@@ -12772,9 +12804,7 @@ function normalizeOhbpFusedSectionLabels(value) {
       sourceTextHash: hashParserProvenanceValue(normalizeParserProvenanceValue(rawText)),
       fields
     };
-    if (els.parserProvenancePanel && Object.keys(fields).length) {
-      els.parserProvenancePanel.open = true;
-    }
+    collapseParserProvenance();
     renderParserProvenance();
   }
 
@@ -12812,7 +12842,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt: String(entry.sourceExcerpt || '').slice(0, 240),
         confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
         valueHash: String(entry.valueHash || ''),
-        status: 'parsed'
+        status: normalizeParserProvenanceStatus(entry.status)
       }]))
     };
   }
@@ -12836,7 +12866,7 @@ function normalizeOhbpFusedSectionLabels(value) {
         sourceExcerpt: String(entry.sourceExcerpt || '').replace(/[\r\n\t]+/g, ' ').slice(0, 240),
         confidence: Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
         valueHash: String(entry.valueHash || '').slice(0, 80),
-        status: 'parsed'
+        status: normalizeParserProvenanceStatus(entry.status)
       };
     });
     return restored.parsedAt && Object.keys(restored.fields).length ? restored : null;
@@ -12844,31 +12874,45 @@ function normalizeOhbpFusedSectionLabels(value) {
 
   function restoreCurrentParserProvenance(candidate) {
     state.parserProvenance = sanitizeParserProvenanceForRestore(candidate) || createEmptyParserProvenance();
-    if (els.parserProvenancePanel && Object.keys(state.parserProvenance.fields || {}).length) {
-      els.parserProvenancePanel.open = true;
-    }
+    collapseParserProvenance();
     renderParserProvenance();
   }
 
   function renderParserProvenance() {
     if (!els.parserProvenancePanel || !els.parserProvenanceList || !els.parserProvenanceSummary) return;
+    ensureParserProvenanceToggleBinding();
+    syncParserProvenanceExpandedState();
     const provenance = state.parserProvenance || createEmptyParserProvenance();
     const fields = Object.values(provenance.fields || {});
     els.parserProvenancePanel.classList.toggle('hidden', fields.length === 0);
     els.parserProvenanceList.replaceChildren();
     if (!fields.length) {
+      collapseParserProvenance();
       els.parserProvenanceSummary.textContent = 'Nema parsiranih polja.';
       els.parserProvenanceSummary.dataset.state = 'empty';
       return;
     }
 
-    els.parserProvenanceSummary.textContent = `${fields.length} parsiranih polja · ${provenance.parserVersion}`;
+    const reviewCount = fields.filter(parserProvenanceRequiresReview).length;
+    const reviewSummary = reviewCount === 1 ? '1 polje za provjeru' : `${reviewCount} polja za provjeru`;
+    els.parserProvenanceSummary.textContent = `${fields.length} parsiranih polja${reviewCount ? ` · ${reviewSummary}` : ''}`;
     els.parserProvenanceSummary.dataset.state = 'available';
+    els.parserProvenanceSummary.dataset.reviewCount = String(reviewCount);
 
     fields.forEach((entry) => {
       const item = document.createElement('li');
       item.className = 'parser-provenance-item';
       item.dataset.field = entry.field;
+
+      const requiresReview = parserProvenanceRequiresReview(entry);
+      item.dataset.review = requiresReview ? 'required' : 'not-required';
+
+      const details = document.createElement('details');
+      details.className = 'parser-provenance-field-details';
+      details.open = requiresReview;
+
+      const itemSummary = document.createElement('summary');
+      itemSummary.className = 'parser-provenance-field-summary';
 
       const field = document.createElement('span');
       field.className = 'parser-provenance-field';
@@ -12876,11 +12920,16 @@ function normalizeOhbpFusedSectionLabels(value) {
       const meta = document.createElement('span');
       meta.className = 'parser-provenance-meta';
       const confidence = `${Math.round((Number(entry.confidence) || 0) * 100)}%`;
-      meta.textContent = `${confidence} · automatski prepoznato`;
+      meta.textContent = `${confidence} · ${requiresReview ? 'potrebna provjera' : 'automatski prepoznato'}`;
+      const chevron = document.createElement('span');
+      chevron.className = 'parser-provenance-field-chevron';
+      chevron.setAttribute('aria-hidden', 'true');
       const excerpt = document.createElement('q');
       excerpt.className = 'parser-provenance-excerpt';
       excerpt.textContent = entry.sourceExcerpt || 'Izvorni isječak nije pouzdano lociran.';
-      item.append(field, meta, excerpt);
+      itemSummary.append(field, meta, chevron);
+      details.append(itemSummary, excerpt);
+      item.append(details);
       els.parserProvenanceList.append(item);
     });
   }

@@ -2660,6 +2660,8 @@
     firebasePatientShowArchivedFilter: document.getElementById('firebasePatientShowArchivedFilter'),
     firebasePatientShowArchivedToggle: document.getElementById('firebasePatientShowArchivedToggle'),
     parserProvenancePanel: document.getElementById('parserProvenancePanel'),
+    parserProvenanceToggle: document.getElementById('parserProvenanceToggle'),
+    parserProvenanceContent: document.getElementById('parserProvenanceContent'),
     parserProvenanceSummary: document.getElementById('parserProvenanceSummary'),
     parserProvenanceList: document.getElementById('parserProvenanceList'),
     printBtn: document.getElementById('printBtn'),

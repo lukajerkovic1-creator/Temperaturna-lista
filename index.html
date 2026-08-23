@@ -468,13 +468,18 @@
           </div>
         </div>
         <div class="toolbar">
-          <details class="parser-provenance-panel hidden" id="parserProvenancePanel">
-            <summary>
-              <span>Dokaz automatskog parsiranja</span>
+          <details class="parser-provenance-panel hidden no-print" id="parserProvenancePanel">
+            <summary id="parserProvenanceToggle" aria-expanded="false" aria-controls="parserProvenanceContent">
+              <span class="parser-provenance-title">Detalji parsiranja</span>
               <span class="parser-provenance-summary" id="parserProvenanceSummary" role="status" aria-live="polite">Nema parsiranih polja.</span>
+              <span class="parser-provenance-chevron" aria-hidden="true">▼</span>
             </summary>
-            <p class="parser-provenance-help">Za svako automatski uneseno polje prikazani su izvorni isječak i procjena pouzdanosti. Automatski prepoznate podatke ručno provjeri prije ispisa.</p>
-            <ul class="parser-provenance-list" id="parserProvenanceList" aria-label="Provenijencija automatski parsiranih polja"></ul>
+            <div class="parser-provenance-content" id="parserProvenanceContent">
+              <div class="parser-provenance-content-inner">
+                <p class="parser-provenance-help">Za svako automatski uneseno polje prikazani su izvorni isječak i procjena pouzdanosti. Automatski prepoznate podatke ručno provjeri prije ispisa.</p>
+                <ul class="parser-provenance-list" id="parserProvenanceList" aria-label="Provenijencija automatski parsiranih polja"></ul>
+              </div>
+            </div>
           </details>
           <button id="printBtn" class="primary" type="button">Ispiši temperaturnu listu</button>
           <div class="toolbar-row secondary-row" id="patientDraftStatusRow">
