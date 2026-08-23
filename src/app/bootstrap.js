@@ -9,7 +9,7 @@
   // VERZIJA APLIKACIJE — jedini izvor istine
   // ============================================================
   const APP_VERSION = '0.8.1';
-  const APP_BUILD_SHA = '81409717dbc7';
+  const APP_BUILD_SHA = '0b7480a353fa';
   const PARSER_VERSION = 'temperaturna-lista-parser-v2';
   const PARSER_PROVENANCE_SCHEMA = 'temperaturna-lista-parser-provenance-v1';
   window.__TEMPERATURNA_LISTA_BUILD_SHA__ = APP_BUILD_SHA;
@@ -2515,7 +2515,6 @@
     therapyMedicationName: document.getElementById('therapyMedicationName'),
     therapyMedicationContinuation: document.getElementById('therapyMedicationContinuation'),
     therapyEntryApplyBtn: document.getElementById('therapyEntryApplyBtn'),
-    therapyEntryRememberBtn: document.getElementById('therapyEntryRememberBtn'),
     therapyEntryClearBtn: document.getElementById('therapyEntryClearBtn'),
     therapyEntryEditorStatus: document.getElementById('therapyEntryEditorStatus'),
     therapyMedicationSuggestionsBox: document.getElementById('therapyMedicationSuggestionsBox'),
@@ -2526,24 +2525,14 @@
     medicationSafetyDetails: document.getElementById('medicationSafetyDetails'),
     therapyFavoritesSettings: document.getElementById('therapyFavoritesSettings'),
     therapyFavoritesSyncStatus: document.getElementById('therapyFavoritesSyncStatus'),
-    personalTherapyFavoritesList: document.getElementById('personalTherapyFavoritesList'),
     sharedTherapyFavoritesList: document.getElementById('sharedTherapyFavoritesList'),
-    personalTherapyFavoriteForm: document.getElementById('personalTherapyFavoriteForm'),
     sharedTherapyFavoriteForm: document.getElementById('sharedTherapyFavoriteForm'),
-    personalTherapyFavoriteName: document.getElementById('personalTherapyFavoriteName'),
-    personalTherapyFavoriteContinuation: document.getElementById('personalTherapyFavoriteContinuation'),
-    personalTherapyFavoritePreview: document.getElementById('personalTherapyFavoritePreview'),
-    personalTherapyFavoriteCancelBtn: document.getElementById('personalTherapyFavoriteCancelBtn'),
     sharedTherapyFavoriteName: document.getElementById('sharedTherapyFavoriteName'),
     sharedTherapyFavoriteContinuation: document.getElementById('sharedTherapyFavoriteContinuation'),
     sharedTherapyFavoritePreview: document.getElementById('sharedTherapyFavoritePreview'),
     sharedTherapyFavoriteCancelBtn: document.getElementById('sharedTherapyFavoriteCancelBtn'),
-    exportPersonalTherapyFavoritesBtn: document.getElementById('exportPersonalTherapyFavoritesBtn'),
-    importPersonalTherapyFavoritesBtn: document.getElementById('importPersonalTherapyFavoritesBtn'),
-    personalTherapyFavoritesInput: document.getElementById('personalTherapyFavoritesInput'),
-    exportSharedTherapyFavoritesBtn: document.getElementById('exportSharedTherapyFavoritesBtn'),
-    importSharedTherapyFavoritesBtn: document.getElementById('importSharedTherapyFavoritesBtn'),
-    sharedTherapyFavoritesInput: document.getElementById('sharedTherapyFavoritesInput'),
+    therapyFavoritesSearch: document.getElementById('therapyFavoritesSearch'),
+    therapyMemoryNameSuggestionsBox: document.getElementById('therapyMemoryNameSuggestionsBox'),
     therapyFavoritesSignInBtn: document.getElementById('therapyFavoritesSignInBtn'),
     refreshSharedTherapyFavoritesBtn: document.getElementById('refreshSharedTherapyFavoritesBtn'),
     therapyEditor: document.getElementById('therapyEditor'),
@@ -2966,8 +2955,12 @@
     therapyFavorites: {
       personal: [],
       shared: [],
-      editingPersonalId: '',
       editingSharedId: '',
+      editingSharedVersion: 0,
+      highlightedSharedId: '',
+      searchQuery: '',
+      memoryNameSuggestions: [],
+      memoryNameSuggestionIndex: 0,
       initialized: false,
       sync: {
         available: false,
@@ -2976,7 +2969,11 @@
         lastError: '',
         client: null,
         user: null,
-        authResolved: false
+        authResolved: false,
+        saving: false,
+        documentVersion: 0,
+        remoteSchema: '',
+        unsubscribe: null
       }
     },
     diagnosisAutocomplete: {
@@ -7716,6 +7713,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function setFormData(data = {}) {
+    if (typeof closeTherapyMemoryPanel === 'function') closeTherapyMemoryPanel();
     clearCurrentParserProvenance({ render: false });
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
@@ -8508,7 +8506,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       cycleTherapyContinuationRegimen,
       migratePatientTherapyToStructuredEntries,
       cycleTherapyLineRegimen,
-      sanitizeTherapyFavoritesBackup,
+      applyTherapyFavoritesMutation,
+      migrateLegacyTherapyFavoritesToShared,
       validateCurrentTherapy: () => validateTherapyField({ source: 'clinical-helper' }),
       runMedicationSafetyChecks,
       clinicalRecordToFhirBundle,
@@ -8519,6 +8518,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function clearForm(options = {}) {
+    if (typeof closeTherapyMemoryPanel === 'function') closeTherapyMemoryPanel();
     const statusMessage = typeof options.statusMessage === 'string' ? options.statusMessage : 'Obrazac je očišćen.';
     const draftStatusMessage = typeof options.draftStatusMessage === 'string' ? options.draftStatusMessage : 'Lokalni draft obrisan za novi unos.';
     state.patientDraft.suppressSave = true;
@@ -8605,9 +8605,9 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
 // Explicitly managed therapy templates and two-field patient editor.
 // Patient text is never learned or uploaded.
 // ============================================================
-  const THERAPY_FAVORITES_SCHEMA = 'temperaturna-lista-therapy-favorites-v2';
-  const THERAPY_FAVORITES_BACKUP_SCHEMA = 'temperaturna-lista-therapy-favorites-backup-v2';
-  const THERAPY_FAVORITES_SCHEMA_VERSION = 2;
+  const THERAPY_FAVORITES_SCHEMA = 'temperaturna-lista-therapy-favorites-v3';
+  const THERAPY_FAVORITES_SCHEMA_VERSION = 3;
+  const THERAPY_PATIENT_ENTRIES_MIGRATION_VERSION = 2;
   const THERAPY_FAVORITES_MAX_ITEMS = 250;
   const THERAPY_FAVORITES_FIREBASE_DOCUMENT_ID = 'sharedTherapyFavoritesV2';
   const THERAPY_FAVORITES_FIXED_CONTINUATIONS = Object.freeze([
@@ -8702,12 +8702,18 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     }
     if (!medicationName) return null;
     const nowIso = new Date().toISOString();
+    const createdAt = /^\d{4}-\d{2}-\d{2}T/.test(String(value.createdAt || '')) ? String(value.createdAt) : nowIso;
+    const updatedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(value.updatedAt || '')) ? String(value.updatedAt) : createdAt;
+    const createdBy = normalizeTherapyFavoriteWhitespace(value.createdBy || value.updatedBy || options.updatedBy || '', 120);
     return {
       id: normalizeTherapyFavoriteWhitespace(value.id, 100) || createTherapyFavoriteId(),
       medicationName,
       continuation,
-      updatedAt: /^\d{4}-\d{2}-\d{2}T/.test(String(value.updatedAt || '')) ? String(value.updatedAt) : nowIso,
+      createdAt,
+      createdBy,
+      updatedAt,
       updatedBy: normalizeTherapyFavoriteWhitespace(value.updatedBy || options.updatedBy || '', 120),
+      version: Math.max(1, Number.parseInt(value.version, 10) || 1),
       schemaVersion: THERAPY_FAVORITES_SCHEMA_VERSION
     };
   }
@@ -8854,75 +8860,159 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       onAuthStateChanged: authModule.onAuthStateChanged,
       doc: firestoreModule.doc,
       getDoc: firestoreModule.getDoc,
-      setDoc: firestoreModule.setDoc
+      onSnapshot: firestoreModule.onSnapshot,
+      runTransaction: firestoreModule.runTransaction
     };
     state.therapyFavorites.sync.client = client;
     return client;
   }
 
-  function isTherapyFavoritesAdminUser(user = state.therapyFavorites.sync.user) {
-    const email = String(user?.email || '').trim().toLocaleLowerCase('hr-HR');
-    return Boolean(email && SUPER_ADMIN_EMAILS.some((allowed) => String(allowed).toLocaleLowerCase('hr-HR') === email));
-  }
-
   function canEditSharedTherapyFavorites() {
     const injected = getInjectedTherapyFavoritesSyncAdapter();
-    if (injected) return injected.available === true && injected.adminClaimVerified === true;
-    return Boolean(state.therapyFavorites.sync.available && isTherapyFavoritesAdminUser());
+    if (injected) return injected.available === true && (injected.authenticated === true || injected.adminClaimVerified === true);
+    return Boolean(state.therapyFavorites.sync.available && state.therapyFavorites.sync.user);
+  }
+
+  function applySharedTherapyFavoritesPayload(payload = {}) {
+    const items = normalizeTherapyFavoriteList(payload?.items || payload || []);
+    writeTherapyFavoritesCache('shared', items);
+    state.therapyFavorites.sync.documentVersion = Math.max(0, Number.parseInt(payload?.version, 10) || 0);
+    state.therapyFavorites.sync.remoteSchema = String(payload?.schema || '');
+    state.therapyFavorites.sync.available = true;
+    state.therapyFavorites.sync.status = 'synced';
+    state.therapyFavorites.sync.lastSyncedAt = String(payload?.updatedAt || new Date().toISOString());
+    state.therapyFavorites.sync.lastError = '';
+    renderTherapyFavoritesSettings();
+    return items;
+  }
+
+  function makeTherapyFavoritesMutationError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function applyTherapyFavoritesMutation(currentPayload = {}, mutation = {}) {
+    const items = normalizeTherapyFavoriteList(currentPayload?.items || []);
+    const actor = normalizeTherapyFavoriteWhitespace(mutation.actor || getTherapyFavoritesActorId(), 120);
+    const nowIso = new Date().toISOString();
+    const type = String(mutation.type || '');
+    if (type === 'merge') {
+      const merged = normalizeTherapyFavoriteList([...items, ...(mutation.items || [])], { updatedBy: actor });
+      return {
+        schema: THERAPY_FAVORITES_SCHEMA,
+        schemaVersion: THERAPY_FAVORITES_SCHEMA_VERSION,
+        appVersion: APP_VERSION,
+        version: Math.max(0, Number.parseInt(currentPayload?.version, 10) || 0) + 1,
+        updatedAt: nowIso,
+        updatedBy: actor,
+        items: merged
+      };
+    }
+
+    const entry = mutation.entry ? normalizeTherapyFavoriteEntry(mutation.entry, { updatedBy: actor }) : null;
+    const targetId = normalizeTherapyFavoriteWhitespace(mutation.id || entry?.id || '', 100);
+    const targetIndex = items.findIndex((item) => item.id === targetId);
+    const expectedVersion = Math.max(0, Number.parseInt(mutation.expectedVersion, 10) || 0);
+    if (['update', 'delete'].includes(type)) {
+      if (targetIndex < 0) throw makeTherapyFavoritesMutationError('not-found', 'Terapija više ne postoji u zajedničkoj memoriji.');
+      if (expectedVersion && Number(items[targetIndex].version || 1) !== expectedVersion) {
+        throw makeTherapyFavoritesMutationError('conflict', 'Terapiju je u međuvremenu izmijenio drugi korisnik. Osvježite popis i pokušajte ponovno.');
+      }
+    }
+    if (['add', 'update'].includes(type)) {
+      if (!entry?.medicationName || !entry?.continuation) {
+        throw makeTherapyFavoritesMutationError('validation', 'Naziv lijeka i nastavak terapije su obavezni.');
+      }
+      const duplicate = items.find((item) => item.id !== targetId
+        && buildTherapyFavoriteIdentityKey(item) === buildTherapyFavoriteIdentityKey(entry));
+      if (duplicate) {
+        const error = makeTherapyFavoritesMutationError('duplicate', `Ta terapija već postoji: ${buildTherapyFavoriteLine(duplicate)}.`);
+        error.duplicateId = duplicate.id;
+        throw error;
+      }
+    }
+
+    if (type === 'add') {
+      items.push({
+        ...entry,
+        id: entry.id || createTherapyFavoriteId(),
+        createdAt: nowIso,
+        createdBy: actor,
+        updatedAt: nowIso,
+        updatedBy: actor,
+        version: 1
+      });
+    } else if (type === 'update') {
+      const previous = items[targetIndex];
+      items[targetIndex] = {
+        ...entry,
+        id: previous.id,
+        createdAt: previous.createdAt,
+        createdBy: previous.createdBy,
+        updatedAt: nowIso,
+        updatedBy: actor,
+        version: Number(previous.version || 1) + 1
+      };
+    } else if (type === 'delete') {
+      items.splice(targetIndex, 1);
+    } else {
+      throw makeTherapyFavoritesMutationError('validation', 'Nepodržana promjena memorije terapije.');
+    }
+
+    return {
+      schema: THERAPY_FAVORITES_SCHEMA,
+      schemaVersion: THERAPY_FAVORITES_SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      version: Math.max(0, Number.parseInt(currentPayload?.version, 10) || 0) + 1,
+      updatedAt: nowIso,
+      updatedBy: actor,
+      items: sortTherapyFavoriteList(items).slice(0, THERAPY_FAVORITES_MAX_ITEMS)
+    };
+  }
+
+  async function mutateSharedTherapyFavorites(mutation) {
+    if (!canEditSharedTherapyFavorites()) throw new Error('Prijavite se kako biste uređivali zajedničku memoriju terapije.');
+    const client = await getTherapyFavoritesFirebaseClient();
+    const enriched = { ...mutation, actor: String(state.therapyFavorites.sync.user?.email || getTherapyFavoritesActorId()) };
+    if (typeof client.mutateShared === 'function') {
+      const payload = await client.mutateShared(enriched);
+      applySharedTherapyFavoritesPayload(payload);
+      return payload;
+    }
+    const ref = client.doc(client.db, FIREBASE_APP_CONFIG_COLLECTION, THERAPY_FAVORITES_FIREBASE_DOCUMENT_ID);
+    const payload = await client.runTransaction(client.db, async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const current = snapshot?.exists?.() ? (snapshot.data() || {}) : {};
+      const next = applyTherapyFavoritesMutation(current, enriched);
+      transaction.set(ref, next);
+      return next;
+    });
+    applySharedTherapyFavoritesPayload(payload);
+    return payload;
   }
 
   async function loadSharedTherapyFavoritesFromRemote(options = {}) {
     try {
       const client = await getTherapyFavoritesFirebaseClient();
-      if (!client) return false;
-      if (typeof client.loadShared === 'function') {
-        const payload = await client.loadShared();
-        const items = normalizeTherapyFavoriteList(payload?.items || payload || []);
-        writeTherapyFavoritesCache('shared', items);
-      } else {
+      if (!client || !state.therapyFavorites.sync.user) return false;
+      let payload = {};
+      if (typeof client.loadShared === 'function') payload = await client.loadShared();
+      else {
         const ref = client.doc(client.db, FIREBASE_APP_CONFIG_COLLECTION, THERAPY_FAVORITES_FIREBASE_DOCUMENT_ID);
         const snapshot = await client.getDoc(ref);
-        if (snapshot?.exists?.()) {
-          const payload = snapshot.data() || {};
-          if (payload.schema === THERAPY_FAVORITES_SCHEMA) writeTherapyFavoritesCache('shared', payload.items || []);
-        }
+        payload = snapshot?.exists?.() ? (snapshot.data() || {}) : {};
       }
-      state.therapyFavorites.sync.available = true;
-      state.therapyFavorites.sync.status = 'synced';
-      state.therapyFavorites.sync.lastSyncedAt = new Date().toISOString();
-      state.therapyFavorites.sync.lastError = '';
-      renderTherapyFavoritesSettings();
-      if (!options.silent) setStatus('Zajedničke terapije su osvježene.');
+      applySharedTherapyFavoritesPayload(payload);
+      if (!options.silent) setStatus('Zajednička memorija terapije je osvježena.');
       return true;
     } catch (error) {
       state.therapyFavorites.sync.status = 'offline-cache';
       state.therapyFavorites.sync.lastError = String(error?.message || error);
       renderTherapyFavoritesSettings();
-      if (!options.silent) setStatus('Zajedničke terapije trenutačno nisu dostupne; prikazuje se zadnja lokalna kopija.', true);
+      if (!options.silent) setStatus('Zajednička memorija trenutačno nije dostupna; prikazuje se zadnja lokalna kopija.', true);
       return false;
     }
-  }
-
-  async function persistSharedTherapyFavorites() {
-    if (!canEditSharedTherapyFavorites()) throw new Error('Potrebna je potvrđena administratorska prijava.');
-    const client = await getTherapyFavoritesFirebaseClient();
-    const payload = {
-      schema: THERAPY_FAVORITES_SCHEMA,
-      schemaVersion: THERAPY_FAVORITES_SCHEMA_VERSION,
-      appVersion: APP_VERSION,
-      updatedAt: new Date().toISOString(),
-      updatedBy: String(state.therapyFavorites.sync.user?.email || getTherapyFavoritesActorId()),
-      items: normalizeTherapyFavoriteList(state.therapyFavorites.shared)
-    };
-    if (typeof client.saveShared === 'function') await client.saveShared(payload);
-    else {
-      const ref = client.doc(client.db, FIREBASE_APP_CONFIG_COLLECTION, THERAPY_FAVORITES_FIREBASE_DOCUMENT_ID);
-      await client.setDoc(ref, payload);
-    }
-    state.therapyFavorites.sync.available = true;
-    state.therapyFavorites.sync.status = 'synced';
-    state.therapyFavorites.sync.lastSyncedAt = payload.updatedAt;
-    state.therapyFavorites.sync.lastError = '';
   }
 
   async function signInForTherapyFavorites() {
@@ -8932,31 +9022,101 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       const result = await client.signInWithPopup(client.auth, client.provider);
       state.therapyFavorites.sync.user = result?.user || client.auth?.currentUser || null;
       await loadSharedTherapyFavoritesFromRemote({ silent: true });
+      await migrateLegacyTherapyFavoritesToShared();
+      subscribeToSharedTherapyFavorites();
       renderTherapyFavoritesSettings();
-      setStatus(isTherapyFavoritesAdminUser()
-        ? 'Prijava je uspjela. Možete uređivati zajedničke terapije.'
-        : 'Prijava je uspjela. Zajedničke terapije možete koristiti, ali ne i uređivati.');
+      setStatus('Prijava je uspjela. Možete koristiti i uređivati zajedničku memoriju terapije.');
     } catch (error) {
       setStatus(`Prijava za terapijske postavke nije uspjela: ${error?.message || error}`, true);
     }
   }
 
+  function readTherapyFavoritesMigrationMarker() {
+    try {
+      return JSON.parse(safeLocalStorageGetItem(STORAGE_KEYS.therapyFavoritesMigration) || '{}');
+    } catch (error) {
+      return {};
+    }
+  }
+
+  async function migrateLegacyTherapyFavoritesToShared() {
+    if (!canEditSharedTherapyFavorites()) return false;
+    const marker = readTherapyFavoritesMigrationMarker();
+    if (Number(marker?.migrationVersion) >= THERAPY_FAVORITES_SCHEMA_VERSION && marker?.status === 'complete') return true;
+    const legacyItems = normalizeTherapyFavoriteList(readTherapyFavoritesCache('personal'), { updatedBy: getTherapyFavoritesActorId() });
+    const needsRemoteUpgrade = state.therapyFavorites.sync.remoteSchema !== THERAPY_FAVORITES_SCHEMA;
+    try {
+      if (legacyItems.length || needsRemoteUpgrade) await mutateSharedTherapyFavorites({ type: 'merge', items: legacyItems });
+      writeTherapyFavoritesCache('personal', []);
+      safeLocalStorageSetItem(STORAGE_KEYS.therapyFavoritesMigration, JSON.stringify({
+        schema: 'temperaturna-lista-therapy-favorites-migration-v3',
+        migrationVersion: THERAPY_FAVORITES_SCHEMA_VERSION,
+        status: 'complete',
+        migratedAt: new Date().toISOString(),
+        migratedItems: legacyItems.length
+      }));
+      return true;
+    } catch (error) {
+      state.therapyFavorites.sync.lastError = String(error?.message || error);
+      safeLocalStorageSetItem(STORAGE_KEYS.therapyFavoritesMigration, JSON.stringify({
+        schema: 'temperaturna-lista-therapy-favorites-migration-v3',
+        migrationVersion: THERAPY_FAVORITES_SCHEMA_VERSION,
+        status: 'pending',
+        attemptedAt: new Date().toISOString()
+      }));
+      renderTherapyFavoritesSettings();
+      return false;
+    }
+  }
+
+  function subscribeToSharedTherapyFavorites() {
+    const sync = state.therapyFavorites.sync;
+    if (!sync.user || sync.unsubscribe) return;
+    const begin = async () => {
+      const client = await getTherapyFavoritesFirebaseClient();
+      const onPayload = (payload) => applySharedTherapyFavoritesPayload(payload?.data ? payload.data() : payload);
+      const onError = (error) => {
+        sync.status = 'offline-cache';
+        sync.lastError = String(error?.message || error);
+        renderTherapyFavoritesSettings();
+      };
+      if (typeof client.subscribeShared === 'function') {
+        sync.unsubscribe = client.subscribeShared(onPayload, onError) || null;
+      } else if (typeof client.onSnapshot === 'function') {
+        const ref = client.doc(client.db, FIREBASE_APP_CONFIG_COLLECTION, THERAPY_FAVORITES_FIREBASE_DOCUMENT_ID);
+        sync.unsubscribe = client.onSnapshot(ref, (snapshot) => {
+          if (snapshot?.exists?.()) onPayload(snapshot);
+        }, onError);
+      }
+    };
+    void begin().catch((error) => {
+      sync.status = 'offline-cache';
+      sync.lastError = String(error?.message || error);
+      renderTherapyFavoritesSettings();
+    });
+  }
+
+  function stopSharedTherapyFavoritesSubscription() {
+    const unsubscribe = state.therapyFavorites.sync.unsubscribe;
+    if (typeof unsubscribe === 'function') unsubscribe();
+    state.therapyFavorites.sync.unsubscribe = null;
+  }
+
   function loadTherapyFavoritesForCurrentUser() {
     state.therapyFavorites.personal = readTherapyFavoritesCache('personal');
     state.therapyFavorites.shared = readTherapyFavoritesCache('shared');
-    state.therapyFavorites.editingPersonalId = '';
     state.therapyFavorites.editingSharedId = '';
+    state.therapyFavorites.editingSharedVersion = 0;
     renderTherapyFavoritesSettings();
   }
 
   function getTherapyFavoriteFormElements(scope) {
-    const personal = scope !== 'shared';
     return {
-      form: personal ? els.personalTherapyFavoriteForm : els.sharedTherapyFavoriteForm,
-      name: personal ? els.personalTherapyFavoriteName : els.sharedTherapyFavoriteName,
-      continuation: personal ? els.personalTherapyFavoriteContinuation : els.sharedTherapyFavoriteContinuation,
-      preview: personal ? els.personalTherapyFavoritePreview : els.sharedTherapyFavoritePreview,
-      cancel: personal ? els.personalTherapyFavoriteCancelBtn : els.sharedTherapyFavoriteCancelBtn
+      form: els.sharedTherapyFavoriteForm,
+      name: els.sharedTherapyFavoriteName,
+      continuation: els.sharedTherapyFavoriteContinuation,
+      preview: els.sharedTherapyFavoritePreview,
+      cancel: els.sharedTherapyFavoriteCancelBtn
     };
   }
 
@@ -8972,209 +9132,178 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     const controls = getTherapyFavoriteFormElements(scope);
     if (!controls.preview) return;
     const draft = getTherapyFavoriteDraftFromForm(scope);
-    controls.preview.textContent = draft ? buildTherapyFavoriteLine(draft) : 'Upiši naziv lijeka za pregled konačnog teksta.';
+    controls.preview.textContent = draft?.medicationName && draft?.continuation
+      ? buildTherapyFavoriteLine(draft)
+      : 'Upiši oba polja.';
   }
 
-  function resetTherapyFavoriteForm(scope) {
-    const controls = getTherapyFavoriteFormElements(scope);
+  function resetTherapyFavoriteForm() {
+    const controls = getTherapyFavoriteFormElements('shared');
     controls.form?.reset();
-    const editingKey = scope === 'shared' ? 'editingSharedId' : 'editingPersonalId';
-    state.therapyFavorites[editingKey] = '';
+    state.therapyFavorites.editingSharedId = '';
+    state.therapyFavorites.editingSharedVersion = 0;
+    state.therapyFavorites.highlightedSharedId = '';
     controls.cancel?.classList.add('hidden');
     const submit = controls.form?.querySelector('button[type="submit"]');
-    if (submit) submit.textContent = 'Spremi terapiju';
-    updateTherapyFavoritePreview(scope);
+    if (submit) submit.textContent = 'Dodaj u memoriju';
+    hideTherapyMemoryNameSuggestions();
+    updateTherapyFavoritePreview('shared');
+    renderTherapyFavoriteList('shared');
   }
 
   function getTherapyFavoritesList(scope) {
     return scope === 'shared' ? state.therapyFavorites.shared : state.therapyFavorites.personal;
   }
 
-  async function saveTherapyFavoriteFromForm(scope) {
-    if (scope === 'shared' && !canEditSharedTherapyFavorites()) {
-      setStatus('Zajedničke terapije nisu promijenjene: potrebna je potvrđena administratorska prijava.', true);
+  async function saveTherapyFavoriteFromForm() {
+    if (!canEditSharedTherapyFavorites()) {
+      setStatus('Memorija terapije nije promijenjena. Prijavite se i pokušajte ponovno.', true);
       return false;
     }
-    const draft = getTherapyFavoriteDraftFromForm(scope);
+    if (state.therapyFavorites.sync.saving) return false;
+    const draft = getTherapyFavoriteDraftFromForm('shared');
     if (!draft) {
       setStatus('Terapija nije spremljena. Upišite naziv lijeka.', true);
+      els.sharedTherapyFavoriteName?.focus();
       return false;
     }
-    if (!draft.continuation && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
-    const editingKey = scope === 'shared' ? 'editingSharedId' : 'editingPersonalId';
-    const editingId = state.therapyFavorites[editingKey] || '';
-    const list = getTherapyFavoritesList(scope).slice();
-    const previousList = list.map((entry) => ({ ...entry }));
+    if (!draft.continuation) {
+      setStatus('Terapija nije spremljena. Upišite nastavak terapije.', true);
+      els.sharedTherapyFavoriteContinuation?.focus();
+      return false;
+    }
+    const editingId = state.therapyFavorites.editingSharedId || '';
+    const list = getTherapyFavoritesList('shared');
     const duplicate = list.find((entry) => buildTherapyFavoriteIdentityKey(entry) === buildTherapyFavoriteIdentityKey(draft) && entry.id !== editingId);
     if (duplicate) {
       setStatus(`Ta terapija već postoji: ${buildTherapyFavoriteLine(duplicate)}.`, true);
-      startEditingTherapyFavorite(scope, duplicate.id);
+      state.therapyFavorites.highlightedSharedId = duplicate.id;
+      startEditingTherapyFavorite('shared', duplicate.id);
       return false;
     }
-    const index = editingId ? list.findIndex((entry) => entry.id === editingId) : -1;
-    const entry = { ...draft, id: index >= 0 ? list[index].id : createTherapyFavoriteId() };
-    if (index >= 0) list[index] = entry;
-    else list.push(entry);
-    writeTherapyFavoritesCache(scope, list);
-    if (scope === 'shared') {
-      try {
-        await persistSharedTherapyFavorites();
-      } catch (error) {
-        writeTherapyFavoritesCache('shared', previousList);
-        renderTherapyFavoritesSettings();
-        setStatus(`Zajednička terapija nije sinkronizirana: ${error?.message || error}`, true);
-        return false;
-      }
-    }
-    resetTherapyFavoriteForm(scope);
+    state.therapyFavorites.sync.saving = true;
     renderTherapyFavoritesSettings();
-    setStatus(`${scope === 'shared' ? 'Zajednička' : 'Osobna'} terapija je spremljena.`);
+    try {
+      await mutateSharedTherapyFavorites({
+        type: editingId ? 'update' : 'add',
+        id: editingId,
+        expectedVersion: state.therapyFavorites.editingSharedVersion,
+        entry: { ...draft, id: editingId || createTherapyFavoriteId() }
+      });
+    } catch (error) {
+      if (error?.duplicateId) {
+        state.therapyFavorites.highlightedSharedId = error.duplicateId;
+        startEditingTherapyFavorite('shared', error.duplicateId);
+      }
+      const isConflict = error?.code === 'conflict' || /drugi korisnik|međuvremenu/i.test(String(error?.message || error));
+      if (isConflict && editingId) {
+        await loadSharedTherapyFavoritesFromRemote({ silent: true });
+        startEditingTherapyFavorite('shared', editingId);
+      }
+      setStatus(isConflict
+        ? `Terapija nije spremljena jer ju je izmijenio drugi korisnik. Učitana je najnovija verzija. ${error?.message || error}`
+        : `Terapija nije spremljena: ${error?.message || error}`, true);
+      return false;
+    } finally {
+      state.therapyFavorites.sync.saving = false;
+      renderTherapyFavoritesSettings();
+    }
+    resetTherapyFavoriteForm();
+    renderTherapyFavoritesSettings();
+    setStatus('Terapija je spremljena u zajedničku memoriju i dostupna je prijavljenim korisnicima.');
     return true;
   }
 
   function startEditingTherapyFavorite(scope, id) {
-    if (scope === 'shared' && !canEditSharedTherapyFavorites()) return false;
-    const entry = getTherapyFavoritesList(scope).find((item) => item.id === id);
+    if (!canEditSharedTherapyFavorites()) return false;
+    const entry = getTherapyFavoritesList('shared').find((item) => item.id === id);
     if (!entry) return false;
-    const controls = getTherapyFavoriteFormElements(scope);
+    const controls = getTherapyFavoriteFormElements('shared');
     if (controls.name) controls.name.value = entry.medicationName;
     if (controls.continuation) controls.continuation.value = entry.continuation;
-    state.therapyFavorites[scope === 'shared' ? 'editingSharedId' : 'editingPersonalId'] = entry.id;
+    state.therapyFavorites.editingSharedId = entry.id;
+    state.therapyFavorites.editingSharedVersion = Number(entry.version || 1);
     controls.cancel?.classList.remove('hidden');
     const submit = controls.form?.querySelector('button[type="submit"]');
     if (submit) submit.textContent = 'Spremi izmjene';
     updateTherapyFavoritePreview(scope);
+    renderTherapyFavoriteList('shared');
+    window.requestAnimationFrame(() => {
+      const row = els.sharedTherapyFavoritesList?.querySelector(`[data-therapy-favorite-row-id="${CSS.escape(entry.id)}"]`);
+      row?.scrollIntoView({ block: 'nearest' });
+    });
     controls.name?.focus();
     return true;
   }
 
   async function deleteTherapyFavorite(scope, id) {
-    if (scope === 'shared' && !canEditSharedTherapyFavorites()) return false;
-    const list = getTherapyFavoritesList(scope);
+    if (!canEditSharedTherapyFavorites() || state.therapyFavorites.sync.saving) return false;
+    const list = getTherapyFavoritesList('shared');
     const entry = list.find((item) => item.id === id);
     if (!entry || !window.confirm(`Jeste li sigurni da želite obrisati terapiju?\n\n${buildTherapyFavoriteLine(entry)}`)) return false;
-    const previousList = list.map((item) => ({ ...item }));
-    writeTherapyFavoritesCache(scope, list.filter((item) => item.id !== id));
-    if (scope === 'shared') {
-      try {
-        await persistSharedTherapyFavorites();
-      } catch (error) {
-        writeTherapyFavoritesCache('shared', previousList);
-        renderTherapyFavoritesSettings();
-        setStatus(`Brisanje nije sinkronizirano: ${error?.message || error}`, true);
-        return false;
-      }
+    state.therapyFavorites.sync.saving = true;
+    renderTherapyFavoritesSettings();
+    try {
+      await mutateSharedTherapyFavorites({ type: 'delete', id, expectedVersion: Number(entry.version || 1) });
+    } catch (error) {
+      setStatus(`Brisanje nije uspjelo: ${error?.message || error}`, true);
+      return false;
+    } finally {
+      state.therapyFavorites.sync.saving = false;
+      renderTherapyFavoritesSettings();
     }
-    resetTherapyFavoriteForm(scope);
+    resetTherapyFavoriteForm();
     renderTherapyFavoritesSettings();
     setStatus('Predložak je obrisan. Već unesena terapija pacijenta nije promijenjena.');
     return true;
   }
 
   function renderTherapyFavoriteList(scope) {
-    const container = scope === 'shared' ? els.sharedTherapyFavoritesList : els.personalTherapyFavoritesList;
+    const container = els.sharedTherapyFavoritesList;
     if (!container) return;
-    const list = getTherapyFavoritesList(scope);
-    const editable = scope !== 'shared' || canEditSharedTherapyFavorites();
+    const query = therapyNormalizeText(state.therapyFavorites.searchQuery || '');
+    const list = getTherapyFavoritesList('shared').filter((entry) => !query
+      || therapyNormalizeText(`${entry.medicationName} ${entry.continuation}`).includes(query));
+    const editable = canEditSharedTherapyFavorites() && !state.therapyFavorites.sync.saving;
     if (!list.length) {
-      container.innerHTML = `<div class="therapy-favorite-empty">${scope === 'shared' ? 'Nema sinkroniziranih zajedničkih terapija.' : 'Još nema osobnih terapija.'}</div>`;
+      container.innerHTML = `<div class="therapy-favorite-empty">${query ? 'Nema terapija koje odgovaraju pretraživanju.' : 'Memorija terapije je prazna.'}</div>`;
       return;
     }
     container.innerHTML = list.map((entry) => {
       const actions = editable
-        ? `<div class="therapy-favorite-row-actions"><button type="button" class="secondary" data-therapy-favorite-action="edit" data-therapy-favorite-scope="${scope}" data-therapy-favorite-id="${therapyEscapeHtml(entry.id)}">Uredi</button><button type="button" class="secondary danger" data-therapy-favorite-action="delete" data-therapy-favorite-scope="${scope}" data-therapy-favorite-id="${therapyEscapeHtml(entry.id)}">Obriši</button></div>`
+        ? `<div class="therapy-favorite-row-actions"><button type="button" class="secondary" data-therapy-favorite-action="edit" data-therapy-favorite-scope="${scope}" data-therapy-favorite-id="${therapyEscapeHtml(entry.id)}">Uredi</button><button type="button" class="secondary danger" data-therapy-favorite-action="delete" data-therapy-favorite-scope="${scope}" data-therapy-favorite-id="${therapyEscapeHtml(entry.id)}">Izbriši</button></div>`
         : '';
-      return `<div class="therapy-favorite-row"><div class="therapy-favorite-row-text">${therapyEscapeHtml(buildTherapyFavoriteLine(entry))}</div>${actions}</div>`;
+      const highlighted = entry.id === state.therapyFavorites.highlightedSharedId ? ' is-highlighted' : '';
+      return `<div class="therapy-favorite-row${highlighted}" data-therapy-favorite-row-id="${therapyEscapeHtml(entry.id)}"><div class="therapy-favorite-row-text">${therapyEscapeHtml(buildTherapyFavoriteLine(entry))}</div>${actions}</div>`;
     }).join('');
   }
 
   function renderTherapyFavoritesSettings() {
     if (!state.therapyFavorites) return;
-    const sharedEditable = canEditSharedTherapyFavorites();
+    const sharedEditable = canEditSharedTherapyFavorites() && !state.therapyFavorites.sync.saving;
     if (els.therapyFavoritesSyncStatus) {
       const sync = state.therapyFavorites.sync;
       const syncTime = sync.lastSyncedAt
         ? new Date(sync.lastSyncedAt).toLocaleString('hr-HR', { dateStyle: 'short', timeStyle: 'short' })
         : '';
-      els.therapyFavoritesSyncStatus.textContent = sync.status === 'synced'
-        ? `Zajedničke terapije sinkronizirane su među uređajima${syncTime ? ` (${syncTime})` : ''}. Podatci pacijenata ne šalju se online.`
+      els.therapyFavoritesSyncStatus.textContent = sync.saving
+        ? 'Spremam promjenu u zajedničku memoriju...'
+        : sync.status === 'synced'
+        ? `Memorija terapije sinkronizirana je među prijavljenim korisnicima${syncTime ? ` (${syncTime})` : ''}. Podatci pacijenata ne šalju se online.`
         : sync.status === 'offline-cache'
-          ? 'Zajedničke terapije trenutačno nisu dostupne; koristi se zadnja lokalna kopija. Podatci pacijenata nisu poslani online.'
-          : 'Učitavam zajedničke terapijske postavke. Podatci pacijenata ne šalju se online.';
+          ? 'Memorija terapije trenutačno nije dostupna; prikazuje se zadnja lokalna kopija samo za čitanje.'
+          : sync.user ? 'Učitavam zajedničku memoriju terapije...' : 'Prijavite se kako biste koristili zajedničku memoriju terapije.';
     }
     const sharedControls = getTherapyFavoriteFormElements('shared');
     [sharedControls.name, sharedControls.continuation].filter(Boolean).forEach((control) => { control.disabled = !sharedEditable; });
     sharedControls.form?.setAttribute('aria-disabled', String(!sharedEditable));
     sharedControls.form?.querySelectorAll('button').forEach((button) => { button.disabled = !sharedEditable; });
-    if (els.exportSharedTherapyFavoritesBtn) els.exportSharedTherapyFavoritesBtn.disabled = !sharedEditable;
-    if (els.importSharedTherapyFavoritesBtn) els.importSharedTherapyFavoritesBtn.disabled = !sharedEditable;
     if (els.therapyFavoritesSignInBtn) {
       els.therapyFavoritesSignInBtn.hidden = Boolean(state.therapyFavorites.sync.user);
       els.therapyFavoritesSignInBtn.disabled = false;
     }
-    renderTherapyFavoriteList('personal');
     renderTherapyFavoriteList('shared');
-    updateTherapyFavoritePreview('personal');
     updateTherapyFavoritePreview('shared');
-  }
-
-  function buildTherapyFavoritesBackup(scope) {
-    return {
-      schema: THERAPY_FAVORITES_BACKUP_SCHEMA,
-      schemaVersion: THERAPY_FAVORITES_SCHEMA_VERSION,
-      appVersion: APP_VERSION,
-      exportedAt: new Date().toISOString(),
-      scope,
-      items: normalizeTherapyFavoriteList(getTherapyFavoritesList(scope))
-    };
-  }
-
-  function exportTherapyFavorites(scope) {
-    if (scope === 'shared' && !canEditSharedTherapyFavorites()) {
-      setStatus('Zajedničke terapije može izvesti samo potvrđeni administrator.', true);
-      return false;
-    }
-    const payload = buildTherapyFavoritesBackup(scope);
-    const filename = `temperaturna-lista-${scope === 'shared' ? 'zajednicke' : 'moje'}-terapije.json`;
-    downloadBlob(filename, new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
-    setStatus(`Izvezena je sigurnosna kopija: ${filename}`);
-    return true;
-  }
-
-  function sanitizeTherapyFavoritesBackup(parsed, requestedScope) {
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    if (parsed.scope !== requestedScope) return null;
-    const supported = parsed.schema === THERAPY_FAVORITES_BACKUP_SCHEMA
-      || parsed.schema === 'temperaturna-lista-therapy-favorites-backup-v1';
-    if (!supported) return null;
-    return normalizeTherapyFavoriteList(parsed.items || [], { updatedBy: getTherapyFavoritesActorId() });
-  }
-
-  function importTherapyFavoritesFile(scope, file) {
-    if (scope === 'shared' && !canEditSharedTherapyFavorites()) {
-      setStatus('Uvoz zajedničkih terapija blokiran je bez potvrđene administratorske ovlasti.', true);
-      return;
-    }
-    if (!file || file.size > 1024 * 1024) {
-      setStatus('Datoteka terapijskih postavki nije valjana ili je prevelika.', true);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () => setStatus('Datoteku terapijskih postavki nije moguće pročitati.', true);
-    reader.onload = async () => {
-      try {
-        const items = sanitizeTherapyFavoritesBackup(JSON.parse(String(reader.result || '{}')), scope);
-        if (!items) throw new Error('Nepodržana shema ili vrsta liste.');
-        writeTherapyFavoritesCache(scope, items);
-        if (scope === 'shared') await persistSharedTherapyFavorites();
-        resetTherapyFavoriteForm(scope);
-        renderTherapyFavoritesSettings();
-        setStatus(`Uvezeno je ${items.length} terapijskih predložaka. Duplikati i nevaljani zapisi su odbačeni.`);
-      } catch (error) {
-        setStatus(`Uvoz terapijskih postavki nije uspio: ${error?.message || error}`, true);
-      }
-    };
-    reader.readAsText(file, 'utf-8');
   }
 
   function positionTherapyEntrySuggestions(box, input) {
@@ -9208,6 +9337,46 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
         : splitTherapyLineIntoFields(item.line) }))
       .filter((item) => item.split?.medicationName)
       .slice(0, 8);
+  }
+
+  function hideTherapyMemoryNameSuggestions() {
+    if (!els.therapyMemoryNameSuggestionsBox) return;
+    els.therapyMemoryNameSuggestionsBox.classList.add('hidden');
+    els.therapyMemoryNameSuggestionsBox.innerHTML = '';
+    els.sharedTherapyFavoriteName?.removeAttribute('aria-activedescendant');
+  }
+
+  function renderTherapyMemoryNameSuggestions() {
+    const box = els.therapyMemoryNameSuggestionsBox;
+    if (!box) return;
+    const suggestions = getTherapyMedicationTemplateSuggestions(els.sharedTherapyFavoriteName?.value || '');
+    state.therapyFavorites.memoryNameSuggestions = suggestions;
+    if (!suggestions.length) {
+      hideTherapyMemoryNameSuggestions();
+      return;
+    }
+    const active = Math.max(0, Math.min(state.therapyFavorites.memoryNameSuggestionIndex || 0, suggestions.length - 1));
+    state.therapyFavorites.memoryNameSuggestionIndex = active;
+    box.innerHTML = suggestions.map((item, index) => `<div id="therapyMemoryNameSuggestion${index}" class="therapy-autocomplete-option${index === active ? ' is-active' : ''}" role="option" aria-selected="${index === active}" data-therapy-memory-suggestion-index="${index}"><div class="therapy-autocomplete-main">${therapyEscapeHtml(buildTherapyFavoriteLine(item.split))}</div></div>`).join('');
+    box.classList.remove('hidden');
+    els.sharedTherapyFavoriteName?.setAttribute('aria-activedescendant', `therapyMemoryNameSuggestion${active}`);
+    positionTherapyEntrySuggestions(box, els.sharedTherapyFavoriteName);
+  }
+
+  function selectTherapyMemoryNameSuggestion(index) {
+    const item = state.therapyFavorites.memoryNameSuggestions?.[index];
+    if (!item?.split) return false;
+    if (els.sharedTherapyFavoriteName) els.sharedTherapyFavoriteName.value = item.split.medicationName;
+    if (els.sharedTherapyFavoriteContinuation) els.sharedTherapyFavoriteContinuation.value = item.split.continuation;
+    updateTherapyFavoritePreview('shared');
+    hideTherapyMemoryNameSuggestions();
+    els.sharedTherapyFavoriteContinuation?.focus();
+    return true;
+  }
+
+  function closeTherapyMemoryPanel() {
+    if (els.therapyFavoritesSettings) els.therapyFavoritesSettings.open = false;
+    resetTherapyFavoriteForm();
   }
 
   function renderTherapyMedicationSuggestions() {
@@ -9335,37 +9504,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     return true;
   }
 
-  function rememberTherapyEntryForFuturePatients() {
-    const draft = normalizeTherapyFavoriteEntry({
-      medicationName: els.therapyMedicationName?.value || '',
-      continuation: els.therapyMedicationContinuation?.value || ''
-    }, { updatedBy: getTherapyFavoritesActorId() });
-    if (!draft) {
-      setStatus('Terapija nije spremljena. Upišite naziv lijeka.', true);
-      els.therapyMedicationName?.focus();
-      return false;
-    }
-    if (!draft.continuation && !window.confirm('Nastavak terapije nije upisan. Ipak spremiti/umetnuti?')) return false;
-
-    const list = getTherapyFavoritesList('personal').slice();
-    const existing = list.find((entry) => buildTherapyFavoriteIdentityKey(entry) === buildTherapyFavoriteIdentityKey(draft));
-    if (!existing) {
-      list.push({ ...draft, id: createTherapyFavoriteId() });
-      if (!writeTherapyFavoritesCache('personal', list)) {
-        setStatus('Terapija nije zapamćena jer lokalna pohrana nije dostupna.', true);
-        return false;
-      }
-      renderTherapyFavoritesSettings();
-    }
-
-    return applyTherapyEntryEditor({
-      skipContinuationConfirmation: true,
-      statusMessage: existing
-        ? 'Terapija je dodana pacijentu i već je dostupna za sljedeće pacijente.'
-        : 'Terapija je dodana pacijentu i zapamćena za sve sljedeće pacijente na ovom uređaju.'
-    });
-  }
-
   function selectTherapyMedicationSuggestion(index) {
     const item = state.therapyEntryEditor.medicationSuggestions?.[index];
     if (!item?.split) return false;
@@ -9423,7 +9561,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function migratePatientTherapyToStructuredEntries(data = {}) {
-    if (Array.isArray(data.therapyEntries) && Number(data.therapyEntriesMigrationVersion) === THERAPY_FAVORITES_SCHEMA_VERSION) {
+    if (Array.isArray(data.therapyEntries) && Number(data.therapyEntriesMigrationVersion) === THERAPY_PATIENT_ENTRIES_MIGRATION_VERSION) {
       return {
         entries: data.therapyEntries.map((entry) => normalizeTherapyFavoriteEntry(entry)).filter(Boolean),
         legacyBackup: Array.isArray(data.therapyEntriesLegacyBackup) ? data.therapyEntriesLegacyBackup.slice() : [],
@@ -9443,7 +9581,6 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
 
   function wireTherapyEntryEditor() {
     els.therapyEntryApplyBtn?.addEventListener('click', applyTherapyEntryEditor);
-    els.therapyEntryRememberBtn?.addEventListener('click', rememberTherapyEntryForFuturePatients);
     els.therapyEntryClearBtn?.addEventListener('click', () => clearTherapyEntryEditor());
     els.therapy?.addEventListener('click', syncTherapyEntryEditorFromTextarea);
     els.therapy?.addEventListener('keyup', (event) => {
@@ -9505,51 +9642,69 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     document.addEventListener('mousedown', (event) => {
       if (els.therapyEntryEditor?.contains(event.target)
         || els.therapyMedicationSuggestionsBox?.contains(event.target)
-        || els.therapyContinuationSuggestionsBox?.contains(event.target)) return;
+        || els.therapyContinuationSuggestionsBox?.contains(event.target)
+        || els.sharedTherapyFavoriteForm?.contains(event.target)
+        || els.therapyMemoryNameSuggestionsBox?.contains(event.target)) return;
       hideTherapyEntrySuggestions();
+      hideTherapyMemoryNameSuggestions();
     });
     window.addEventListener('resize', () => {
       positionTherapyEntrySuggestions(els.therapyMedicationSuggestionsBox, els.therapyMedicationName);
       positionTherapyEntrySuggestions(els.therapyContinuationSuggestionsBox, els.therapyMedicationContinuation);
+      positionTherapyEntrySuggestions(els.therapyMemoryNameSuggestionsBox, els.sharedTherapyFavoriteName);
     });
   }
 
   function wireTherapyFavoritesSettings() {
-    ['personal', 'shared'].forEach((scope) => {
-      const controls = getTherapyFavoriteFormElements(scope);
-      [controls.name, controls.continuation].filter(Boolean).forEach((control) => {
-        control.addEventListener('input', () => updateTherapyFavoritePreview(scope));
-        control.addEventListener('change', () => updateTherapyFavoritePreview(scope));
-      });
-      controls.form?.addEventListener('submit', (event) => {
+    const controls = getTherapyFavoriteFormElements('shared');
+    els.therapyFavoritesSettings?.addEventListener('toggle', () => {
+      els.therapyFavoritesSettings.querySelector(':scope > summary')
+        ?.setAttribute('aria-expanded', String(els.therapyFavoritesSettings.open));
+      if (!els.therapyFavoritesSettings.open) hideTherapyMemoryNameSuggestions();
+    });
+    [controls.name, controls.continuation].filter(Boolean).forEach((control) => {
+      control.addEventListener('input', () => updateTherapyFavoritePreview('shared'));
+      control.addEventListener('change', () => updateTherapyFavoritePreview('shared'));
+    });
+    controls.form?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void saveTherapyFavoriteFromForm('shared');
+    });
+    controls.cancel?.addEventListener('click', () => resetTherapyFavoriteForm());
+    els.sharedTherapyFavoritesList?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-therapy-favorite-action]');
+      if (!button) return;
+      const id = button.dataset.therapyFavoriteId;
+      if (button.dataset.therapyFavoriteAction === 'edit') startEditingTherapyFavorite('shared', id);
+      if (button.dataset.therapyFavoriteAction === 'delete') void deleteTherapyFavorite('shared', id);
+    });
+    els.therapyFavoritesSearch?.addEventListener('input', (event) => {
+      state.therapyFavorites.searchQuery = event.target.value || '';
+      renderTherapyFavoriteList('shared');
+    });
+    els.sharedTherapyFavoriteName?.addEventListener('input', () => {
+      state.therapyFavorites.memoryNameSuggestionIndex = 0;
+      renderTherapyMemoryNameSuggestions();
+    });
+    els.sharedTherapyFavoriteName?.addEventListener('focus', renderTherapyMemoryNameSuggestions);
+    els.sharedTherapyFavoriteName?.addEventListener('keydown', (event) => {
+      const suggestions = state.therapyFavorites.memoryNameSuggestions || [];
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (!suggestions.length) return;
         event.preventDefault();
-        void saveTherapyFavoriteFromForm(scope);
-      });
-      controls.cancel?.addEventListener('click', () => resetTherapyFavoriteForm(scope));
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        state.therapyFavorites.memoryNameSuggestionIndex = (state.therapyFavorites.memoryNameSuggestionIndex + delta + suggestions.length) % suggestions.length;
+        renderTherapyMemoryNameSuggestions();
+      } else if (event.key === 'Enter' && suggestions.length && !els.therapyMemoryNameSuggestionsBox?.classList.contains('hidden')) {
+        event.preventDefault();
+        selectTherapyMemoryNameSuggestion(state.therapyFavorites.memoryNameSuggestionIndex);
+      } else if (event.key === 'Escape') hideTherapyMemoryNameSuggestions();
     });
-    [els.personalTherapyFavoritesList, els.sharedTherapyFavoritesList].filter(Boolean).forEach((container) => {
-      container.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-therapy-favorite-action]');
-        if (!button) return;
-        const scope = button.dataset.therapyFavoriteScope;
-        const id = button.dataset.therapyFavoriteId;
-        if (button.dataset.therapyFavoriteAction === 'edit') startEditingTherapyFavorite(scope, id);
-        if (button.dataset.therapyFavoriteAction === 'delete') void deleteTherapyFavorite(scope, id);
-      });
-    });
-    els.exportPersonalTherapyFavoritesBtn?.addEventListener('click', () => exportTherapyFavorites('personal'));
-    els.importPersonalTherapyFavoritesBtn?.addEventListener('click', () => els.personalTherapyFavoritesInput?.click());
-    els.personalTherapyFavoritesInput?.addEventListener('change', (event) => {
-      const file = event.target.files?.[0];
-      if (file) importTherapyFavoritesFile('personal', file);
-      event.target.value = '';
-    });
-    els.exportSharedTherapyFavoritesBtn?.addEventListener('click', () => exportTherapyFavorites('shared'));
-    els.importSharedTherapyFavoritesBtn?.addEventListener('click', () => els.sharedTherapyFavoritesInput?.click());
-    els.sharedTherapyFavoritesInput?.addEventListener('change', (event) => {
-      const file = event.target.files?.[0];
-      if (file) importTherapyFavoritesFile('shared', file);
-      event.target.value = '';
+    els.therapyMemoryNameSuggestionsBox?.addEventListener('mousedown', (event) => {
+      const option = event.target.closest('[data-therapy-memory-suggestion-index]');
+      if (!option) return;
+      event.preventDefault();
+      selectTherapyMemoryNameSuggestion(Number(option.dataset.therapyMemorySuggestionIndex || 0));
     });
     els.therapyFavoritesSignInBtn?.addEventListener('click', () => void signInForTherapyFavorites());
     els.refreshSharedTherapyFavoritesBtn?.addEventListener('click', () => void loadSharedTherapyFavoritesFromRemote());
@@ -9565,12 +9720,24 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       }
       if (typeof client.onAuthStateChanged === 'function') {
         client.onAuthStateChanged(client.auth, (user) => {
+          stopSharedTherapyFavoritesSubscription();
           state.therapyFavorites.sync.user = user || null;
           state.therapyFavorites.sync.authResolved = true;
           renderTherapyFavoritesSettings();
+          if (user) {
+            void loadSharedTherapyFavoritesFromRemote({ silent: true }).then(async () => {
+              await migrateLegacyTherapyFavoritesToShared();
+              subscribeToSharedTherapyFavorites();
+            });
+          }
         });
+      } else if (client.authenticated === true || client.adminClaimVerified === true) {
+        state.therapyFavorites.sync.user = client.currentUser || { uid: 'qa-user', email: 'qa@example.test' };
+        state.therapyFavorites.sync.authResolved = true;
+        await loadSharedTherapyFavoritesFromRemote({ silent: true });
+        await migrateLegacyTherapyFavoritesToShared();
+        subscribeToSharedTherapyFavorites();
       }
-      await loadSharedTherapyFavoritesFromRemote({ silent: true });
     } catch (error) {
       state.therapyFavorites.sync.status = 'offline-cache';
       state.therapyFavorites.sync.lastError = String(error?.message || error);
@@ -9583,6 +9750,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
     loadTherapyFavoritesForCurrentUser();
     wireTherapyFavoritesSettings();
     wireTherapyEntryEditor();
+    if (els.therapyFavoritesSettings) els.therapyFavoritesSettings.open = false;
     state.therapyFavorites.initialized = true;
     void initTherapyFavoritesSync();
   }

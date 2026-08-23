@@ -4703,6 +4703,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function setFormData(data = {}) {
+    if (typeof closeTherapyMemoryPanel === 'function') closeTherapyMemoryPanel();
     clearCurrentParserProvenance({ render: false });
     applyPatientMode(getPatientModeFromData(data), { renderLists: false });
     els.fullName.value = data.fullName || '';
@@ -5516,7 +5517,8 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
       cycleTherapyContinuationRegimen,
       migratePatientTherapyToStructuredEntries,
       cycleTherapyLineRegimen,
-      sanitizeTherapyFavoritesBackup,
+      applyTherapyFavoritesMutation,
+      migrateLegacyTherapyFavoritesToShared,
       validateCurrentTherapy: () => validateTherapyField({ source: 'clinical-helper' }),
       runMedicationSafetyChecks,
       clinicalRecordToFhirBundle,
@@ -5527,6 +5529,7 @@ const THERAPY_REQUIRED_PATTERNS = Object.freeze({
   }
 
   function clearForm(options = {}) {
+    if (typeof closeTherapyMemoryPanel === 'function') closeTherapyMemoryPanel();
     const statusMessage = typeof options.statusMessage === 'string' ? options.statusMessage : 'Obrazac je očišćen.';
     const draftStatusMessage = typeof options.draftStatusMessage === 'string' ? options.draftStatusMessage : 'Lokalni draft obrisan za novi unos.';
     state.patientDraft.suppressSave = true;

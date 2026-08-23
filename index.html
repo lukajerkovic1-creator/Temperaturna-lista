@@ -215,6 +215,37 @@
                 </label>
               </div>
             </div>
+            <details class="therapy-memory no-print" id="therapyFavoritesSettings">
+              <summary aria-controls="therapyMemoryBody" aria-expanded="false">
+                <span>Memorija terapije</span>
+                <span class="therapy-memory-chevron" aria-hidden="true">▼</span>
+              </summary>
+              <div class="therapy-favorites-body" id="therapyMemoryBody">
+                <div id="therapyFavoritesSyncStatus" class="therapy-favorites-sync-status" role="status" aria-live="polite">Učitavam zajedničku memoriju terapije...</div>
+                <form id="sharedTherapyFavoriteForm" class="therapy-favorite-form" autocomplete="off" aria-disabled="true">
+                  <label>Naziv lijeka
+                    <input id="sharedTherapyFavoriteName" type="text" maxlength="160" required disabled autocomplete="off" aria-autocomplete="list" aria-controls="therapyMemoryNameSuggestionsBox" placeholder="npr. Amlopin 5 mg">
+                  </label>
+                  <label>Nastavak terapije
+                    <input id="sharedTherapyFavoriteContinuation" type="text" maxlength="180" required disabled placeholder="npr. 0,0,1 tbl">
+                  </label>
+                  <output id="sharedTherapyFavoritePreview" class="therapy-favorite-preview">Upiši oba polja.</output>
+                  <div class="therapy-favorite-form-actions">
+                    <button type="submit" disabled>Dodaj u memoriju</button>
+                    <button id="sharedTherapyFavoriteCancelBtn" class="secondary hidden" type="button" disabled>Odustani</button>
+                  </div>
+                </form>
+                <div id="therapyMemoryNameSuggestionsBox" class="therapy-autocomplete-box therapy-entry-suggestions hidden" role="listbox" aria-label="Prijedlozi naziva lijeka za memoriju terapije"></div>
+                <label class="therapy-memory-search" for="therapyFavoritesSearch">Pretraži memoriju
+                  <input id="therapyFavoritesSearch" type="search" autocomplete="off" placeholder="Naziv lijeka ili nastavak terapije">
+                </label>
+                <div id="sharedTherapyFavoritesList" class="therapy-favorites-list" aria-live="polite"></div>
+                <div class="therapy-favorites-backup-actions">
+                  <button id="therapyFavoritesSignInBtn" class="secondary" type="button">Prijava za sinkronizaciju</button>
+                  <button id="refreshSharedTherapyFavoritesBtn" class="secondary" type="button">Pokušaj ponovno</button>
+                </div>
+              </div>
+            </details>
             <div class="therapy-entry-editor collapsible-body" id="therapyEntryEditor">
               <label for="therapyMedicationName">Naziv lijeka
                 <input id="therapyMedicationName" type="text" maxlength="160" autocomplete="off" aria-autocomplete="list" aria-controls="therapyMedicationSuggestionsBox" placeholder="npr. Meropenem">
@@ -224,7 +255,6 @@
               </label>
               <div class="therapy-entry-editor-actions">
                 <button id="therapyEntryApplyBtn" type="button">Dodaj u terapiju</button>
-                <button id="therapyEntryRememberBtn" class="secondary therapy-entry-remember-btn" type="button" title="Dodaj terapiju aktualnom pacijentu i spremi je kao osobni predložak za sljedeće pacijente">Dodaj i zapamti</button>
                 <button id="therapyEntryClearBtn" class="secondary" type="button">Novi redak</button>
               </div>
               <div id="therapyEntryEditorStatus" class="therapy-entry-editor-status" role="status" aria-live="polite">Upiši lijek i nastavak ili odaberi spremljeni predložak.</div>
@@ -245,45 +275,6 @@
               <input id="showTherapyMonday2" type="checkbox" aria-label="Prikaži terapiju i na ponedjeljku druge stranice">
               <span>Prikaži terapiju i na ponedjeljku 2. stranice</span>
             </label>
-            <details class="therapy-favorites-settings" id="therapyFavoritesSettings">
-              <summary>Postavke čestih terapija</summary>
-              <div class="therapy-favorites-body">
-                <div id="therapyFavoritesSyncStatus" class="therapy-favorites-sync-status" role="status" aria-live="polite">Učitavam postavke terapija...</div>
-                <section class="therapy-favorites-section" aria-labelledby="personalTherapyFavoritesTitle">
-                  <div class="therapy-favorites-heading">
-                    <div>
-                      <h3 id="personalTherapyFavoritesTitle">Moje terapije</h3>
-                      <p>Kontrolirani prijedlozi na ovom uređaju. Ručni unos pacijenta nikada se automatski ne pamti.</p>
-                    </div>
-                  </div>
-                  <form id="personalTherapyFavoriteForm" class="therapy-favorite-form" autocomplete="off">
-                    <label>Naziv lijeka<input id="personalTherapyFavoriteName" type="text" maxlength="160" required placeholder="npr. Amlopin 5 mg"></label>
-                    <label>Nastavak terapije<input id="personalTherapyFavoriteContinuation" type="text" maxlength="180" placeholder="npr. 0,0,1 tbl"></label>
-                    <output id="personalTherapyFavoritePreview" class="therapy-favorite-preview">Pregled terapije</output>
-                    <div class="therapy-favorite-form-actions"><button type="submit">Spremi terapiju</button><button id="personalTherapyFavoriteCancelBtn" class="secondary hidden" type="button">Odustani od uređivanja</button></div>
-                  </form>
-                  <div id="personalTherapyFavoritesList" class="therapy-favorites-list" aria-live="polite"></div>
-                  <div class="therapy-favorites-backup-actions"><button id="exportPersonalTherapyFavoritesBtn" class="secondary" type="button">Izvezi moje terapije</button><button id="importPersonalTherapyFavoritesBtn" class="secondary" type="button">Uvezi moje terapije</button><input id="personalTherapyFavoritesInput" type="file" accept="application/json,.json" class="hidden"></div>
-                </section>
-                <section class="therapy-favorites-section" aria-labelledby="sharedTherapyFavoritesTitle">
-                  <div class="therapy-favorites-heading">
-                    <div>
-                      <h3 id="sharedTherapyFavoritesTitle">Zajedničke terapije</h3>
-                      <p>Dostupne svim korisnicima. Uređivanje je zaključano dok sigurni administratorski backend nije konfiguriran.</p>
-                    </div>
-                    <span class="therapy-favorites-lock" aria-label="Uređivanje zajedničkih terapija zaključano">Zaključano</span>
-                  </div>
-                  <form id="sharedTherapyFavoriteForm" class="therapy-favorite-form" autocomplete="off" aria-disabled="true">
-                    <label>Naziv lijeka<input id="sharedTherapyFavoriteName" type="text" maxlength="160" disabled required></label>
-                    <label>Nastavak terapije<input id="sharedTherapyFavoriteContinuation" type="text" maxlength="180" disabled placeholder="npr. 3x1 g i.v."></label>
-                    <output id="sharedTherapyFavoritePreview" class="therapy-favorite-preview">Pregled terapije</output>
-                    <div class="therapy-favorite-form-actions"><button type="submit" disabled>Spremi terapiju</button><button id="sharedTherapyFavoriteCancelBtn" class="secondary hidden" type="button" disabled>Odustani od uređivanja</button></div>
-                  </form>
-                  <div id="sharedTherapyFavoritesList" class="therapy-favorites-list" aria-live="polite"></div>
-                  <div class="therapy-favorites-backup-actions"><button id="therapyFavoritesSignInBtn" class="secondary" type="button">Prijava za sinkronizaciju</button><button id="refreshSharedTherapyFavoritesBtn" class="secondary" type="button">Osvježi zajedničke terapije</button><button id="exportSharedTherapyFavoritesBtn" class="secondary" type="button" disabled>Izvezi zajedničke terapije</button><button id="importSharedTherapyFavoritesBtn" class="secondary" type="button" disabled>Uvezi zajedničke terapije</button><input id="sharedTherapyFavoritesInput" type="file" accept="application/json,.json" class="hidden"></div>
-                </section>
-              </div>
-            </details>
             <datalist id="therapyFavoriteFormSuggestions"><option value="tbl"><option value="caps"><option value="kapi"><option value="sirup"><option value="inhal."><option value="amp"><option value="inj."></datalist>
           </div>
 

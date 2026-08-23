@@ -125,8 +125,11 @@ assert(!bootstrap.includes('function copyFhirBundleToClipboard('), 'Production b
 assert(!bootstrap.includes('Ctrl+Alt+P parser capture'), 'Production bootstrap must not include parser capture shortcut handling.');
 assert(bootstrap.includes("const appName = 'temperaturna-lista-therapy-settings';"), 'Production bootstrap may use Firebase only through the isolated non-clinical therapy-settings client.');
 assert(bootstrap.includes("const THERAPY_FAVORITES_FIREBASE_DOCUMENT_ID = 'sharedTherapyFavoritesV2';"), 'Production bootstrap must pin shared therapy sync to its dedicated appConfig document.');
+assert(bootstrap.includes("temperaturna-lista-therapy-favorites-v3"), 'Production bootstrap must use the shared therapy memory v3 schema.');
 assert(firestoreRules.includes('match /appConfig/sharedTherapyFavoritesV2'), 'Firestore rules must isolate the shared therapy-settings document.');
-assert(firestoreRules.includes("request.auth.token.email == 'luka.jerkovic1@gmail.com'"), 'Shared therapy writes must remain restricted to the reviewed administrator identity.');
+assert(firestoreRules.includes("request.resource.data.schema == 'temperaturna-lista-therapy-favorites-v3'"), 'Firestore rules must validate the therapy memory v3 schema.');
+assert(firestoreRules.includes('allow read: if isSignedIn();'), 'Shared therapy memory must be readable only by signed-in users.');
+assert(firestoreRules.includes('request.resource.data.version == resource.data.version + 1'), 'Shared therapy writes must enforce optimistic document version increments.');
 assert(firestoreRules.includes('match /{document=**}') && firestoreRules.includes('allow read, write: if false;'), 'Firestore rules must remain fail-closed for every other document, including patients.');
 assert(!bootstrap.includes('data:image/'), 'Production bootstrap must not contain embedded image data URIs.');
 assert(!qaBootstrap.includes('data:image/'), 'QA bootstrap must not contain embedded image data URIs.');

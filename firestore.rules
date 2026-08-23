@@ -2,23 +2,37 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isTherapySettingsAdmin() {
-      return request.auth != null
-        && request.auth.token.email == 'luka.jerkovic1@gmail.com';
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Non-clinical shared therapy templates only. No patient document is
-    // readable or writable through these rules.
-    match /appConfig/sharedTherapyFavoritesV2 {
-      allow read: if true;
-      allow create, update: if isTherapySettingsAdmin()
-        && request.resource.data.keys().hasOnly([
-          'schema', 'schemaVersion', 'appVersion', 'updatedAt', 'updatedBy', 'items'
+    function isValidTherapyMemoryDocument() {
+      return request.resource.data.keys().hasOnly([
+          'schema', 'schemaVersion', 'appVersion', 'version', 'updatedAt', 'updatedBy', 'items'
         ])
-        && request.resource.data.schema == 'temperaturna-lista-therapy-favorites-v2'
-        && request.resource.data.schemaVersion == 2
+        && request.resource.data.schema == 'temperaturna-lista-therapy-favorites-v3'
+        && request.resource.data.schemaVersion == 3
+        && request.resource.data.version is int
+        && request.resource.data.version > 0
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedBy is string
         && request.resource.data.items is list
         && request.resource.data.items.size() <= 250;
+    }
+
+    // Shared, non-clinical therapy templates. Every signed-in user can manage
+    // this one document; patient documents remain inaccessible below.
+    match /appConfig/sharedTherapyFavoritesV2 {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidTherapyMemoryDocument()
+        && request.resource.data.version == 1;
+      allow update: if isSignedIn()
+        && isValidTherapyMemoryDocument()
+        && (
+          (!resource.data.keys().hasAny(['version']) && request.resource.data.version == 1)
+          || request.resource.data.version == resource.data.version + 1
+        );
       allow delete: if false;
     }
 

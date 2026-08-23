@@ -2318,25 +2318,60 @@
     font-size: 13px;
   }
 
-  .therapy-favorites-settings {
-    margin-top: 10px;
+  .therapy-memory {
+    margin: 2px 0 8px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
-    background: #fff;
+    background: #f8fafc;
   }
 
-  .therapy-favorites-settings > summary {
+  .therapy-memory > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     cursor: pointer;
-    padding: 9px 10px;
+    min-height: 36px;
+    padding: 7px 10px;
     color: #1e3a5f;
     font-size: 12px;
     font-weight: 800;
+    list-style: none;
+  }
+
+  .therapy-memory > summary::-webkit-details-marker { display: none; }
+
+  .therapy-memory > summary:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.32);
+    outline-offset: 2px;
+  }
+
+  .therapy-memory-chevron { flex: 0 0 auto; }
+  .therapy-memory[open] .therapy-memory-chevron { transform: rotate(180deg); }
+
+  .therapy-memory[open] {
+    background: #fff;
   }
 
   .therapy-favorites-body {
     display: grid;
     gap: 10px;
     padding: 0 10px 10px;
+  }
+
+  .therapy-memory-search {
+    display: grid;
+    gap: 3px;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .therapy-memory-search input {
+    min-width: 0;
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 12px;
   }
 
   .therapy-favorites-sync-status {
@@ -2434,6 +2469,10 @@
   .therapy-favorites-list {
     display: grid;
     gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
   }
 
   .therapy-favorite-empty {
@@ -2454,6 +2493,12 @@
     border-radius: 6px;
     padding: 7px 8px;
     background: #f8fafc;
+  }
+
+  .therapy-favorite-row.is-highlighted {
+    border-color: #f59e0b;
+    background: #fffbeb;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.16);
   }
 
   .therapy-favorite-row-text {
@@ -2481,6 +2526,11 @@
     .therapy-favorite-form { grid-template-columns: minmax(0, 1fr); }
     .therapy-favorite-row { grid-template-columns: minmax(0, 1fr); }
     .therapy-favorite-row-actions { justify-content: flex-start; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .therapy-memory-chevron,
+    .therapy-favorite-row { transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease; }
   }
 
 
@@ -4888,6 +4938,10 @@
   }
 
   @media print {
+    .no-print {
+      display: none !important;
+    }
+
     body {
       background: #fff;
     }
